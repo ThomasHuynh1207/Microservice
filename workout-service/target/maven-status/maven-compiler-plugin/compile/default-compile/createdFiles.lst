@@ -1,0 +1,11 @@
+com\tuan\workoutservice\repository\WorkoutSessionRepository.class
+com\tuan\workoutservice\dto\WorkoutPlanDTO.class
+com\tuan\workoutservice\repository\WorkoutPlanRepository.class
+com\tuan\workoutservice\service\WorkoutService.class
+com\tuan\workoutservice\dto\WorkoutSessionDTO.class
+com\tuan\workoutservice\entity\WorkoutSession.class
+com\tuan\workoutservice\WorkoutServiceApplication.class
+com\tuan\workoutservice\config\SecurityConfig.class
+com\tuan\workoutservice\controller\WorkoutController.class
+com\tuan\workoutservice\entity\WorkoutPlan.class
+com\tuan\workoutservice\client\UserServiceClient.class

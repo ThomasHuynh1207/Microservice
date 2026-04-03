@@ -1,0 +1,8 @@
+com\tuan\authservice\dto\RegisterRequest.class
+com\tuan\authservice\dto\LoginRequest.class
+com\tuan\authservice\config\SecurityConfig.class
+com\tuan\authservice\repository\UserRepository.class
+com\tuan\authservice\AuthServiceApplication.class
+com\tuan\authservice\entity\User.class
+com\tuan\authservice\service\AuthService.class
+com\tuan\authservice\controller\AuthController.class

@@ -1,0 +1,54 @@
+services:
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - user-service
+      - workout-service
+      - progress-service
+      - ai-service
+    networks:
+      - microservice-network
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8081:8081"
+    networks:
+      - microservice-network
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "8082:8082"
+    networks:
+      - microservice-network
+
+  workout-service:
+    build: ./workout-service
+    ports:
+      - "8083:8083"
+    networks:
+      - microservice-network
+
+  progress-service:
+    build: ./progress-service
+    ports:
+      - "8084:8084"
+    networks:
+      - microservice-network
+
+  ai-service:
+    build: ./ai-service
+    ports:
+      - "8085:8085"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    networks:
+      - microservice-network
+
+networks:
+  microservice-network:
+    driver: bridge

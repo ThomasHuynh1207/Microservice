@@ -1,0 +1,8 @@
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\controller\AuthController.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\repository\UserRepository.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\service\AuthService.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\dto\LoginRequest.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\AuthServiceApplication.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\dto\RegisterRequest.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\config\SecurityConfig.java
+D:\NCKH-New-2026\Microservice\auth-service\src\main\java\com\tuan\authservice\entity\User.java

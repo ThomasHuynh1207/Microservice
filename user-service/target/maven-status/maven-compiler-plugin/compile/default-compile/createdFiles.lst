@@ -1,0 +1,11 @@
+com\tuan\userservice\repository\UserProfileRepository.class
+com\tuan\userservice\dto\UserProfileDTO.class
+com\tuan\userservice\controller\UserController.class
+com\tuan\userservice\service\UserService.class
+com\tuan\userservice\dto\UserDTO.class
+com\tuan\userservice\entity\UserProfile.class
+com\tuan\userservice\entity\User.class
+com\tuan\userservice\client\AuthServiceClient.class
+com\tuan\userservice\repository\UserRepository.class
+com\tuan\userservice\config\SecurityConfig.class
+com\tuan\userservice\UserServiceApplication.class

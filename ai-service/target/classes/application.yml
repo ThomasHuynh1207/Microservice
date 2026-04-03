@@ -1,0 +1,24 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: ai-service
+  datasource:
+    url: jdbc:h2:mem:aidb
+    driverClassName: org.h2.Driver
+    username: sa
+    password: password
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  h2:
+    console:
+      enabled: true
+
+openai:
+  api:
+    key: ${OPENAI_API_KEY:your_openai_api_key_here}
+    url: https://api.openai.com/v1/chat/completions
