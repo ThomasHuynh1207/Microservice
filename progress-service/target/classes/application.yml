@@ -17,3 +17,7 @@ spring:
   h2:
     console:
       enabled: true
+
+services:
+  ai-service:
+    url: ${AI_SERVICE_URL:http://localhost:8085}

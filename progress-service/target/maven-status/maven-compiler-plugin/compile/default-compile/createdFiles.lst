@@ -1,0 +1,4 @@
+com/tuan/progressservice/dto/ActivityAnalysisResponseDTO.class
+com/tuan/progressservice/dto/StravaActivityDTO.class
+com/tuan/progressservice/client/AiServiceClient.class
+com/tuan/progressservice/dto/ActivityAnalysisRequestDTO.class

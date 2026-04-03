@@ -1,0 +1,11 @@
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/repository/ProgressLogRepository.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/dto/StravaActivityDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/entity/ProgressLog.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/service/ProgressService.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/controller/ProgressController.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/client/AiServiceClient.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/dto/ProgressLogDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/client/UserServiceClient.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/ProgressServiceApplication.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/dto/ActivityAnalysisRequestDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/progress-service/src/main/java/com/tuan/progressservice/dto/ActivityAnalysisResponseDTO.java

@@ -1,5 +1,7 @@
 package com.tuan.aiservice.controller;
 
+import com.tuan.aiservice.dto.ActivityAnalysisRequestDTO;
+import com.tuan.aiservice.dto.ActivityAnalysisResponseDTO;
 import com.tuan.aiservice.dto.ChatMessageDTO;
 import com.tuan.aiservice.dto.ChatRequestDTO;
 import com.tuan.aiservice.service.AiService;
@@ -19,6 +21,12 @@ public class AiController {
     @PostMapping("/chat")
     public ResponseEntity<ChatMessageDTO> chat(@RequestBody ChatRequestDTO request) {
         ChatMessageDTO response = aiService.chat(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/activity-analysis")
+    public ResponseEntity<ActivityAnalysisResponseDTO> analyzeActivity(@RequestBody ActivityAnalysisRequestDTO request) {
+        ActivityAnalysisResponseDTO response = aiService.analyzeActivity(request);
         return ResponseEntity.ok(response);
     }
 

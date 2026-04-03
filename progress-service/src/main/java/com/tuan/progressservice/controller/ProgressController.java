@@ -1,6 +1,7 @@
 package com.tuan.progressservice.controller;
 
 import com.tuan.progressservice.dto.ProgressLogDTO;
+import com.tuan.progressservice.dto.StravaActivityDTO;
 import com.tuan.progressservice.service.ProgressService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -35,6 +36,12 @@ public class ProgressController {
     @PostMapping
     public ResponseEntity<ProgressLogDTO> createProgressLog(@RequestBody ProgressLogDTO logDTO) {
         ProgressLogDTO createdLog = progressService.createProgressLog(logDTO);
+        return ResponseEntity.ok(createdLog);
+    }
+
+    @PostMapping("/import/strava")
+    public ResponseEntity<ProgressLogDTO> importStravaActivity(@RequestBody StravaActivityDTO activityDTO) {
+        ProgressLogDTO createdLog = progressService.importStravaActivity(activityDTO);
         return ResponseEntity.ok(createdLog);
     }
 

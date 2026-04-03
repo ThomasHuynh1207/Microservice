@@ -5,21 +5,15 @@ import lombok.Data;
 import java.time.LocalDate;
 
 @Data
-public class ProgressLogDTO {
-    private Long id;
+public class StravaActivityDTO {
     private Long userId;
-    private LocalDate date;
-    private String source;
-    private String externalActivityId;
+    private String activityId;
     private String activityType;
+    private LocalDate activityDate;
     private Double distanceKm;
+    private Integer movingTimeMinutes;
     private Double averagePaceMinutesPerKm;
     private Double elevationGainMeters;
     private Integer averageHeartRate;
-    private Double weight;
-    private Double bodyFat;
-    private Integer workoutMinutes;
     private String notes;
-    private String mood;
-    private String aiInsight;
 }

@@ -1,0 +1,11 @@
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/dto/ChatMessageDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/repository/ChatMessageRepository.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/controller/AiController.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/entity/ChatMessage.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/dto/ActivityAnalysisResponseDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/service/AiService.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/dto/ChatRequestDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/client/UserServiceClient.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/dto/ActivityAnalysisRequestDTO.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/config/WebClientConfig.java
+/Users/thanhtung/Desktop/gitTuan/Microservice/ai-service/src/main/java/com/tuan/aiservice/AiServiceApplication.java

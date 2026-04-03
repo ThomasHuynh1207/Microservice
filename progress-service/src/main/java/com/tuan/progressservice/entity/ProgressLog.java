@@ -24,9 +24,19 @@ public class ProgressLog {
     @Column(nullable = false)
     private LocalDate date;
 
+    private String source; // manual, strava, garmin, etc.
+    private String externalActivityId;
+    private String activityType; // Run, Ride, Swim, etc.
+    private Double distanceKm;
+    private Double averagePaceMinutesPerKm;
+    private Double elevationGainMeters;
+    private Integer averageHeartRate;
     private Double weight; // in kg
     private Double bodyFat; // percentage
     private Integer workoutMinutes; // minutes exercised
     private String notes;
     private String mood; // Happy, Tired, Motivated, etc.
+
+    @Column(length = 2000)
+    private String aiInsight;
 }
