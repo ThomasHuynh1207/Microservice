@@ -9,7 +9,6 @@ import com.tuan.aiservice.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 
 import java.util.ArrayList;
 import java.time.LocalDateTime;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
 public class AiService {
 
     private final ChatMessageRepository chatMessageRepository;
-    private final WebClient webClient;
 
     @Value("${openai.api.key}")
     private String openaiApiKey;
@@ -60,8 +58,6 @@ public class AiService {
 
     private String callOpenAI(String message) {
         // Simplified OpenAI API call - in real implementation, you'd use proper OpenAI SDK
-        String prompt = "You are a fitness coach AI. Help the user with their fitness goals. User message: " + message;
-
         // Mock response for now - replace with actual OpenAI API call
         return "As your fitness coach, I recommend starting with a balanced workout routine. " +
                "Based on your message about '" + message + "', let's focus on consistency and proper form.";

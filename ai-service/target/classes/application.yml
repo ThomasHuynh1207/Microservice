@@ -4,21 +4,57 @@ server:
 spring:
   application:
     name: ai-service
+
+  # ====================== Database Configuration ======================
   datasource:
-    url: jdbc:h2:mem:aidb
-    driverClassName: org.h2.Driver
-    username: sa
-    password: password
+    url: jdbc:postgresql://postgres:5432/fitness_app
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:Tuan}
+    password: ${POSTGRES_PASSWORD:123456789}
+
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
-  h2:
-    console:
-      enabled: true
+    properties:
+      hibernate:
+        format_sql: true
 
+  # Profile cho Docker
+  profiles:
+    active: docker
+
+# ====================== Eureka Configuration (Rất quan trọng) ======================
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://eureka-service:8761/eureka/
+
+  instance:
+    prefer-ip-address: true
+    hostname: ai-service
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+# ====================== OpenAI Configuration ======================
 openai:
   api:
-    key: ${OPENAI_API_KEY:your_openai_api_key_here}
+    key: ${OPENAI_API_KEY}
     url: https://api.openai.com/v1/chat/completions
+
+# ====================== n8n Webhook Configuration (dành cho AI Fitness) ======================
+n8n:
+  webhook:
+    # Nếu bạn chạy n8n trong Docker cùng network
+    url: http://n8n:5678/webhook/fitness-chat
+    # Nếu dùng n8n Cloud hoặc ngrok (dùng tạm khi test)
+    # url: https://your-ngrok-url.ngrok-free.dev/webhook/fitness-chat
+
+# ====================== Logging (dễ debug) ======================
+logging:
+  level:
+    org.springframework.cloud.netflix.eureka: DEBUG
+    com.tuan.fitness: DEBUG

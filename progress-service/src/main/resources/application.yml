@@ -4,20 +4,48 @@ server:
 spring:
   application:
     name: progress-service
+
+  # ====================== Database Configuration ======================
   datasource:
-    url: jdbc:h2:mem:progressdb
-    driverClassName: org.h2.Driver
-    username: sa
-    password: password
+    url: jdbc:postgresql://postgres:5432/fitness_app
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:Tuan}
+    password: ${POSTGRES_PASSWORD:123456789}
+
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
-  h2:
-    console:
-      enabled: true
+    properties:
+      hibernate:
+        format_sql: true
 
+  # Profile cho Docker
+  profiles:
+    active: docker
+
+# ====================== Eureka Configuration (Quan trọng) ======================
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://eureka-service:8761/eureka/
+
+  instance:
+    prefer-ip-address: true
+    hostname: progress-service
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+# ====================== AI Service Configuration ======================
 services:
   ai-service:
-    url: ${AI_SERVICE_URL:http://localhost:8085}
+    url: ${AI_SERVICE_URL:http://ai-service:8085}
+
+# ====================== Logging (dễ debug Eureka) ======================
+logging:
+  level:
+    org.springframework.cloud.netflix.eureka: DEBUG
+    org.springframework.web: DEBUG

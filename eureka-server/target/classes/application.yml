@@ -1,0 +1,18 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: eureka-service
+
+eureka:
+  client:
+    register-with-eureka: true          # Quan trọng
+    fetch-registry: true                # Quan trọng
+    service-url:
+      defaultZone: http://eureka-service:8761/eureka/   # ← Dùng tên service trong Docker, KHÔNG dùng localhost:8761
+  instance:
+    prefer-ip-address: true
+    hostname: ${spring.application.name}
+    lease-renewal-interval-in-seconds: 10   # Giúp test nhanh hơn
+    lease-expiration-duration-in-seconds: 30

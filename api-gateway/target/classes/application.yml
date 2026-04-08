@@ -4,39 +4,94 @@ server:
 spring:
   application:
     name: api-gateway
+
+  # ====================== Spring Cloud Gateway + Discovery ======================
   cloud:
     gateway:
+      discovery:
+        locator:
+          enabled: true              # Tự động tạo routes từ Eureka
+          lower-case-service-id: true  # Chuyển service name thành chữ thường
+      
       routes:
         - id: auth-service
-          uri: http://auth-service:8081
+          # ✅ SỬA: Dùng lb:// thay vì http://
+          uri: lb://AUTH-SERVICE
           predicates:
             - Path=/api/auth/**
           filters:
             - JwtAuthenticationFilter
+
         - id: user-service
-          uri: http://user-service:8082
+          # ✅ SỬA: Dùng lb:// thay vì http://
+          uri: lb://USER-SERVICE
           predicates:
             - Path=/api/users/**
           filters:
             - JwtAuthenticationFilter
+
         - id: workout-service
-          uri: http://workout-service:8083
+          # ✅ SỬA: Dùng lb:// thay vì http://
+          uri: lb://WORKOUT-SERVICE
           predicates:
             - Path=/api/workouts/**
           filters:
             - JwtAuthenticationFilter
+
         - id: progress-service
-          uri: http://progress-service:8084
+          # ✅ SỬA: Dùng lb:// thay vì http://
+          uri: lb://PROGRESS-SERVICE
           predicates:
             - Path=/api/progress/**
           filters:
             - JwtAuthenticationFilter
+
         - id: ai-service
-          uri: http://ai-service:8085
+          # ✅ SỬA: Dùng lb:// thay vì http://
+          uri: lb://AI-SERVICE
           predicates:
             - Path=/api/ai/**
           filters:
             - JwtAuthenticationFilter
 
+      # Global CORS (tùy chọn)
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: [GET, POST, PUT, DELETE, OPTIONS]
+            allowedHeaders: "*"
+            allowCredentials: false
+
+    # Discovery (Eureka)
+    discovery:
+      enabled: true
+
+# ====================== Eureka Configuration ======================
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      # ✅ SỬA: Đảm bảo đúng tên service của Eureka Server
+      defaultZone: http://eureka-service:8761/eureka/
+  
+  instance:
+    prefer-ip-address: true
+    # ✅ SỬA: instance-id rõ ràng hơn
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+    hostname: api-gateway
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+# ====================== JWT Configuration ======================
 jwt:
-  secret: TXlTdXBlclNlY3JldEtleU15U3VwZXJTZWNyZXRLZXk=
+  secret: ${JWT_SECRET:TXlTdXBlclNlY3JldEtleU15U3VwZXJTZWNyZXRLZXk=}
+  expiration: 86400000
+
+# ====================== Logging ======================
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.cloud.netflix.eureka: DEBUG
+    com.netflix.discovery: DEBUG

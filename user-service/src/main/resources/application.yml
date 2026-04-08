@@ -4,16 +4,43 @@ server:
 spring:
   application:
     name: user-service
+
+  # ====================== Database Configuration ======================
   datasource:
-    url: jdbc:h2:mem:userdb
-    driverClassName: org.h2.Driver
-    username: sa
-    password: password
+    url: jdbc:postgresql://postgres:5432/fitness_app
+    driver-class-name: org.postgresql.Driver
+    username: ${POSTGRES_USER:Tuan}
+    password: ${POSTGRES_PASSWORD:123456789}
+
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
     show-sql: true
-  h2:
-    console:
-      enabled: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  # Profile cho Docker
+  profiles:
+    active: docker
+
+# ====================== Eureka Configuration (Quan trọng nhất) ======================
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://eureka-service:8761/eureka/
+
+  instance:
+    prefer-ip-address: true
+    hostname: user-service
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+# ====================== Logging (dễ debug khi đăng ký Eureka) ======================
+logging:
+  level:
+    org.springframework.cloud.netflix.eureka: DEBUG
+    org.springframework.web: DEBUG

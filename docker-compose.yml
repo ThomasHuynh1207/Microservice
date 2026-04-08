@@ -1,53 +1,162 @@
 services:
-  api-gateway:
-    build: ./api-gateway
+  eureka-server:
+    build: ./eureka-server
     ports:
-      - "8080:8080"
-    depends_on:
-      - auth-service
-      - user-service
-      - workout-service
-      - progress-service
-      - ai-service
+      - "8761:8761"
     networks:
       - microservice-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8761/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   auth-service:
     build: ./auth-service
     ports:
       - "8081:8081"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
 
   user-service:
     build: ./user-service
     ports:
       - "8082:8082"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
 
   workout-service:
     build: ./workout-service
     ports:
       - "8083:8083"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
 
   progress-service:
     build: ./progress-service
     ports:
       - "8084:8084"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
 
   ai-service:
     build: ./ai-service
     ports:
       - "8085:8085"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY=jkadas8jT2jcUKz8CwtLUR2zImL3bHIgEEiw
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - microservice-network
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      workout-service:
+        condition: service_started
+      progress-service:
+        condition: service_started
+      ai-service:
+        condition: service_started
+    networks:
+      - microservice-network
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - microservice-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-Tuan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456789}
+      POSTGRES_DB: ${POSTGRES_DB:-fitness_app}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - microservice-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-Tuan} -d ${POSTGRES_DB:-fitness_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@fitnessapp.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - microservice-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
 
 networks:
   microservice-network:
