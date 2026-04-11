@@ -54,6 +54,13 @@ spring:
           filters:
             - JwtAuthenticationFilter
 
+        - id: profile-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/profile/**
+          filters:
+            - JwtAuthenticationFilter
+
       # Global CORS (tùy chọn)
       globalcors:
         cors-configurations:
