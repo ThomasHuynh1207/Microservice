@@ -16,7 +16,7 @@ spring:
       routes:
         - id: auth-service
           # ✅ SỬA: Dùng lb:// thay vì http://
-          uri: lb://AUTH-SERVICE
+          uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
           filters:
@@ -24,7 +24,7 @@ spring:
 
         - id: user-service
           # ✅ SỬA: Dùng lb:// thay vì http://
-          uri: lb://USER-SERVICE
+          uri: lb://user-service
           predicates:
             - Path=/api/users/**
           filters:
@@ -32,7 +32,7 @@ spring:
 
         - id: workout-service
           # ✅ SỬA: Dùng lb:// thay vì http://
-          uri: lb://WORKOUT-SERVICE
+          uri: lb://workout-service
           predicates:
             - Path=/api/workouts/**
           filters:
@@ -40,7 +40,7 @@ spring:
 
         - id: progress-service
           # ✅ SỬA: Dùng lb:// thay vì http://
-          uri: lb://PROGRESS-SERVICE
+          uri: lb://progress-service
           predicates:
             - Path=/api/progress/**
           filters:
@@ -48,7 +48,7 @@ spring:
 
         - id: ai-service
           # ✅ SỬA: Dùng lb:// thay vì http://
-          uri: lb://AI-SERVICE
+          uri: lb://ai-service
           predicates:
             - Path=/api/ai/**
           filters:

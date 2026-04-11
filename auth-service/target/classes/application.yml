@@ -7,7 +7,7 @@ spring:
 
   # ====================== Database Configuration ======================
   datasource:
-    url: jdbc:postgresql://postgres:5432/fitness_app
+    url: jdbc:postgresql://postgres:5432/authdb
     driver-class-name: org.postgresql.Driver
     username: ${POSTGRES_USER:Tuan}
     password: ${POSTGRES_PASSWORD:123456789}
@@ -24,6 +24,12 @@ spring:
   # Profile cho Docker
   profiles:
     active: docker
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
 
 # ====================== Eureka Configuration (Quan trọng nhất) ======================
 eureka:

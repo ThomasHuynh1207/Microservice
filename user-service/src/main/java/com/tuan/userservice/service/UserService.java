@@ -1,5 +1,6 @@
 package com.tuan.userservice.service;
 
+import com.tuan.userservice.client.AuthServiceClient;
 import com.tuan.userservice.dto.UserDTO;
 import com.tuan.userservice.dto.UserProfileDTO;
 import com.tuan.userservice.entity.User;
@@ -7,7 +8,11 @@ import com.tuan.userservice.entity.UserProfile;
 import com.tuan.userservice.repository.UserRepository;
 import com.tuan.userservice.repository.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -15,11 +20,16 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
+    private final AuthServiceClient authServiceClient;
 
     public UserDTO getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        return convertToDTO(user);
+        return userRepository.findById(id)
+                .map(this::convertToDTO)
+                .orElseGet(() -> authServiceClient.getUserById(id));
+    }
+
+    public List<UserDTO> getAllUsers() {
+        return authServiceClient.getAllUsers();
     }
 
     public UserDTO updateUser(Long id, UserDTO userDTO) {
@@ -39,7 +49,7 @@ public class UserService {
 
     public UserProfileDTO getUserProfile(Long userId) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
-                .orElseThrow(() -> new RuntimeException("User profile not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User profile not found"));
         return convertProfileToDTO(profile);
     }
 

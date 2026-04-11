@@ -3,16 +3,14 @@ server:
 
 spring:
   application:
-    name: eureka-service
+    name: eureka-service  # Tên này để các service khác gọi
 
 eureka:
   client:
-    register-with-eureka: true          # Quan trọng
-    fetch-registry: true                # Quan trọng
-    service-url:
-      defaultZone: http://eureka-service:8761/eureka/   # ← Dùng tên service trong Docker, KHÔNG dùng localhost:8761
+    register-with-eureka: false    # ✅ ĐỔI thành false
+    fetch-registry: false          # ✅ ĐỔI thành false
   instance:
     prefer-ip-address: true
-    hostname: ${spring.application.name}
-    lease-renewal-interval-in-seconds: 10   # Giúp test nhanh hơn
+    hostname: localhost
+    lease-renewal-interval-in-seconds: 10
     lease-expiration-duration-in-seconds: 30
