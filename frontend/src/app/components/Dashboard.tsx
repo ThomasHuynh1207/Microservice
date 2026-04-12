@@ -3,6 +3,13 @@ import { Activity, Flame, Target, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Progress } from "./ui/progress";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
+import {
+  WorkoutPlanEmptyState,
+  LatestSessionEmptyState,
+  NutritionGoalEmptyState,
+  ProgressOverviewEmptyState,
+  WeeklyChartEmptyState,
+} from "./ui/EmptyState";
 import { getCurrentUser, getUserProfile } from "../../services/authService";
 import { fetchWorkouts } from "../../services/fitnessService";
 
@@ -23,6 +30,29 @@ export function Dashboard() {
 
   const user = getCurrentUser();
   const [profile, setProfile] = useState<{ age?: number; gender?: string; height?: number; weight?: number; fitnessGoal?: string; activityLevel?: string; experienceLevel?: string } | null>(null);
+
+  const hasWorkoutPlan = workouts > 0;
+  const isWeeklyEmpty = weeklyData.every((item) => item.calories === 0 && item.steps === 0);
+
+  const handleCreateWorkoutPlan = () => {
+    console.log("CTA: Tạo kế hoạch tập luyện");
+  };
+
+  const handleLogSession = () => {
+    console.log("CTA: Ghi buổi tập hôm nay");
+  };
+
+  const handleSetNutritionGoal = () => {
+    console.log("CTA: Đặt mục tiêu dinh dưỡng");
+  };
+
+  const handleStartProgress = () => {
+    console.log("CTA: Bắt đầu hành trình ngay");
+  };
+
+  const handleLogWeeklyActivity = () => {
+    console.log("CTA: Ghi hoạt động hôm nay");
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -74,61 +104,45 @@ export function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Kế hoạch tập luyện</p>
-                <p className="text-3xl font-bold mt-1">{workouts}</p>
-                <p className="text-xs text-green-600 mt-1">{isLoading ? "Đang tải..." : "Đã đồng bộ"}</p>
+        {hasWorkoutPlan ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Kế hoạch tập luyện</p>
+                  <p className="text-3xl font-bold mt-1">{workouts}</p>
+                  <p className="text-xs text-green-600 mt-1">{isLoading ? "Đang tải..." : "Đã đồng bộ"}</p>
+                </div>
+                <div className="bg-blue-100 p-3 rounded-full"><Activity className="w-8 h-8 text-blue-600" /></div>
               </div>
-              <div className="bg-blue-100 p-3 rounded-full"><Activity className="w-8 h-8 text-blue-600" /></div>
-            </div>
-            <Progress value={Math.min(100, workouts * 10)} className="mt-4" />
-          </CardContent>
-        </Card>
+              <Progress value={Math.min(100, workouts * 10)} className="mt-4" />
+            </CardContent>
+          </Card>
+        ) : (
+          <WorkoutPlanEmptyState onAction={handleCreateWorkoutPlan} />
+        )}
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Kế hoạch mới nhất</p>
-                <p className="text-3xl font-bold mt-1">{workouts > 0 ? "Có" : "Chưa có"}</p>
-                <p className="text-xs text-blue-600 mt-1">Từ /api/workouts</p>
+        {hasWorkoutPlan ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Kế hoạch mới nhất</p>
+                  <p className="text-3xl font-bold mt-1">Có</p>
+                  <p className="text-xs text-blue-600 mt-1">Từ /api/workouts</p>
+                </div>
+                <div className="bg-orange-100 p-3 rounded-full"><Flame className="w-8 h-8 text-orange-600" /></div>
               </div>
-              <div className="bg-orange-100 p-3 rounded-full"><Flame className="w-8 h-8 text-orange-600" /></div>
-            </div>
-            <Progress value={workouts > 0 ? 80 : 20} className="mt-4" />
-          </CardContent>
-        </Card>
+              <Progress value={80} className="mt-4" />
+            </CardContent>
+          </Card>
+        ) : (
+          <LatestSessionEmptyState onAction={handleLogSession} />
+        )}
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Mục tiêu dinh dưỡng</p>
-                <p className="text-3xl font-bold mt-1">2100</p>
-                <p className="text-xs text-green-600 mt-1">Giá trị mẫu</p>
-              </div>
-              <div className="bg-green-100 p-3 rounded-full"><Target className="w-8 h-8 text-green-600" /></div>
-            </div>
-            <Progress value={62} className="mt-4" />
-          </CardContent>
-        </Card>
+        <NutritionGoalEmptyState onAction={handleSetNutritionGoal} />
 
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">Tiến trình</p>
-                <p className="text-3xl font-bold mt-1">{workouts * 5}%</p>
-                <p className="text-xs text-purple-600 mt-1">Số liệu ước lượng</p>
-              </div>
-              <div className="bg-purple-100 p-3 rounded-full"><TrendingUp className="w-8 h-8 text-purple-600" /></div>
-            </div>
-            <Progress value={Math.min(100, workouts * 7)} className="mt-4" />
-          </CardContent>
-        </Card>
+        <ProgressOverviewEmptyState onAction={handleStartProgress} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -136,7 +150,7 @@ export function Dashboard() {
           <CardHeader>
             <CardTitle>Calories tuần này</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative overflow-hidden">
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={weeklyData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -146,6 +160,11 @@ export function Dashboard() {
                 <Area type="monotone" dataKey="calories" stroke="#8b5cf6" fill="#c4b5fd" />
               </AreaChart>
             </ResponsiveContainer>
+            {isWeeklyEmpty && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/90 px-6 py-8 text-center">
+                <WeeklyChartEmptyState onAction={handleLogWeeklyActivity} />
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -153,7 +172,7 @@ export function Dashboard() {
           <CardHeader>
             <CardTitle>Số bước tuần này</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative overflow-hidden">
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={weeklyData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -163,6 +182,11 @@ export function Dashboard() {
                 <Bar dataKey="steps" fill="#3b82f6" />
               </BarChart>
             </ResponsiveContainer>
+            {isWeeklyEmpty && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/90 px-6 py-8 text-center">
+                <WeeklyChartEmptyState onAction={handleLogWeeklyActivity} />
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
