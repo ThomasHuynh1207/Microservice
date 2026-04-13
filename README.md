@@ -1,12 +1,6 @@
-# Spring Boot Monolith to Microservices Migration Guide
+# Spring Boot Microservices
 
 ## Overview
-This guide provides a step-by-step migration from a Spring Boot monolith to a microservices architecture for a fitness application.
-
-## Current Monolith Structure
-- **Location**: `Monolith/fitnessmonolith/`
-- **Features**: User auth, profiles, workout plans, progress tracking, AI chatbot
-- **Database**: PostgreSQL with shared schema
 
 ## Target Microservices Architecture
 
