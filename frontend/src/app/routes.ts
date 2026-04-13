@@ -2,7 +2,7 @@ import { createBrowserRouter } from "react-router";
 import { Landing } from "./components/Landing";
 import { Login } from "./components/Login";
 import { Register } from "./components/Register";
-import { Onboarding } from "./components/Onboarding";
+import { OnboardingWizard } from "./components/OnboardingWizard";
 import { Root } from "./components/Root";
 import { Dashboard } from "./components/Dashboard";
 import { WorkoutTracker } from "./components/WorkoutTracker";
@@ -25,7 +25,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/onboarding",
-    Component: Onboarding,
+    Component: OnboardingWizard,
   },
   {
     path: "/dashboard",
