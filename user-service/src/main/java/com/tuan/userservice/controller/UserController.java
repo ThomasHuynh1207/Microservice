@@ -1,5 +1,6 @@
 package com.tuan.userservice.controller;
 
+import com.tuan.userservice.dto.NutritionProfileDTO;
 import com.tuan.userservice.dto.UserDTO;
 import com.tuan.userservice.dto.UserProfileDTO;
 import com.tuan.userservice.service.UserService;
@@ -43,5 +44,17 @@ public class UserController {
     public ResponseEntity<UserProfileDTO> updateUserProfile(@PathVariable Long id, @RequestBody UserProfileDTO profileDTO) {
         UserProfileDTO updatedProfile = userService.createOrUpdateProfile(id, profileDTO);
         return ResponseEntity.ok(updatedProfile);
+    }
+
+    @GetMapping("/{id}/nutrition-profile")
+    public ResponseEntity<NutritionProfileDTO> getNutritionProfile(@PathVariable Long id) {
+        NutritionProfileDTO nutritionProfile = userService.getNutritionProfile(id);
+        return ResponseEntity.ok(nutritionProfile);
+    }
+
+    @PostMapping("/{id}/onboarding-complete")
+    public ResponseEntity<Void> completeOnboarding(@PathVariable Long id) {
+        userService.completeOnboarding(id);
+        return ResponseEntity.noContent().build();
     }
 }

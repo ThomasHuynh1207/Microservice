@@ -33,6 +33,12 @@ public class ProgressController {
         return ResponseEntity.ok(logs);
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<ProgressLogDTO> getProgressLogById(@PathVariable Long id) {
+        ProgressLogDTO log = progressService.getProgressLogById(id);
+        return ResponseEntity.ok(log);
+    }
+
     @PostMapping
     public ResponseEntity<ProgressLogDTO> createProgressLog(@RequestBody ProgressLogDTO logDTO) {
         ProgressLogDTO createdLog = progressService.createProgressLog(logDTO);
@@ -49,5 +55,11 @@ public class ProgressController {
     public ResponseEntity<ProgressLogDTO> updateProgressLog(@PathVariable Long id, @RequestBody ProgressLogDTO logDTO) {
         ProgressLogDTO updatedLog = progressService.updateProgressLog(id, logDTO);
         return ResponseEntity.ok(updatedLog);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteProgressLog(@PathVariable Long id) {
+        progressService.deleteProgressLog(id);
+        return ResponseEntity.noContent().build();
     }
 }

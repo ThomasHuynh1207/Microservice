@@ -243,3 +243,4 @@ Each service uses H2 in-memory database for simplicity. For production:
 - Each service has its own database
 - Inter-service communication via Feign clients</content>
 <parameter name="filePath">d:\NCKH-New-2026\Microservice\README.md
+

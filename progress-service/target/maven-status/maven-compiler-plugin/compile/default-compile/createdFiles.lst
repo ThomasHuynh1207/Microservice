@@ -1,4 +1,11 @@
-com/tuan/progressservice/dto/ActivityAnalysisResponseDTO.class
-com/tuan/progressservice/dto/StravaActivityDTO.class
-com/tuan/progressservice/client/AiServiceClient.class
-com/tuan/progressservice/dto/ActivityAnalysisRequestDTO.class
+com\tuan\progressservice\controller\ProgressController.class
+com\tuan\progressservice\ProgressServiceApplication.class
+com\tuan\progressservice\dto\ProgressLogDTO.class
+com\tuan\progressservice\client\UserServiceClient.class
+com\tuan\progressservice\client\AiServiceClient.class
+com\tuan\progressservice\dto\ActivityAnalysisRequestDTO.class
+com\tuan\progressservice\repository\ProgressLogRepository.class
+com\tuan\progressservice\entity\ProgressLog.class
+com\tuan\progressservice\service\ProgressService.class
+com\tuan\progressservice\dto\ActivityAnalysisResponseDTO.class
+com\tuan\progressservice\dto\StravaActivityDTO.class

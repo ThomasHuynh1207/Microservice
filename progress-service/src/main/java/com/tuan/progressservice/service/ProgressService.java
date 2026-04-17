@@ -85,6 +85,18 @@ public class ProgressService {
         return convertToDTO(savedLog);
     }
 
+    public ProgressLogDTO getProgressLogById(Long id) {
+        ProgressLog log = progressLogRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Progress log not found"));
+        return convertToDTO(log);
+    }
+
+    public void deleteProgressLog(Long id) {
+        ProgressLog log = progressLogRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Progress log not found"));
+        progressLogRepository.delete(log);
+    }
+
     private void applyOptionalFields(ProgressLog log, ProgressLogDTO logDTO) {
         log.setExternalActivityId(logDTO.getExternalActivityId());
         log.setActivityType(logDTO.getActivityType());

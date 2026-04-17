@@ -5,6 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Entity
 @Table(name = "user_profile")
 @Data
@@ -24,4 +27,20 @@ public class UserProfile {
     private String fitnessLevel; // Beginner, Intermediate, Advanced
     private String preferredWorkoutType; // Cardio, Strength, Yoga, etc.
     private Integer weeklyGoal; // hours per week
+
+    private Integer targetCalories;
+    private Integer proteinTarget;
+    private Integer carbsTarget;
+    private Integer fatTarget;
+    private Integer mealsPerDay;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_profile_preferences", joinColumns = @JoinColumn(name = "user_profile_id"))
+    @Column(name = "preference")
+    private Set<String> preferences = new HashSet<>();
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_profile_allergies", joinColumns = @JoinColumn(name = "user_profile_id"))
+    @Column(name = "allergy")
+    private Set<String> allergies = new HashSet<>();
 }
