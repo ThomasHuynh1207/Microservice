@@ -51,7 +51,10 @@ public class ProgressController {
         return ResponseEntity.ok(createdLog);
     }
 
+    // Cập nhật tiến trình theo id (chuẩn REST là PUT)
+    // Thêm POST tương thích nếu client ghi nhầm method khi gửi tới /api/progress/{id}
     @PutMapping("/{id}")
+    @PostMapping("/{id}")
     public ResponseEntity<ProgressLogDTO> updateProgressLog(@PathVariable Long id, @RequestBody ProgressLogDTO logDTO) {
         ProgressLogDTO updatedLog = progressService.updateProgressLog(id, logDTO);
         return ResponseEntity.ok(updatedLog);

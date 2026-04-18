@@ -1,5 +1,4 @@
-﻿import { useEffect, useState } from "react";
-import { Activity, Flame, HeartPulse, Target, TrendingUp } from "lucide-react";
+﻿import { Activity, Flame, HeartPulse, Target, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Progress } from "./ui/progress";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
@@ -10,186 +9,144 @@ import {
   ProgressOverviewEmptyState,
   WeeklyChartEmptyState,
 } from "./ui/EmptyState";
-import { getCurrentUser, getUserProfile } from "../../services/authService";
-import { fetchWorkouts } from "../../services/fitnessService";
+import { getCurrentUser } from "../../services/authService";
 import { getUserSeedData } from "../../services/onboardingService";
+import { useDashboardData } from "../../hooks/useDashboardData";
 
 export function Dashboard() {
-  const [workouts, setWorkouts] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [weeklyData, setWeeklyData] = useState(
-    [
-      { day: "T2", calories: 0, steps: 0 },
-      { day: "T3", calories: 0, steps: 0 },
-      { day: "T4", calories: 0, steps: 0 },
-      { day: "T5", calories: 0, steps: 0 },
-      { day: "T6", calories: 0, steps: 0 },
-      { day: "T7", calories: 0, steps: 0 },
-      { day: "CN", calories: 0, steps: 0 },
-    ]
-  );
-  const [seedData, setSeedData] = useState<any | null>(null);
-
   const user = getCurrentUser();
-  const [profile, setProfile] = useState<{ age?: number; gender?: string; height?: number; weight?: number; fitnessGoal?: string; activityLevel?: string; experienceLevel?: string } | null>(null);
+  const { data, isLoading, error, refreshData } = useDashboardData(user?.id);
 
-  const hasWorkoutPlan = workouts > 0;
-  const isWeeklyEmpty = weeklyData.every((item) => item.calories === 0 && item.steps === 0);
-  const isPostOnboarding = !hasWorkoutPlan && Boolean(seedData);
-  const postOnboardingCards = seedData?.suggestedCards || [];
+  const seedData = user ? getUserSeedData(user.id) : null;
+  const hasWorkoutPlan = Boolean(data.todayWorkout?.todayWorkoutCount);
+  const isWeeklyEmpty = data.weeklySummary.every((item) => item.calories === 0 && item.steps === 0);
+  const isPostOnboarding = !hasWorkoutPlan && (!data.goals || data.goals.length === 0) && Boolean(seedData);
 
   const handleCreateWorkoutPlan = () => {
     console.log("CTA: Tạo kế hoạch tập luyện");
   };
-
   const handleLogSession = () => {
     console.log("CTA: Ghi buổi tập hôm nay");
   };
-
   const handleSetNutritionGoal = () => {
     console.log("CTA: Đặt mục tiêu dinh dưỡng");
   };
-
   const handleStartProgress = () => {
     console.log("CTA: Bắt đầu hành trình ngay");
   };
-
   const handleLogWeeklyActivity = () => {
     console.log("CTA: Ghi hoạt động hôm nay");
   };
 
-  useEffect(() => {
-    const load = async () => {
-      if (!user) return;
-      setIsLoading(true);
-      try {
-        const [data, profileData] = await Promise.all([
-          fetchWorkouts(user.id).catch(() => []),
-          getUserProfile(user.id).catch(() => null),
-        ]);
-        setWorkouts(data.length);
-        if (profileData) setProfile(profileData);
-
-        const seed = getUserSeedData(user.id);
-        if (data.length === 0 && seed) {
-          setSeedData(seed);
-        } else {
-          setSeedData(null);
-        }
-
-        const sampleDays = data.slice(0, 7).map((item, index) => ({
-          day: ["T2", "T3", "T4", "T5", "T6", "T7", "CN"][index] || "T?",
-          calories: 300 + (index + 1) * 50,
-          steps: 5000 + (index + 1) * 1200,
-        }));
-        if (sampleDays.length > 0) setWeeklyData(sampleDays);
-      } catch (error) {
-        console.error("Lấy dữ liệu dashboard thất bại", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
-  }, [user]);
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-2xl p-6 shadow-lg">
-        <h2 className="text-2xl font-bold">Xin chào{user ? `, ${user.fullName || user.email}` : "!"} 👋</h2>
-        <p className="text-blue-100 mt-1">
-          {isPostOnboarding
-            ? "Ngày đầu tiên của bạn bắt đầu tại đây. Tạo thói quen và theo dõi tiến bộ từng bước."
-            : "Bảng điều khiển realtime với dữ liệu từ backend"}
-        </p>
+      <div className="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-white shadow-lg">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Xin chào{user ? `, ${user.fullName || user.email}` : "!"} 👋</h2>
+            <p className="text-blue-100 mt-1">
+              {isPostOnboarding
+                ? "Bắt đầu từ đây với thói quen mới."
+                : "Dữ liệu dashboard chỉ tải một lần khi trang được mở."}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={isLoading || !user}
+            className="inline-flex items-center justify-center rounded-full bg-white/20 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isLoading ? "Đang làm mới..." : "Làm mới"}
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">
+            <p className="font-semibold">Lỗi tải dữ liệu dashboard</p>
+            <p>{error}</p>
+          </div>
+        )}
       </div>
 
-      {profile && (
+      {isLoading && !data.goals.length ? (
         <Card>
           <CardContent>
-            <div className="flex justify-between items-start">
+            <p className="text-sm text-slate-500">Đang tải dữ liệu dashboard, vui lòng chờ...</p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500">Hồ sơ của bạn</p>
-                <p className="text-lg font-semibold mt-1">{profile.gender}, {profile.age} tuổi</p>
-                <p className="text-sm text-gray-600 mt-1">{profile.height} cm • {profile.weight} kg</p>
-                <p className="text-sm text-gray-600">Mục tiêu: {profile.fitnessGoal}</p>
-                <p className="text-sm text-gray-600">Kinh nghiệm: {profile.experienceLevel}</p>
-                <p className="text-sm text-gray-600">Hoạt động: {profile.activityLevel}</p>
+                <p className="text-sm text-gray-500">Mục tiêu</p>
+                <p className="text-3xl font-bold mt-1">{data.goals.length || 0}</p>
+                <p className="text-xs text-slate-500 mt-1">{data.goals.length ? "Mục tiêu đang theo dõi" : "Chưa có mục tiêu nào"}</p>
               </div>
-              <div className="bg-white/20 p-2 rounded-full text-blue-100">🏃</div>
+              <div className="bg-blue-100 p-3 rounded-full">
+                <Target className="w-8 h-8 text-blue-600" />
+              </div>
             </div>
           </CardContent>
         </Card>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {isPostOnboarding && seedData ? (
-          seedData.suggestedCards.map((card: any, index: number) => (
-            <Card key={index}>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">Lời nhắc ngày đầu</p>
-                    <p className="text-xl font-semibold mt-2 text-slate-900">{card.title}</p>
-                    <p className="text-sm text-slate-600 mt-2">{card.description}</p>
-                  </div>
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-100 text-violet-700 shadow-sm">
-                    {index === 0 ? <Activity className="w-7 h-7" /> : index === 1 ? <Flame className="w-7 h-7" /> : index === 2 ? <HeartPulse className="w-7 h-7" /> : <TrendingUp className="w-7 h-7" />}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => console.log(card.actionText)}
-                  className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#7C3AED] to-[#A855F7] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 hover:shadow-violet-500/30"
-                >
-                  {card.actionText}
-                </button>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <>
-            {hasWorkoutPlan ? (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Kế hoạch tập luyện</p>
-                      <p className="text-3xl font-bold mt-1">{workouts}</p>
-                      <p className="text-xs text-green-600 mt-1">{isLoading ? "Đang tải..." : "Đã đồng bộ"}</p>
-                    </div>
-                    <div className="bg-blue-100 p-3 rounded-full"><Activity className="w-8 h-8 text-blue-600" /></div>
-                  </div>
-                  <Progress value={Math.min(100, workouts * 10)} className="mt-4" />
-                </CardContent>
-              </Card>
-            ) : (
-              <WorkoutPlanEmptyState onAction={handleCreateWorkoutPlan} />
-            )}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Buổi tập hôm nay</p>
+                <p className="text-3xl font-bold mt-1">{data.todayWorkout?.todayWorkoutCount ?? 0}</p>
+                <p className="text-xs text-slate-500 mt-1">{data.todayWorkout ? "Dữ liệu từ backend" : "Chưa có buổi tập"}</p>
+              </div>
+              <div className="bg-emerald-100 p-3 rounded-full">
+                <Activity className="w-8 h-8 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-            {hasWorkoutPlan ? (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Kế hoạch mới nhất</p>
-                      <p className="text-3xl font-bold mt-1">Có</p>
-                      <p className="text-xs text-blue-600 mt-1">Từ /api/workouts</p>
-                    </div>
-                    <div className="bg-orange-100 p-3 rounded-full"><Flame className="w-8 h-8 text-orange-600" /></div>
-                  </div>
-                  <Progress value={80} className="mt-4" />
-                </CardContent>
-              </Card>
-            ) : (
-              <LatestSessionEmptyState onAction={handleLogSession} />
-            )}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Dinh dưỡng hôm nay</p>
+                <p className="text-3xl font-bold mt-1">{data.todayNutrition ? data.todayNutrition.todayCalories : 0}</p>
+                <p className="text-xs text-slate-500 mt-1">{data.todayNutrition ? "Kcal đã tính" : "Chưa có dữ liệu"}</p>
+              </div>
+              <div className="bg-orange-100 p-3 rounded-full">
+                <Flame className="w-8 h-8 text-orange-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-            <NutritionGoalEmptyState onAction={handleSetNutritionGoal} />
-
-            <ProgressOverviewEmptyState onAction={handleStartProgress} />
-          </>
-        )}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500">Hoạt động tuần</p>
+                <p className="text-3xl font-bold mt-1">{data.weeklySummary.reduce((sum, item) => sum + item.steps, 0)}</p>
+                <p className="text-xs text-slate-500 mt-1">Tổng bước trong tuần</p>
+              </div>
+              <div className="bg-violet-100 p-3 rounded-full">
+                <TrendingUp className="w-8 h-8 text-violet-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {!hasWorkoutPlan && !error ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <WorkoutPlanEmptyState onAction={handleCreateWorkoutPlan} />
+          <LatestSessionEmptyState onAction={handleLogSession} />
+          <NutritionGoalEmptyState onAction={handleSetNutritionGoal} />
+          <ProgressOverviewEmptyState onAction={handleStartProgress} />
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -198,7 +155,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent className="relative overflow-hidden">
             <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={weeklyData}>
+              <AreaChart data={data.weeklySummary}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -209,9 +166,6 @@ export function Dashboard() {
             {isWeeklyEmpty && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/90 px-6 py-8 text-center">
                 <WeeklyChartEmptyState onAction={handleLogWeeklyActivity} />
-                {seedData?.weeklyMessage && (
-                  <p className="mt-3 max-w-xs text-sm text-slate-500">{seedData.weeklyMessage}</p>
-                )}
               </div>
             )}
           </CardContent>
@@ -223,7 +177,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent className="relative overflow-hidden">
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyData}>
+              <BarChart data={data.weeklySummary}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -234,9 +188,6 @@ export function Dashboard() {
             {isWeeklyEmpty && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-3xl bg-white/90 px-6 py-8 text-center">
                 <WeeklyChartEmptyState onAction={handleLogWeeklyActivity} />
-                {seedData?.weeklyMessage && (
-                  <p className="mt-3 max-w-xs text-sm text-slate-500">{seedData.weeklyMessage}</p>
-                )}
               </div>
             )}
           </CardContent>

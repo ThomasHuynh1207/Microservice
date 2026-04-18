@@ -9,6 +9,7 @@ export interface WorkoutPlan {
 }
 
 export interface ProgressEntry {
+  id?: number;
   weight: number;
   bodyFat: number;
   caloriesBurned: number;
@@ -36,6 +37,7 @@ export const createWorkout = async (
 };
 
 export const saveProgress = async (
+  progressId: number | null,
   userId: number,
   data: {
     weight: number;
@@ -44,6 +46,15 @@ export const saveProgress = async (
     workoutMinutes: number;
   }
 ): Promise<ProgressEntry> => {
-  const res = await api.post(`/progress/${userId}`, data);
+  if (progressId) {
+    const res = await api.put(`/progress/${progressId}`, data);
+    return res.data as ProgressEntry;
+  }
+
+  const res = await api.post(`/progress`, {
+    userId,
+    date: new Date().toISOString().split("T")[0],
+    ...data,
+  });
   return res.data as ProgressEntry;
 };

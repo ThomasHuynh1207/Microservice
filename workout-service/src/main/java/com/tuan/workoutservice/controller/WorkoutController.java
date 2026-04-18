@@ -1,8 +1,11 @@
 package com.tuan.workoutservice.controller;
 
+import com.tuan.workoutservice.dto.SeedWorkoutRequest;
 import com.tuan.workoutservice.dto.WorkoutPlanDTO;
+import com.tuan.workoutservice.dto.WorkoutPlanDetailDTO;
 import com.tuan.workoutservice.dto.WorkoutSessionDTO;
 import com.tuan.workoutservice.service.WorkoutService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -27,6 +30,12 @@ public class WorkoutController {
     public ResponseEntity<WorkoutPlanDTO> createWorkoutPlan(@RequestBody WorkoutPlanDTO planDTO) {
         WorkoutPlanDTO createdPlan = workoutService.createWorkoutPlan(planDTO);
         return ResponseEntity.ok(createdPlan);
+    }
+
+    @PostMapping("/generate-sample")
+    public ResponseEntity<WorkoutPlanDetailDTO> generateSampleWorkoutPlan(@Valid @RequestBody SeedWorkoutRequest request) {
+        WorkoutPlanDetailDTO generatedPlan = workoutService.generateSampleWorkoutPlan(request);
+        return ResponseEntity.ok(generatedPlan);
     }
 
     @PutMapping("/plans/{id}")

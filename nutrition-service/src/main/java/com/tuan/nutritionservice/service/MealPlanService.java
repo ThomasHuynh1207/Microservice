@@ -8,13 +8,11 @@ import com.tuan.nutritionservice.dto.response.MealPlanProgressResponse;
 import com.tuan.nutritionservice.dto.response.MealPlanResponse;
 import com.tuan.nutritionservice.dto.response.UserNutritionProfileDto;
 import com.tuan.nutritionservice.entity.DailyMeal;
-import com.tuan.nutritionservice.entity.FoodItem;
 import com.tuan.nutritionservice.entity.MealItem;
 import com.tuan.nutritionservice.entity.MealPlan;
 import com.tuan.nutritionservice.entity.MealPlanStatus;
 import com.tuan.nutritionservice.entity.MealType;
 import com.tuan.nutritionservice.exception.NutritionException;
-import com.tuan.nutritionservice.repository.FoodItemRepository;
 import com.tuan.nutritionservice.repository.MealPlanRepository;
 import com.tuan.nutritionservice.client.UserServiceClient;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,7 +28,6 @@ import java.util.stream.Collectors;
 public class MealPlanService {
 
     private final MealPlanRepository mealPlanRepository;
-    private final FoodItemRepository foodItemRepository;
     private final MealPlanGenerator mealPlanGenerator;
     private final MealPlanTrackingService trackingService;
     private final UserServiceClient userServiceClient;

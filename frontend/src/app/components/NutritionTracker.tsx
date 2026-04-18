@@ -31,6 +31,7 @@ export function NutritionTracker() {
     fat: "",
   });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [progressId, setProgressId] = useState<number | null>(null);
   const [progress, setProgress] = useState({
     weight: "70",
     bodyFat: "20",
@@ -38,6 +39,8 @@ export function NutritionTracker() {
     workoutMinutes: "45",
   });
   const [lastSaved, setLastSaved] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string>("");
 
   const user = getCurrentUser();
 
@@ -64,18 +67,28 @@ export function NutritionTracker() {
       return;
     }
 
+    setIsSaving(true);
+    setSaveError("");
+
     try {
-      await saveProgress(user.id, {
+      const savedProgress = await saveProgress(progressId, user.id, {
         weight: Number(progress.weight),
         bodyFat: Number(progress.bodyFat),
         caloriesBurned: Number(progress.caloriesBurned),
         workoutMinutes: Number(progress.workoutMinutes),
       });
+
+      if (savedProgress.id) {
+        setProgressId(savedProgress.id);
+      }
+
       setLastSaved(new Date().toLocaleString("vi-VN"));
       alert("Lưu tiến trình thành công.");
     } catch (error) {
       console.error(error);
-      alert("Lưu tiến trình thất bại. Vui lòng thử lại.");
+      setSaveError("Lưu tiến trình thất bại. Vui lòng thử lại.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -92,8 +105,11 @@ export function NutritionTracker() {
           <h2 className="text-3xl font-bold">Theo dõi dinh dưỡng</h2>
           <p className="text-gray-500 mt-1">Nhận dữ liệu và lưu tiến trình thật từ API</p>
         </div>
-        <Button onClick={handleSaveProgress} className="bg-green-600 hover:bg-green-700">Lưu tiến độ vào backend</Button>
+        <Button onClick={handleSaveProgress} disabled={isSaving} className="bg-green-600 hover:bg-green-700">
+          {isSaving ? "Đang lưu..." : "Lưu tiến độ vào backend"}
+        </Button>
       </div>
+      {saveError && <p className="text-red-600 mt-2">{saveError}</p>}
 
       <Card>
         <CardHeader>
