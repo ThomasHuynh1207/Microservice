@@ -163,7 +163,6 @@ export function Onboarding() {
                   <Input
                     id="age"
                     type="number"
-                    placeholder="25"
                     className="mt-2 text-lg p-6"
                     value={formData.age}
                     onChange={(e) => setFormData({ ...formData, age: e.target.value })}
@@ -186,7 +185,6 @@ export function Onboarding() {
                     <Input
                       id="height"
                       type="number"
-                      placeholder="170"
                       className="mt-2 text-lg p-6"
                       value={formData.height}
                       onChange={(e) => setFormData({ ...formData, height: e.target.value })}
@@ -198,7 +196,6 @@ export function Onboarding() {
                       id="weight"
                       type="number"
                       step="0.1"
-                      placeholder="70"
                       className="mt-2 text-lg p-6"
                       value={formData.weight}
                       onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
@@ -212,7 +209,6 @@ export function Onboarding() {
                     id="targetWeight"
                     type="number"
                     step="0.1"
-                    placeholder="65"
                     className="mt-2 text-lg p-6"
                     value={formData.targetWeight}
                     onChange={(e) => setFormData({ ...formData, targetWeight: e.target.value })}

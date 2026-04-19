@@ -6,7 +6,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { login } from "../../services/authService";
+import { login, resolveInitialRouteAfterLogin } from "../../services/authService";
 
 export function Login() {
 
@@ -26,8 +26,9 @@ export function Login() {
     setLoading(true);
 
     try {
-      await login(formData.email, formData.password);
-      navigate("/dashboard");
+      const user = await login(formData.email, formData.password);
+      const initialRoute = await resolveInitialRouteAfterLogin(user.id);
+      navigate(initialRoute);
     } catch (err: any) {
       console.error(err);
       alert(err?.response?.data?.message || "Email hoặc mật khẩu không đúng!");
@@ -84,7 +85,6 @@ export function Login() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="your@email.com"
                     className="pl-10"
                     value={formData.email}
                     onChange={(e) =>
@@ -110,7 +110,6 @@ export function Login() {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
                     className="pl-10 pr-10"
                     value={formData.password}
                     onChange={(e) =>

@@ -54,6 +54,20 @@ spring:
           filters:
             - JwtAuthenticationFilter
 
+        - id: nutrition-service
+          uri: lb://nutrition-service
+          predicates:
+            - Path=/api/v1/meal-plans/**
+          filters:
+            - JwtAuthenticationFilter
+
+        - id: admin-api-on-auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/admin/**
+          filters:
+            - JwtAuthenticationFilter
+
         - id: profile-service
           uri: lb://user-service
           predicates:

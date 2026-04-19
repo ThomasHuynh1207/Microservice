@@ -1,3 +1,5 @@
+import api from "../api/api";
+
 export type GoalOption =
   | "lose"
   | "build"
@@ -69,6 +71,16 @@ export interface DashboardSeed {
   suggestedCards: Array<{ title: string; description: string; actionText: string }>;
   weeklyMessage: string;
   createdAt: string;
+}
+
+export interface OnboardingStepSetting {
+  stepIndex: number;
+  stepKey: string;
+  title: string;
+  headline: string;
+  helperText: string;
+  imageUrl: string;
+  optionImageUrls: Record<string, string>;
 }
 
 const ONBOARDING_SEED_PREFIX = "fitlife-pro-onboarding-seed";
@@ -242,6 +254,53 @@ export const createDashboardSeed = (profile: OnboardingProfile): DashboardSeed =
 
 export const initializeUserData = async (userId: number, profile: OnboardingProfile): Promise<DashboardSeed> => {
   const seed = createDashboardSeed(profile);
+
+  const allergies = profile.allergies
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const weeklyGoalByFrequency: Record<TrainingFrequency, number> = {
+    beginner: 2,
+    light: 2,
+    moderate: 4,
+    intense: 6,
+    adaptive: 3,
+  };
+
+  const onboardingSnapshot = {
+    gender: profile.gender,
+    age: profile.age,
+    height: profile.height,
+    weight: profile.weight,
+    targetWeight: profile.targetWeight,
+    goal: profile.goal,
+    trainingFrequency: profile.trainingFrequency,
+    dietPreference: profile.dietPreference,
+    bmi: profile.bmi,
+    recommendedCalories: profile.recommendedCalories,
+  };
+
+  await api.post(`/profile/${userId}`, {
+    bio: JSON.stringify(onboardingSnapshot),
+    fitnessLevel: profile.trainingFrequency,
+    preferredWorkoutType: `${profile.goal} - ${profile.preferences.join(", ")}`,
+    weeklyGoal: weeklyGoalByFrequency[profile.trainingFrequency],
+    targetCalories: profile.recommendedCalories,
+    proteinTarget: profile.macros?.protein ?? 0,
+    carbsTarget: profile.macros?.carbs ?? 0,
+    fatTarget: profile.macros?.fat ?? 0,
+    mealsPerDay: 3,
+    preferences: profile.preferences,
+    allergies,
+  });
+
+  try {
+    await api.post(`/users/${userId}/onboarding-complete`);
+  } catch {
+    // Not all deployments expose this endpoint through the gateway.
+  }
+
   try {
     localStorage.setItem(storageKey(userId), JSON.stringify(seed));
   } catch {
@@ -259,6 +318,11 @@ export const getUserSeedData = (userId: number): DashboardSeed | null => {
   } catch {
     return null;
   }
+};
+
+export const fetchOnboardingStepSettings = async (): Promise<OnboardingStepSetting[]> => {
+  const response = await api.get<OnboardingStepSetting[]>("/auth/onboarding-steps");
+  return Array.isArray(response.data) ? response.data : [];
 };
 
 export const clearUserSeedData = (userId: number) => {

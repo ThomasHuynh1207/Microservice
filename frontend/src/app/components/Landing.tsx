@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Activity, Apple, Calendar, MessageCircle, TrendingUp, Users, Award, Zap } from "lucide-react";
+import { Activity, Apple, Calendar, Bot, TrendingUp, Users, Award, Zap } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 
@@ -18,6 +18,9 @@ export function Landing() {
             </h1>
           </div>
           <div className="flex items-center gap-4">
+            <a href="http://localhost:3001">
+              <Button variant="outline">Admin</Button>
+            </a>
             <Link to="/login">
               <Button variant="ghost">Đăng nhập</Button>
             </Link>
@@ -125,9 +128,9 @@ export function Landing() {
           <Card className="border-none shadow-lg hover:shadow-xl transition-shadow">
             <CardContent className="pt-6">
               <div className="bg-pink-100 w-14 h-14 rounded-full flex items-center justify-center mb-4">
-                <MessageCircle className="w-7 h-7 text-pink-600" />
+                <Bot className="w-7 h-7 text-pink-600" />
               </div>
-              <h3 className="text-xl font-bold mb-2">Fitness Coach AI</h3>
+              <h3 className="text-xl font-bold mb-2">Coach AI</h3>
               <p className="text-gray-600">
                 Chatbot thông minh hỗ trợ 24/7, tư vấn kế hoạch tập và động lực.
               </p>

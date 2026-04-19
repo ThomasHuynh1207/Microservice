@@ -45,6 +45,29 @@ export interface DashboardData {
   };
 }
 
+interface WorkoutSessionItem {
+  id: number;
+  startTime?: string;
+  durationMinutes?: number;
+  completed?: boolean;
+}
+
+interface ProgressLogItem {
+  id: number;
+  date?: string;
+  workoutMinutes?: number;
+}
+
+interface BackendProfile {
+  fitnessLevel?: string;
+  preferredWorkoutType?: string;
+  weeklyGoal?: number;
+  targetCalories?: number;
+  proteinTarget?: number;
+  carbsTarget?: number;
+  fatTarget?: number;
+}
+
 const defaultWeeklyData: WeeklyDaySummary[] = [
   { day: "T2", calories: 0, steps: 0 },
   { day: "T3", calories: 0, steps: 0 },
@@ -55,31 +78,163 @@ const defaultWeeklyData: WeeklyDaySummary[] = [
   { day: "CN", calories: 0, steps: 0 },
 ];
 
+const weekdayLabel = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+const toDateKey = (value: Date) => value.toISOString().split("T")[0];
+
+const buildWeeklySummaryFromProgress = (logs: ProgressLogItem[]): WeeklyDaySummary[] => {
+  const today = new Date();
+  const keys: string[] = [];
+  const keySet = new Set<string>();
+
+  for (let i = 6; i >= 0; i -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    const key = toDateKey(day);
+    keys.push(key);
+    keySet.add(key);
+  }
+
+  const map = new Map<string, { calories: number; steps: number }>();
+
+  logs.forEach((log) => {
+    if (!log.date || !keySet.has(log.date)) return;
+    const minutes = Number(log.workoutMinutes || 0);
+    const current = map.get(log.date) || { calories: 0, steps: 0 };
+    // Ước tính đơn giản cho dashboard khi backend chưa trả calories/steps tổng hợp.
+    current.calories += Math.max(0, Math.round(minutes * 6));
+    current.steps += Math.max(0, Math.round(minutes * 120));
+    map.set(log.date, current);
+  });
+
+  return keys.map((key) => {
+    const date = new Date(`${key}T00:00:00`);
+    const metric = map.get(key) || { calories: 0, steps: 0 };
+    return {
+      day: weekdayLabel[date.getDay()],
+      calories: metric.calories,
+      steps: metric.steps,
+    };
+  });
+};
+
+const buildTodayWorkoutFromSessions = (sessions: WorkoutSessionItem[]): DashboardWorkoutSummary => {
+  const todayKey = toDateKey(new Date());
+  const todaySessions = sessions.filter((session) => session.startTime?.startsWith(todayKey));
+  const activeMinutes = todaySessions.reduce((sum, session) => sum + Number(session.durationMinutes || 0), 0);
+  return {
+    todayWorkoutCount: todaySessions.length,
+    activeMinutes,
+    caloriesBurned: Math.max(0, Math.round(activeMinutes * 6)),
+  };
+};
+
+const buildGoalsFromProfileAndProgress = (
+  profile: BackendProfile | undefined,
+  logs: ProgressLogItem[]
+): DashboardGoals[] => {
+  if (!profile) return [];
+
+  const today = new Date();
+  const weekKeys = new Set<string>();
+  for (let i = 6; i >= 0; i -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    weekKeys.add(toDateKey(day));
+  }
+
+  const weeklyMinutes = logs
+    .filter((log) => Boolean(log.date) && weekKeys.has(log.date as string))
+    .reduce((sum, log) => sum + Number(log.workoutMinutes || 0), 0);
+
+  const goals: DashboardGoals[] = [];
+
+  if (profile.weeklyGoal && profile.weeklyGoal > 0) {
+    const targetMinutes = profile.weeklyGoal * 60;
+    goals.push({
+      goalName: "Vận động mỗi tuần",
+      targetValue: targetMinutes,
+      currentValue: weeklyMinutes,
+      progressPercent: Math.min(100, Math.round((weeklyMinutes / targetMinutes) * 100)),
+    });
+  }
+
+  if (profile.targetCalories && profile.targetCalories > 0) {
+    goals.push({
+      goalName: "Mục tiêu calo mỗi ngày",
+      targetValue: profile.targetCalories,
+      currentValue: profile.targetCalories,
+      progressPercent: 100,
+    });
+  }
+
+  return goals;
+};
+
 const fetchDashboardData = async (userId: number, signal: AbortSignal): Promise<DashboardData> => {
+  const safeDefault: DashboardData = {
+    goals: [],
+    todayWorkout: {
+      todayWorkoutCount: 0,
+      activeMinutes: 0,
+      caloriesBurned: 0,
+    },
+    todayNutrition: {
+      todayCalories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      waterIntake: 0,
+    },
+    weeklySummary: defaultWeeklyData,
+    profile: {},
+  };
+
   try {
     console.log("[Dashboard] fetch /dashboard");
     const response = await api.get<DashboardData>("/dashboard", { signal });
     return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      // Nếu không có endpoint aggregator, fallback sang các endpoint tách riêng.
-      console.log("[Dashboard] /dashboard không tồn tại, fallback sang endpoint riêng");
-      const [goalsRes, workoutRes, nutritionRes, weeklyRes, profileRes] = await Promise.all([
-        api.get<DashboardGoals[]>("/user/goals", { signal }),
-        api.get<DashboardWorkoutSummary>("/workouts/today", { signal }),
-        api.get<DashboardNutritionSummary>("/nutrition/today", { signal }),
-        api.get<WeeklyDaySummary[]>("/nutrition/weekly", { signal }),
-        api.get(`/profile/${userId}`, { signal }),
-      ]);
-      return {
-        goals: goalsRes.data,
-        todayWorkout: workoutRes.data,
-        todayNutrition: nutritionRes.data,
-        weeklySummary: weeklyRes.data,
-        profile: profileRes.data,
-      };
+    if (signal.aborted) {
+      throw error;
     }
-    throw error;
+
+    console.log("[Dashboard] endpoint tổng hợp lỗi, dùng fallback mềm", error);
+    try {
+      const [profileRes, sessionsRes, progressRes] = await Promise.allSettled([
+        api.get<BackendProfile>(`/profile/${userId}`, { signal }),
+        api.get<WorkoutSessionItem[]>(`/workouts/sessions/user/${userId}`, { signal }),
+        api.get<ProgressLogItem[]>(`/progress/user/${userId}`, { signal }),
+      ]);
+
+      const profile = profileRes.status === "fulfilled" ? profileRes.value.data : undefined;
+      const sessions = sessionsRes.status === "fulfilled" ? sessionsRes.value.data : [];
+      const progressLogs = progressRes.status === "fulfilled" ? progressRes.value.data : [];
+
+      return {
+        goals: buildGoalsFromProfileAndProgress(profile, progressLogs),
+        todayWorkout: buildTodayWorkoutFromSessions(sessions),
+        todayNutrition: {
+          todayCalories: Number(profile?.targetCalories || 0),
+          protein: Number(profile?.proteinTarget || 0),
+          carbs: Number(profile?.carbsTarget || 0),
+          fat: Number(profile?.fatTarget || 0),
+          waterIntake: 0,
+        },
+        weeklySummary: buildWeeklySummaryFromProgress(progressLogs),
+        profile: {
+          fitnessGoal: profile?.preferredWorkoutType,
+          activityLevel: profile?.fitnessLevel,
+          experienceLevel: profile?.fitnessLevel,
+        },
+      };
+    } catch (fallbackError) {
+      if (signal.aborted) {
+        throw fallbackError;
+      }
+      console.error("[Dashboard] fallback lỗi, trả dữ liệu mặc định", fallbackError);
+      return safeDefault;
+    }
   }
 };
 

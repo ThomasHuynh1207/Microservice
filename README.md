@@ -1,16 +1,23 @@
 # Spring Boot Microservices
-
+http://localhost:3000 (User Frontend)
+http://localhost:3001 (Admin Frontend - yeu cau dang nhap)
 ## Overview
+docker compose up -d --build
+## Default Admin Login
+
+- admin@gmail.com / admin12345
+- nguyenvanb@gmail.com / Nam12345
 
 ## Target Microservices Architecture
 
 ### Services Overview
 1. **API Gateway** (Port 8080) - Routes requests and validates JWT
-2. **Auth Service** (Port 8081) - User authentication and JWT generation
+2. **Auth Service** (Port 8081) - User authentication, JWT generation, and admin user management APIs (`/api/admin/**`)
 3. **User Service** (Port 8082) - User profiles and information
 4. **Workout Service** (Port 8083) - Workout plans and sessions
 5. **Progress Service** (Port 8084) - Progress tracking and logs
 6. **AI Service** (Port 8085) - Chatbot using OpenAI API
+7. **Nutrition Service** (Port 8086) - Meal plans and nutrition tracking
 
 ### Database per Service
 - **auth-service**: `users` table
@@ -182,6 +189,14 @@ mvn spring-boot:run
 - Java 17+
 - Maven 3.6+
 
+### Sample Data Seeding
+
+- Auth Service se tu dong tao tai khoan mau (USER + ADMIN) voi mat khau BCrypt.
+- User Service se tu dong tao ho so nguoi dung mau.
+- Workout Service se tu dong tao ke hoach tap va buoi tap mau.
+- Progress Service se tu dong tao nhat ky tien do 7 ngay gan nhat.
+- AI Service se tu dong tao lich su hoi thoai mau neu bang chat_history chua co du lieu.
+
 ### Start Order
 1. Start API Gateway: `cd Microservice/api-gateway && mvn spring-boot:run`
 2. Start Auth Service: `cd Microservice/auth-service && mvn spring-boot:run`
@@ -239,8 +254,7 @@ Each service uses H2 in-memory database for simplicity. For production:
 ## Security Considerations
 
 - JWT tokens are validated at the gateway
-- Services trust the gateway's user headers
+- Services extract role claims from JWT and enforce authorization locally
 - Each service has its own database
-- Inter-service communication via Feign clients</content>
-<parameter name="filePath">d:\NCKH-New-2026\Microservice\README.md
+- Inter-service communication via Feign clients
 

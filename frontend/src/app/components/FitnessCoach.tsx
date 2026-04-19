@@ -132,7 +132,7 @@ export function FitnessCoach() {
             </div>
             <div>
               <CardTitle className="flex items-center gap-2">
-                Fitness Coach AI
+                Coach AI
                 <Badge variant="secondary" className="bg-green-100 text-green-700">
                   <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
                   Online
@@ -216,7 +216,6 @@ export function FitnessCoach() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === "Enter" && handleSend()}
-              placeholder="Nhập câu hỏi của bạn..."
               className="flex-1"
             />
             <Button

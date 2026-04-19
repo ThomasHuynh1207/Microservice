@@ -25,16 +25,16 @@ export function EmptyState({
   className,
 }: EmptyStateProps) {
   return (
-    <div className={`rounded-3xl border border-violet-100 bg-white shadow-sm px-6 py-10 text-center ${className || ""}`}>
-      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-violet-200 via-violet-100 to-white text-violet-700 shadow-md">
+    <div className={`rounded-2xl border border-slate-200 bg-white px-8 py-10 text-center shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-24px_rgba(15,23,42,0.45)] ${className || ""}`}>
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#EEF2FF_0%,#F5F3FF_100%)] text-indigo-600">
         {icon}
       </div>
-      <h3 className="mt-6 text-xl font-semibold text-slate-900">{title}</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-500">{description}</p>
+      <h3 className="mt-6 text-2xl font-semibold tracking-tight text-slate-900">{title}</h3>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-slate-500">{description}</p>
       <button
         type="button"
         onClick={onAction}
-        className="mt-6 inline-flex items-center justify-center rounded-full bg-gradient-to-r from-[#7C3AED] to-[#A855F7] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 hover:shadow-violet-500/30"
+        className="mt-8 inline-flex items-center justify-center rounded-xl bg-[linear-gradient(135deg,#6366F1_0%,#8B5CF6_100%)] px-6 py-3 text-sm font-semibold text-white shadow-[0_12px_24px_-14px_rgba(99,102,241,0.9)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_30px_-16px_rgba(139,92,246,0.95)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-300/60"
       >
         {actionText}
       </button>
@@ -92,16 +92,16 @@ export function ProgressOverviewEmptyState({ onAction }: { onAction: () => void 
 
 export function WeeklyChartEmptyState({ onAction }: { onAction: () => void }) {
   return (
-    <div className="relative rounded-3xl border border-violet-100 bg-white/95 p-8 text-center shadow-sm shadow-violet-100/80">
-      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-violet-200 via-violet-100 to-white text-violet-700 shadow-md">
+    <div className="relative rounded-2xl border border-slate-200 bg-white/95 p-8 text-center shadow-[0_10px_30px_-24px_rgba(15,23,42,0.45)]">
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-[linear-gradient(145deg,#EEF2FF_0%,#F5F3FF_100%)] text-indigo-600">
         <TrendingUp className="h-9 w-9" />
       </div>
-      <h3 className="text-xl font-semibold text-slate-900">Chưa có dữ liệu tuần này</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-500">Hãy ghi lại calo và bước chân để xem biểu đồ tiến bộ.</p>
+      <h3 className="text-2xl font-semibold tracking-tight text-slate-900">Chưa có dữ liệu tuần này</h3>
+      <p className="mt-3 text-sm leading-7 text-slate-500">Hãy ghi lại calo và bước chân để xem biểu đồ tiến bộ.</p>
       <button
         type="button"
         onClick={onAction}
-        className="mt-6 inline-flex items-center justify-center rounded-full bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+        className="mt-8 inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:border-slate-400 hover:bg-slate-50"
       >
         Ghi hoạt động hôm nay
       </button>

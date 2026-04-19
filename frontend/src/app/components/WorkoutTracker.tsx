@@ -80,11 +80,11 @@ export function WorkoutTracker() {
             <div className="space-y-3 mt-3">
               <div>
                 <Label>Tiêu đề</Label>
-                <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Kế hoạch Fullbody" />
+                <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
               </div>
               <div>
                 <Label>Mục tiêu</Label>
-                <Input value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} placeholder="Tăng cơ" />
+                <Input value={form.goal} onChange={(e) => setForm({ ...form, goal: e.target.value })} />
               </div>
               <div>
                 <Label>Nội dung kế hoạch</Label>
@@ -92,7 +92,6 @@ export function WorkoutTracker() {
                   className="w-full border rounded-md p-2"
                   value={form.planContent}
                   onChange={(e) => setForm({ ...form, planContent: e.target.value })}
-                  placeholder="- Squat 3x12\n- Bench press 3x10"
                   rows={5}
                 />
               </div>
@@ -121,7 +120,7 @@ export function WorkoutTracker() {
             <div className="flex gap-3 items-center">
               <div className="p-2 bg-orange-100 rounded-full"><Flame className="w-5 h-5 text-orange-600" /></div>
               <div>
-                <p className="text-sm text-gray-500">Load status</p>
+                <p className="text-sm text-gray-500">Trạng thái tải</p>
                 <p className="text-2xl font-bold">{isLoading ? "Đang tải..." : "Sẵn sàng"}</p>
               </div>
             </div>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FitLife Admin</title>
+    <link rel="stylesheet" href="styles.css?v=20260419-4" />
+  </head>
+  <body>
+    <section class="auth-screen" id="authScreen">
+      <div class="auth-card">
+        <h1>FitLife Admin</h1>
+        <p>Đăng nhập bằng tài khoản ADMIN để truy cập hệ thống quản trị người dùng.</p>
+        <form id="loginForm" class="auth-form">
+          <label for="emailInput">Email quản trị</label>
+          <input type="email" id="emailInput" required />
+
+          <label for="passwordInput">Mật khẩu</label>
+          <input type="password" id="passwordInput" required />
+
+          <button type="submit" class="btn primary">Đăng nhập</button>
+        </form>
+        <p class="auth-hint">Tài khoản mẫu: admin@gmail.com / admin12345</p>
+        <p class="auth-status" id="authStatus">Vui lòng đăng nhập để tiếp tục.</p>
+      </div>
+    </section>
+
+    <div class="admin-shell hidden" id="adminShell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">FitLife Admin</div>
+        <nav class="nav-list">
+          <button class="nav-item active" type="button" id="navUsers">Quản lý người dùng</button>
+          <button class="nav-item" type="button" id="navOnboarding">Cài đặt onboarding</button>
+          <button class="nav-item" type="button" disabled>Dữ liệu vận động</button>
+          <button class="nav-item" type="button" disabled>Dữ liệu dinh dưỡng</button>
+          <button class="nav-item" type="button" disabled>Lịch sử AI</button>
+        </nav>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button class="menu-button" id="menuToggle" aria-label="Mở menu">☰</button>
+          <div class="topbar-title" id="topbarTitle">Quản trị người dùng FitLife</div>
+          <button type="button" class="btn ghost" id="logoutBtn">Đăng xuất</button>
+        </header>
+
+        <main class="content">
+          <section id="usersView" class="view-section">
+            <section class="panel toolbar-panel">
+              <div class="toolbar-title-wrap">
+                <h2 class="panel-title">Điều phối người dùng</h2>
+                <p>Tìm kiếm nhanh, lọc theo quyền và cập nhật role trực tiếp trên một màn hình.</p>
+              </div>
+              <div class="toolbar-controls">
+                <input type="text" id="searchInput" />
+                <select id="roleFilter">
+                  <option value="ALL">Tất cả role</option>
+                  <option value="ADMIN">ADMIN</option>
+                  <option value="USER">USER</option>
+                </select>
+                <button type="button" class="btn secondary" id="searchBtn">Tìm kiếm</button>
+                <button type="button" class="btn primary" id="refreshBtn">Làm mới</button>
+              </div>
+            </section>
+
+            <section class="kpi-grid">
+              <article class="kpi-card">
+                <p class="kpi-label">Tổng người dùng</p>
+                <h2 id="kpiTotalUsers">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Tài khoản ADMIN</p>
+                <h2 id="kpiAdmins">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Tài khoản USER</p>
+                <h2 id="kpiUsers">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Hiển thị hiện tại</p>
+                <h2 id="kpiVisible">0</h2>
+              </article>
+            </section>
+
+            <section class="panel">
+              <div class="table-head">
+                <h3>Danh sách người dùng</h3>
+                <p id="lastUpdated">Cập nhật: chưa có dữ liệu</p>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Họ tên</th>
+                      <th>Email</th>
+                      <th>Role hiện tại</th>
+                      <th>Cập nhật role</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userRows"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <section id="onboardingView" class="view-section hidden">
+            <section class="panel toolbar-panel">
+              <div class="toolbar-title-wrap">
+                <h2 class="panel-title">Cài đặt onboarding 7 bước</h2>
+                <p>Sửa tiêu đề, nội dung và ảnh cho từng bước. Ảnh được lưu trong database và áp dụng trực tiếp cho trang onboarding.</p>
+              </div>
+              <div class="onboarding-toolbar">
+                <select id="onboardingStepSelect"></select>
+                <button type="button" class="btn secondary" id="reloadOnboardingBtn">Tải lại từ DB</button>
+                <button type="button" class="btn primary" id="saveOnboardingBtn">Lưu bước hiện tại</button>
+              </div>
+            </section>
+
+            <section class="panel onboarding-layout">
+              <div class="onboarding-form-grid">
+                <label for="onboardingTitleInput">Tiêu đề bước</label>
+                <input id="onboardingTitleInput" type="text" />
+
+                <label for="onboardingHeadlineInput">Tiêu đề chính</label>
+                <input id="onboardingHeadlineInput" type="text" />
+
+                <label for="onboardingHelperInput">Mô tả ngắn</label>
+                <textarea id="onboardingHelperInput" rows="3"></textarea>
+
+                <label for="onboardingImageInput">URL ảnh bước</label>
+                <input id="onboardingImageInput" type="url" />
+
+                <label for="onboardingOptionImagesInput">Ảnh option (JSON)</label>
+                <textarea id="onboardingOptionImagesInput" rows="6"></textarea>
+              </div>
+
+              <aside class="onboarding-preview" id="onboardingPreviewCard">
+                <div class="preview-image-wrap">
+                  <img id="onboardingPreviewImage" alt="Preview onboarding" />
+                </div>
+                <h3 id="onboardingPreviewTitle">Preview tiêu đề</h3>
+                <p id="onboardingPreviewHeadline">Preview headline</p>
+                <p id="onboardingPreviewHelper">Preview mô tả</p>
+                <p class="preview-note">Mẹo: với bước 4 và 5, thêm JSON ảnh option để thay icon bằng ảnh.</p>
+              </aside>
+            </section>
+
+            <div class="status-bar" id="onboardingStatus">Sẵn sàng chỉnh sửa cài đặt onboarding.</div>
+          </section>
+
+          <div class="status-bar" id="statusBar">Sẵn sàng.</div>
+        </main>
+      </div>
+    </div>
+
+    <script src="app.js?v=20260419-4"></script>
+  </body>
+</html>

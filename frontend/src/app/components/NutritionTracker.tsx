@@ -184,10 +184,10 @@ export function NutritionTracker() {
               </select>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Input type="number" placeholder="Calories" value={newMeal.calories} onChange={(e) => setNewMeal({ ...newMeal, calories: e.target.value })} />
-              <Input type="number" placeholder="Protein" value={newMeal.protein} onChange={(e) => setNewMeal({ ...newMeal, protein: e.target.value })} />
-              <Input type="number" placeholder="Carbs" value={newMeal.carbs} onChange={(e) => setNewMeal({ ...newMeal, carbs: e.target.value })} />
-              <Input type="number" placeholder="Fat" value={newMeal.fat} onChange={(e) => setNewMeal({ ...newMeal, fat: e.target.value })} />
+              <Input type="number" value={newMeal.calories} onChange={(e) => setNewMeal({ ...newMeal, calories: e.target.value })} />
+              <Input type="number" value={newMeal.protein} onChange={(e) => setNewMeal({ ...newMeal, protein: e.target.value })} />
+              <Input type="number" value={newMeal.carbs} onChange={(e) => setNewMeal({ ...newMeal, carbs: e.target.value })} />
+              <Input type="number" value={newMeal.fat} onChange={(e) => setNewMeal({ ...newMeal, fat: e.target.value })} />
             </div>
             <Button onClick={handleAddMeal} className="w-full bg-blue-600 hover:bg-blue-700">Lưu bữa ăn</Button>
           </div>

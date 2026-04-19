@@ -96,7 +96,6 @@ export function Register() {
                   <Input
                     id="name"
                     type="text"
-                    placeholder="Nguyễn Văn A"
                     className="pl-10"
                     value={formData.name}
                     onChange={(e) =>
@@ -121,7 +120,6 @@ export function Register() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="your@email.com"
                     className="pl-10"
                     value={formData.email}
                     onChange={(e) =>
@@ -147,7 +145,6 @@ export function Register() {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
                     className="pl-10 pr-10"
                     value={formData.password}
                     onChange={(e) =>
@@ -193,7 +190,6 @@ export function Register() {
                   <Input
                     id="confirmPassword"
                     type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
                     className="pl-10"
                     value={formData.confirmPassword}
                     onChange={(e) =>
