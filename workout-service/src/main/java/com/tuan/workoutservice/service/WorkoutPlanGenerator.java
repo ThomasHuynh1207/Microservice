@@ -18,9 +18,30 @@ public class WorkoutPlanGenerator {
     public static WorkoutPlan generateSamplePlan(SeedWorkoutRequest request) {
         String normalizedGoal = request.getGoal() == null ? "" : request.getGoal().toLowerCase(Locale.ROOT);
         String normalizedLevel = request.getTrainingLevel() == null ? "" : request.getTrainingLevel().toLowerCase(Locale.ROOT);
+        int trainingDaysPerWeek = normalizeTrainingDaysPerWeek(request.getTrainingDaysPerWeek());
 
         if (normalizedGoal.contains("giảm cân") || normalizedGoal.contains("giảm mỡ") || normalizedGoal.contains("fat")) {
-            return buildFatLossCircuit(request);
+            if (trainingDaysPerWeek <= 3) {
+                return buildFatLossCircuit(request);
+            }
+
+            if (trainingDaysPerWeek == 4) {
+                return buildBeginnerUpperLower(request);
+            }
+
+            return buildPushPullLegs(request);
+        }
+
+        if (trainingDaysPerWeek <= 3) {
+            return buildBeginnerFullBody(request);
+        }
+
+        if (trainingDaysPerWeek == 4) {
+            return buildBeginnerUpperLower(request);
+        }
+
+        if (trainingDaysPerWeek >= 5) {
+            return buildPushPullLegs(request);
         }
 
         if (normalizedLevel.contains("người mới") || normalizedLevel.contains("1-2") || normalizedLevel.contains("1 - 2") || normalizedLevel.contains("1 2")) {
@@ -37,6 +58,13 @@ public class WorkoutPlanGenerator {
 
         // Default: phù hợp cho người mới và có thể mở rộng
         return buildBeginnerFullBody(request);
+    }
+
+    private static int normalizeTrainingDaysPerWeek(Integer days) {
+        if (days == null) {
+            return 3;
+        }
+        return Math.max(1, Math.min(7, days));
     }
 
     // Template Full Body cho người mới, phù hợp tập 3 buổi/tuần

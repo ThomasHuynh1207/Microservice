@@ -31,7 +31,15 @@ export function Login() {
       navigate(initialRoute);
     } catch (err: any) {
       console.error(err);
-      alert(err?.response?.data?.message || "Email hoặc mật khẩu không đúng!");
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message
+        || (status === 401 || status === 403
+          ? "Email hoặc mật khẩu không đúng hoặc tài khoản đã bị xóa!"
+          : status === 502 || status === 503 || status === 504
+            ? "Hệ thống đang khởi động lại, vui lòng thử lại sau vài giây."
+            : err?.message
+              || "Đăng nhập thất bại, vui lòng thử lại sau vài giây." );
+      alert(message);
     } finally {
       setLoading(false);
     }

@@ -50,76 +50,78 @@ public class OnboardingStepSettingService {
         List<DefaultStep> defaults = List.of(
                 new DefaultStep(
                         0,
-                        "welcome",
-                    "Chào mừng",
-                    "Bắt đầu với vài câu hỏi nhanh",
-                    "Dành 3-5 phút để tạo dashboard và lộ trình đầu tiên.",
+                        "gender",
+                    "Gioi tinh",
+                    "Xac dinh thong tin co ban",
+                    "Chon gioi tinh de he thong tinh BMR/TDEE chinh xac hon.",
                         "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1000&q=80",
-                        Map.of()
+                        Map.of(
+                                "male", "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=400&q=80",
+                                "female", "https://images.unsplash.com/photo-1594737625785-a6cbdabd333c?auto=format&fit=crop&w=400&q=80",
+                                "other", "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=400&q=80"
+                        )
                 ),
                 new DefaultStep(
                         1,
-                        "basic-info",
-                    "Thông tin cơ bản",
-                    "Cho chúng tôi biết thông số hiện tại",
-                    "Thông tin này giúp tính BMR, TDEE và mục tiêu calo theo cơ thể của bạn.",
+                        "age",
+                    "Tuoi",
+                    "Cho chung toi biet do tuoi hien tai",
+                    "Do tuoi la yeu to quan trong de can doi cuong do tap va dinh duong.",
                         "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1000&q=80",
                         Map.of()
                 ),
                 new DefaultStep(
                         2,
-                        "main-goal",
-                    "Mục tiêu chính",
-                    "Bạn muốn đạt kết quả nào nhất trong 8-12 tuần tới?",
-                    "Chọn 1 mục tiêu chính để hệ thống ưu tiên bài tập và dinh dưỡng phù hợp.",
+                        "height",
+                    "Chieu cao",
+                    "Nhap chieu cao hien tai",
+                    "Chieu cao (cm) ket hop cung tuoi va can nang de tinh toan chi so chuan xac.",
                         "https://images.unsplash.com/photo-1605296867304-46d5465a13f1?auto=format&fit=crop&w=1000&q=80",
                         Map.of()
                 ),
                 new DefaultStep(
                         3,
-                        "training-level",
-                    "Mức độ tập luyện",
-                    "Đánh giá tần suất và cường độ hiện tại",
-                    "Mức độ vận động giúp cân bằng giữa hiệu quả và khả năng phục hồi.",
+                        "weight",
+                    "Can nang",
+                    "Nhap can nang hien tai",
+                    "Can nang hien tai la baseline de theo doi thay doi trong hanh trinh tap luyen.",
                         "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1000&q=80",
                         Map.of()
                 ),
                 new DefaultStep(
                         4,
-                        "workout-preferences",
-                    "Sở thích tập luyện",
-                    "Chọn kiểu tập bạn dễ duy trì đều đặn",
-                    "Bạn có thể chọn nhiều lựa chọn. Ảnh minh họa có thể sửa trong trang admin.",
+                        "goal",
+                    "Muc tieu",
+                    "Ban muon dat ket qua nao nhat?",
+                    "He thong se uu tien workout split va macro dua tren muc tieu chinh cua ban.",
                         "https://images.unsplash.com/photo-1576678927484-cc907957088c?auto=format&fit=crop&w=1000&q=80",
                         Map.of(
-                                "gym", "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=400&q=80",
-                                "home", "https://images.unsplash.com/photo-1599058917212-d750089bc07e?auto=format&fit=crop&w=400&q=80",
-                                "cardio", "https://images.unsplash.com/photo-1506197061617-7f5c0b093236?auto=format&fit=crop&w=400&q=80",
-                                "yoga", "https://images.unsplash.com/photo-1549570652-97324981a6fd?auto=format&fit=crop&w=400&q=80",
-                                "mixed", "https://images.unsplash.com/photo-1517963879433-6ad2b056d712?auto=format&fit=crop&w=400&q=80"
+                                "lose_weight", "https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=400&q=80",
+                                "maintain", "https://images.unsplash.com/photo-1517960413843-0aee8e2b3285?auto=format&fit=crop&w=400&q=80",
+                                "build_muscle", "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=400&q=80"
                         )
                 ),
                 new DefaultStep(
                         5,
-                        "nutrition",
-                    "Thông tin dinh dưỡng",
-                    "Lựa chọn chế độ ăn và lưu ý dị ứng",
-                    "Dữ liệu này giúp bộ lọc thực đơn và gợi ý bữa ăn an toàn cho bạn.",
+                        "activity-level",
+                    "Muc do van dong",
+                    "Danh gia tan suat va cuong do hien tai",
+                    "Thong tin nay giup tao lich tap phu hop, tranh qua tai va de duy tri lau dai.",
                         "https://images.unsplash.com/photo-1498837167922-ddd27525d352?auto=format&fit=crop&w=1000&q=80",
                         Map.of(
-                                "no-limit", "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80",
-                                "vegetarian", "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?auto=format&fit=crop&w=400&q=80",
-                                "vegan", "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80",
-                                "low-lactose", "https://images.unsplash.com/photo-1551024601-bec78aea704b?auto=format&fit=crop&w=400&q=80",
-                                "low-carb", "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=400&q=80"
+                                "sedentary", "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=400&q=80",
+                                "light", "https://images.unsplash.com/photo-1593079831268-3381b0db4a77?auto=format&fit=crop&w=400&q=80",
+                                "moderate", "https://images.unsplash.com/photo-1534258936925-c58bed479fcb?auto=format&fit=crop&w=400&q=80",
+                                "active", "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=400&q=80",
+                                "very_active", "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=400&q=80"
                         )
                 ),
                 new DefaultStep(
                         6,
-                        "summary",
-                    "Hoàn tất",
-                    "Kế hoạch cá nhân hóa của bạn đã sẵn sàng",
-                    "Xem tổng quan calo, macro và hướng dẫn khởi động trong ngày đầu tiên.",
+                        "specific-goal",
+                    "Muc tieu cu the",
+                    "Dat muc tieu ro rang cho 8-12 tuan toi",
+                    "Mo ta muc tieu cu the de he thong tao workout + nutrition plan sat voi nhu cau.",
                         "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=1000&q=80",
                         Map.of()
                 )

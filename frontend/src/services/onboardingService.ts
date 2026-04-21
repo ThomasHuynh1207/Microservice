@@ -9,9 +9,12 @@ export type GoalOption =
   | "wellness";
 
 export type TrainingFrequency =
+  | "sedentary"
   | "beginner"
   | "light"
   | "moderate"
+  | "active"
+  | "very_active"
   | "intense"
   | "adaptive";
 
@@ -31,7 +34,9 @@ export interface OnboardingProfile {
   targetWeight: number;
   goal: GoalOption;
   trainingFrequency: TrainingFrequency;
+  trainingDaysPerWeek: number;
   preferences: string[];
+  specificGoal?: string;
   dietPreference: DietPreference;
   allergies: string;
   bmi: number | null;
@@ -89,25 +94,31 @@ const storageKey = (userId: number) => `${ONBOARDING_SEED_PREFIX}-${userId}`;
 
 export const getActivityFactor = (trainingFrequency: TrainingFrequency) => {
   switch (trainingFrequency) {
+    case "sedentary":
+      return 1.2;
     case "beginner":
-      return 1.375;
+      return 1.2;
     case "light":
-      return 1.45;
+      return 1.375;
     case "moderate":
       return 1.55;
+    case "active":
     case "intense":
       return 1.725;
+    case "very_active":
+      return 1.9;
     default:
-      return 1.45;
+      return 1.55;
   }
 };
 
 export const computeBMR = (profile: OnboardingProfile) => {
   if (!profile.age || !profile.height || !profile.weight) return 0;
-  if (profile.gender === "Nữ") {
+  const normalizedGender = String(profile.gender || "").toLowerCase();
+  if (normalizedGender === "female" || normalizedGender === "nu" || normalizedGender === "nữ") {
     return 10 * profile.weight + 6.25 * profile.height - 5 * profile.age - 161;
   }
-  if (profile.gender === "Nam") {
+  if (normalizedGender === "male" || normalizedGender === "nam") {
     return 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + 5;
   }
   return 10 * profile.weight + 6.25 * profile.height - 5 * profile.age;
@@ -260,46 +271,19 @@ export const initializeUserData = async (userId: number, profile: OnboardingProf
     .map((item) => item.trim())
     .filter(Boolean);
 
-  const weeklyGoalByFrequency: Record<TrainingFrequency, number> = {
-    beginner: 2,
-    light: 2,
-    moderate: 4,
-    intense: 6,
-    adaptive: 3,
-  };
-
-  const onboardingSnapshot = {
+  await api.post(`/users/${userId}/onboarding-complete`, {
     gender: profile.gender,
     age: profile.age,
-    height: profile.height,
-    weight: profile.weight,
-    targetWeight: profile.targetWeight,
+    heightCm: profile.height,
+    weightKg: profile.weight,
     goal: profile.goal,
-    trainingFrequency: profile.trainingFrequency,
-    dietPreference: profile.dietPreference,
-    bmi: profile.bmi,
-    recommendedCalories: profile.recommendedCalories,
-  };
-
-  await api.post(`/profile/${userId}`, {
-    bio: JSON.stringify(onboardingSnapshot),
-    fitnessLevel: profile.trainingFrequency,
-    preferredWorkoutType: `${profile.goal} - ${profile.preferences.join(", ")}`,
-    weeklyGoal: weeklyGoalByFrequency[profile.trainingFrequency],
-    targetCalories: profile.recommendedCalories,
-    proteinTarget: profile.macros?.protein ?? 0,
-    carbsTarget: profile.macros?.carbs ?? 0,
-    fatTarget: profile.macros?.fat ?? 0,
-    mealsPerDay: 3,
+    activityLevel: profile.trainingFrequency,
+    trainingDaysPerWeek: profile.trainingDaysPerWeek,
+    specificGoal: profile.specificGoal?.trim() || `${profile.goal} den ${profile.targetWeight}kg`,
     preferences: profile.preferences,
     allergies,
+    dietPreference: profile.dietPreference,
   });
-
-  try {
-    await api.post(`/users/${userId}/onboarding-complete`);
-  } catch {
-    // Not all deployments expose this endpoint through the gateway.
-  }
 
   try {
     localStorage.setItem(storageKey(userId), JSON.stringify(seed));

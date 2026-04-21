@@ -35,6 +35,10 @@ public class MealPlanGenerator {
         }
         int mealsPerDay = Optional.ofNullable(request.getMealsPerDay())
                 .orElse(Optional.ofNullable(profile.getMealsPerDay()).orElse(3));
+        int targetCalories = resolveRequiredTarget(profile.getTargetCalories(), "targetCalories");
+        int proteinTarget = resolveRequiredTarget(profile.getProteinTarget(), "proteinTarget");
+        int carbsTarget = resolveRequiredTarget(profile.getCarbsTarget(), "carbsTarget");
+        int fatTarget = resolveRequiredTarget(profile.getFatTarget(), "fatTarget");
 
         MealPlan mealPlan = MealPlan.builder()
                 .userId(request.getUserId())
@@ -42,17 +46,17 @@ public class MealPlanGenerator {
                 .startDate(request.getStartDate())
                 .endDate(request.getStartDate().plusDays(6))
                 .mealsPerDay(mealsPerDay)
-                .targetCalories(request.getTargetCalories())
-                .proteinTarget(request.getProteinTarget())
-                .carbsTarget(request.getCarbsTarget())
-                .fatTarget(request.getFatTarget())
+                .targetCalories(targetCalories)
+                .proteinTarget(proteinTarget)
+                .carbsTarget(carbsTarget)
+                .fatTarget(fatTarget)
                 .status(MealPlanStatus.DRAFT)
                 .build();
 
         for (int dayIndex = 1; dayIndex <= 7; dayIndex++) {
             LocalDate date = request.getStartDate().plusDays(dayIndex - 1);
             DailyMeal dailyMeal = createDailyMeal(mealPlan, dayIndex, date, mealsPerDay,
-                    request.getTargetCalories(), request.getProteinTarget(), request.getCarbsTarget(), request.getFatTarget(), preferences, allergies);
+                    targetCalories, proteinTarget, carbsTarget, fatTarget, preferences, allergies);
             mealPlan.getDailyMeals().add(dailyMeal);
         }
 
@@ -150,5 +154,12 @@ public class MealPlanGenerator {
             return 100.0;
         }
         return (targetCalories / (double) item.getCaloriesPer100g()) * 100.0;
+    }
+
+    private int resolveRequiredTarget(Integer value, String fieldName) {
+        if (value == null || value <= 0) {
+            throw new NutritionException("Thiếu hoặc không hợp lệ trường " + fieldName + " khi tạo meal plan.");
+        }
+        return value;
     }
 }

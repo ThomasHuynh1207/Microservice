@@ -3,3 +3,4 @@ CREATE DATABASE userdb;
 CREATE DATABASE workoutdb;
 CREATE DATABASE progressdb;
 CREATE DATABASE aidb;
+CREATE DATABASE nutritiondb;

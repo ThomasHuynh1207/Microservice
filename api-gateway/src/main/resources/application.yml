@@ -57,7 +57,7 @@ spring:
         - id: nutrition-service
           uri: lb://nutrition-service
           predicates:
-            - Path=/api/v1/meal-plans/**
+            - Path=/api/v1/meal-plans/**,/api/v1/nutrition-profiles/**
           filters:
             - JwtAuthenticationFilter
 

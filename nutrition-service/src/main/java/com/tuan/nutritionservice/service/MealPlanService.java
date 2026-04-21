@@ -14,7 +14,6 @@ import com.tuan.nutritionservice.entity.MealPlanStatus;
 import com.tuan.nutritionservice.entity.MealType;
 import com.tuan.nutritionservice.exception.NutritionException;
 import com.tuan.nutritionservice.repository.MealPlanRepository;
-import com.tuan.nutritionservice.client.UserServiceClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,11 +29,11 @@ public class MealPlanService {
     private final MealPlanRepository mealPlanRepository;
     private final MealPlanGenerator mealPlanGenerator;
     private final MealPlanTrackingService trackingService;
-    private final UserServiceClient userServiceClient;
+    private final NutritionProfileService nutritionProfileService;
 
     @Transactional
     public MealPlanResponse generateMealPlan(GenerateMealPlanRequest request) {
-        UserNutritionProfileDto profile = userServiceClient.getNutritionProfile(request.getUserId());
+        UserNutritionProfileDto profile = nutritionProfileService.resolveForMealPlan(request);
         MealPlan plan = mealPlanGenerator.generate(request, profile);
         return MealPlanResponseMapper.toResponse(mealPlanRepository.save(plan));
     }

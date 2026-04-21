@@ -1,5 +1,6 @@
 package com.tuan.authservice.controller;
 
+import com.tuan.authservice.dto.AdminUserSummaryDTO;
 import com.tuan.authservice.dto.LoginRequest;
 import com.tuan.authservice.dto.RegisterRequest;
 import com.tuan.authservice.dto.UserDTO;
@@ -41,7 +42,7 @@ public class AuthController {
     }
 
     @GetMapping("/validate/{token}")
-    public ResponseEntity<UserDTO> validateToken(@PathVariable String token) {
+    public ResponseEntity<AdminUserSummaryDTO> validateToken(@PathVariable String token) {
         return ResponseEntity.ok(authService.validateToken(token));
     }
 }

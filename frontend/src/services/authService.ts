@@ -7,6 +7,40 @@ export interface LoggedUser {
   fullName?: string;
 }
 
+interface JwtPayload {
+  sub?: string;
+  email?: string;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const decodeJwtPayload = (token: string): JwtPayload | null => {
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  try {
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const payloadJson = atob(padded);
+    return JSON.parse(payloadJson) as JwtPayload;
+  } catch {
+    return null;
+  }
+};
+
+const getUserIdFromToken = (token: string): number | null => {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.sub) {
+    return null;
+  }
+
+  const parsed = Number(payload.sub);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const USER_STORAGE_KEY = "fituser";
 const ONBOARDING_COMPLETED_PREFIX = "fitlife-onboarding-completed";
 const ONBOARDING_DRAFT_PREFIX = "fitlife-onboarding-draft";
@@ -68,7 +102,7 @@ export const hasOnboardingCompletionProof = (userId: number): boolean => {
 
 const hasCompletedOnboardingInDatabase = async (userId: number): Promise<boolean> => {
   try {
-    await api.get(`/profile/${userId}`);
+    await api.get(`/users/${userId}/profile`);
     return true;
   } catch {
     return false;
@@ -76,21 +110,55 @@ const hasCompletedOnboardingInDatabase = async (userId: number): Promise<boolean
 };
 
 export const login = async (email: string, password: string) => {
-  const res = await api.post("/auth/login", { email, password });
+  let res;
+  let lastError: unknown;
+  const delays = [0, 700, 1200];
+
+  for (const delay of delays) {
+    if (delay > 0) {
+      await sleep(delay);
+    }
+
+    try {
+      res = await api.post("/auth/login", { email, password });
+      break;
+    } catch (error: any) {
+      lastError = error;
+      const status = error?.response?.status;
+      if (status !== 502 && status !== 503) {
+        throw error;
+      }
+    }
+  }
+
+  if (!res) {
+    throw lastError;
+  }
+
   const token = res.data;
   localStorage.setItem("token", token);
 
-  const usersRes = await api.get("/users");
-  const users = usersRes.data as Array<{ id: number; email: string; fullName?: string }>;
-  const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const userId = getUserIdFromToken(token);
+
+  let user: { id: number; email: string; name?: string; fullName?: string } | null = null;
+
+  if (userId) {
+    const userRes = await api.get(`/users/${userId}`);
+    user = userRes.data as { id: number; email: string; name?: string; fullName?: string };
+  } else {
+    const usersRes = await api.get("/users");
+    const users = usersRes.data as Array<{ id: number; email: string; name?: string; fullName?: string }>;
+    user = users.find((u) => u.email.toLowerCase() === email.toLowerCase()) ?? null;
+  }
+
   if (!user) {
-    throw new Error("Đã xảy ra lỗi khi lấy thông tin người dùng.");
+    throw new Error("Đăng nhập thành công nhưng không lấy được hồ sơ người dùng.");
   }
 
   const logged: LoggedUser = {
     id: user.id,
     email: user.email,
-    fullName: user.fullName,
+    fullName: user.fullName ?? user.name,
   };
 
   setCurrentUser(logged);
@@ -150,6 +218,6 @@ export const createUserProfile = async (userId: number, profile: UserProfileData
 };
 
 export const getUserProfile = async (userId: number) => {
-  const res = await api.get(`/profile/${userId}`);
+  const res = await api.get(`/users/${userId}/profile`);
   return res.data as UserProfileResponse;
 };

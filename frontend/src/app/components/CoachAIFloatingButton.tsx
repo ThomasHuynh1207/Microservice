@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 
 const BUTTON_SIZE = 68;
 const SAFE_MARGIN = 20;
+const HEADER_SAFE_TOP = 120;
 
 interface Position {
   x: number;
@@ -13,10 +14,11 @@ interface Position {
 const clampPosition = (position: Position): Position => {
   const maxX = Math.max(SAFE_MARGIN, window.innerWidth - BUTTON_SIZE - SAFE_MARGIN);
   const maxY = Math.max(SAFE_MARGIN, window.innerHeight - BUTTON_SIZE - SAFE_MARGIN);
+  const minY = Math.min(HEADER_SAFE_TOP, maxY);
 
   return {
     x: Math.min(Math.max(position.x, SAFE_MARGIN), maxX),
-    y: Math.min(Math.max(position.y, SAFE_MARGIN), maxY),
+    y: Math.min(Math.max(position.y, minY), maxY),
   };
 };
 
@@ -108,7 +110,7 @@ export function CoachAIFloatingButton() {
       aria-label="Mở Coach AI"
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      className={`fixed z-50 hidden h-[68px] w-[68px] items-center justify-center rounded-2xl border border-indigo-200 bg-[linear-gradient(145deg,#6366F1_0%,#8B5CF6_100%)] text-white shadow-[0_16px_30px_-18px_rgba(99,102,241,0.8)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-18px_rgba(99,102,241,0.95)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-300/70 lg:flex ${
+      className={`fixed z-20 hidden h-[68px] w-[68px] items-center justify-center rounded-2xl border border-indigo-200 bg-[linear-gradient(145deg,#6366F1_0%,#8B5CF6_100%)] text-white shadow-[0_16px_30px_-18px_rgba(99,102,241,0.8)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-18px_rgba(99,102,241,0.95)] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-indigo-300/70 lg:flex ${
         isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
       style={{ left: `${position.x}px`, top: `${position.y}px` }}

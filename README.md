@@ -6,7 +6,13 @@ docker compose up -d --build
 ## Default Admin Login
 
 - admin@gmail.com / admin12345
-- nguyenvanb@gmail.com / Nam12345
+
+## Default User Login (Verified)
+
+- nguyenvanc@gmail.com / Nam12345
+- tranlinh@gmail.com / Linh12345
+- phamminh@gmail.com / Minh12345
+- thuhang@gmail.com / Hang12345
 
 ## Target Microservices Architecture
 
@@ -24,6 +30,7 @@ docker compose up -d --build
 - **user-service**: `users`, `user_profile` tables
 - **workout-service**: `workout_plan`, `workout_session` tables
 - **progress-service**: `progress_log` table
+- **nutrition-service**: `user_nutrition_profiles`, `meal_plans`, `daily_meals`, `meal_items`, `food_items` tables
 - **ai-service**: `chat_history` table
 
 ## Step-by-Step Migration
@@ -192,10 +199,23 @@ mvn spring-boot:run
 ### Sample Data Seeding
 
 - Auth Service se tu dong tao tai khoan mau (USER + ADMIN) voi mat khau BCrypt.
-- User Service se tu dong tao ho so nguoi dung mau.
-- Workout Service se tu dong tao ke hoach tap va buoi tap mau.
-- Progress Service se tu dong tao nhat ky tien do 7 ngay gan nhat.
-- AI Service se tu dong tao lich su hoi thoai mau neu bang chat_history chua co du lieu.
+- User Service mac dinh co seed du lieu profile mau de xem chi tiet nguoi dung tren trang admin.
+- Workout Service mac dinh co seed du lieu mau cho plan, session va thu vien bai tap; Progress Service mac dinh co seed du lieu mau de co san progress records trong database.
+- AI Service mac dinh KHONG tu dong seed du lieu mau.
+- Neu can thay doi, dung bien moi truong USER_SERVICE_SEED_SAMPLE_DATA=true|false, WORKOUT_SERVICE_SEED_SAMPLE_DATA=true|false va PROGRESS_SERVICE_SEED_SAMPLE_DATA=true|false.
+
+### Real Data Mode (khong mock)
+
+- Compose mac dinh dang chay Postgres voi volume `postgres_data`, du lieu se duoc luu lai qua cac lan restart container.
+- Khi user truy cap endpoint `GET /api/workouts/plans/user/{userId}` ma chua co workout plan, workout-service se tu dong tao 1 plan dau tien dua tren profile/user data va luu that vao `workoutdb`.
+- Co the backfill cho user cu (da ton tai truoc khi co co che auto-create) bang lenh PowerShell:
+
+```powershell
+$ids = docker compose exec -T postgres psql -U Tuan -d authdb -t -A -c "SELECT id FROM users WHERE role='USER' ORDER BY id;"
+($ids -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9]+$' }) | ForEach-Object {
+  Invoke-RestMethod -Method Get -Uri ("http://localhost:8083/api/workouts/plans/user/{0}" -f $_) | Out-Null
+}
+```
 
 ### Start Order
 1. Start API Gateway: `cd Microservice/api-gateway && mvn spring-boot:run`

@@ -1,5 +1,6 @@
 package com.tuan.workoutservice.controller;
 
+import com.tuan.workoutservice.dto.ExerciseLibraryItemDTO;
 import com.tuan.workoutservice.dto.SeedWorkoutRequest;
 import com.tuan.workoutservice.dto.WorkoutPlanDTO;
 import com.tuan.workoutservice.dto.WorkoutPlanDetailDTO;
@@ -42,6 +43,43 @@ public class WorkoutController {
     public ResponseEntity<WorkoutPlanDTO> updateWorkoutPlan(@PathVariable Long id, @RequestBody WorkoutPlanDTO planDTO) {
         WorkoutPlanDTO updatedPlan = workoutService.updateWorkoutPlan(id, planDTO);
         return ResponseEntity.ok(updatedPlan);
+    }
+
+    @PutMapping("/plans/{id}/detail")
+    public ResponseEntity<WorkoutPlanDetailDTO> updateWorkoutPlanDetail(@PathVariable Long id, @RequestBody WorkoutPlanDetailDTO planDetailDTO) {
+        WorkoutPlanDetailDTO updatedPlan = workoutService.updateWorkoutPlanDetail(id, planDetailDTO);
+        return ResponseEntity.ok(updatedPlan);
+    }
+
+    @GetMapping("/plans/{id}/detail")
+    public ResponseEntity<WorkoutPlanDetailDTO> getWorkoutPlanDetail(@PathVariable Long id) {
+        return ResponseEntity.ok(workoutService.getWorkoutPlanDetail(id));
+    }
+
+    @GetMapping("/library")
+    public ResponseEntity<List<ExerciseLibraryItemDTO>> getExerciseLibrary(@RequestParam(required = false) String keyword) {
+        return ResponseEntity.ok(workoutService.getExerciseLibrary(keyword));
+    }
+
+    @GetMapping("/library/resolve")
+    public ResponseEntity<ExerciseLibraryItemDTO> resolveExerciseLibraryItem(@RequestParam String name) {
+        return ResponseEntity.ok(workoutService.resolveExerciseLibraryItem(name));
+    }
+
+    @PostMapping("/library")
+    public ResponseEntity<ExerciseLibraryItemDTO> createExerciseLibraryItem(@RequestBody ExerciseLibraryItemDTO dto) {
+        return ResponseEntity.ok(workoutService.createExerciseLibraryItem(dto));
+    }
+
+    @PutMapping("/library/{id}")
+    public ResponseEntity<ExerciseLibraryItemDTO> updateExerciseLibraryItem(@PathVariable Long id, @RequestBody ExerciseLibraryItemDTO dto) {
+        return ResponseEntity.ok(workoutService.updateExerciseLibraryItem(id, dto));
+    }
+
+    @DeleteMapping("/library/{id}")
+    public ResponseEntity<Void> deleteExerciseLibraryItem(@PathVariable Long id) {
+        workoutService.deleteExerciseLibraryItem(id);
+        return ResponseEntity.noContent().build();
     }
 
     // Workout Session endpoints

@@ -1,5 +1,6 @@
 package com.tuan.userservice.controller;
 
+import com.tuan.userservice.dto.CompleteOnboardingRequest;
 import com.tuan.userservice.dto.NutritionProfileDTO;
 import com.tuan.userservice.dto.UserDTO;
 import com.tuan.userservice.dto.UserProfileDTO;
@@ -53,8 +54,10 @@ public class UserController {
     }
 
     @PostMapping("/{id}/onboarding-complete")
-    public ResponseEntity<Void> completeOnboarding(@PathVariable Long id) {
-        userService.completeOnboarding(id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<UserProfileDTO> completeOnboarding(
+            @PathVariable Long id,
+            @RequestBody(required = false) CompleteOnboardingRequest request
+    ) {
+        return ResponseEntity.ok(userService.completeOnboarding(id, request));
     }
 }

@@ -5,6 +5,7 @@ import com.tuan.userservice.entity.UserProfile;
 import com.tuan.userservice.repository.UserProfileRepository;
 import com.tuan.userservice.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,7 @@ import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "app.seed", name = "sample-data", havingValue = "true")
 public class SampleUserDataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
@@ -20,13 +22,22 @@ public class SampleUserDataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        User user1 = upsertUser("nguyenvanb@gmail", "Nguyen Van B", 26, "male", 170.0, 70.0, "Giam mo");
-        User user2 = upsertUser("tranlinh@gmail.com", "Tran Linh", 24, "female", 162.0, 55.0, "Tang co");
-        User user3 = upsertUser("phamminh@gmail.com", "Pham Minh", 29, "male", 175.0, 78.0, "Suc ben");
-        User user4 = upsertUser("thuhang@gmail.com", "Thu Hang", 31, "female", 160.0, 58.0, "Duy tri the luc");
+                // Remove seeded user if present
+                try {
+                        userRepository.findByEmail("nguyenvanc@gmail.com").ifPresent(u -> {
+                                userProfileRepository.findByUserId(u.getId()).ifPresent(userProfileRepository::delete);
+                                userRepository.delete(u);
+                        });
+                } catch (Exception ignore) {
+                        // ignore any deletion errors here
+                }
 
-        upsertProfile(user1.getId(), "Yeu thich tap gym va theo doi calories.", "Intermediate", "Strength", 4,
-                2200, 130, 260, 61, 3, Set.of("gym", "cardio"), Set.of("tom"));
+                User user1 = upsertUser("nguyenvanc@gmail.com", "Nguyễn văn C", 27, "male", 170.0, 68.0, "Giam mo");
+                User user2 = upsertUser("tranlinh@gmail.com", "Tran Linh", 24, "female", 162.0, 55.0, "Tang co");
+                User user3 = upsertUser("phamminh@gmail.com", "Pham Minh", 29, "male", 175.0, 78.0, "Suc ben");
+                User user4 = upsertUser("thuhang@gmail.com", "Thu Hang", 31, "female", 160.0, 58.0, "Duy tri the luc");
+        upsertProfile(user1.getId(), "Uu tien giam mo va tap deu de on dinh can nang.", "Beginner", "Mixed", 4,
+                2000, 120, 240, 60, 3, Set.of("cardio", "strength"), Set.of());
         upsertProfile(user2.getId(), "Uu tien tap tai nha va yoga.", "Beginner", "Yoga", 3,
                 1850, 95, 220, 55, 3, Set.of("home", "yoga"), Set.of());
         upsertProfile(user3.getId(), "Dang luyen cho muc tieu chay 10km.", "Intermediate", "Cardio", 5,
@@ -34,6 +45,20 @@ public class SampleUserDataInitializer implements CommandLineRunner {
         upsertProfile(user4.getId(), "Can bang giua tap luyen va cong viec.", "Beginner", "Mixed", 3,
                 1900, 100, 230, 58, 3, Set.of("mixed", "pilates"), Set.of());
     }
+
+        private User upsertUser(String email, String legacyEmail, String name, Integer age, String gender, Double height, Double weight, String fitnessGoal) {
+                User user = userRepository.findByEmail(email)
+                                .or(() -> userRepository.findByEmail(legacyEmail))
+                                .orElseGet(User::new);
+                user.setEmail(email);
+                user.setName(name);
+                user.setAge(age);
+                user.setGender(gender);
+                user.setHeight(height);
+                user.setWeight(weight);
+                user.setFitnessGoal(fitnessGoal);
+                return userRepository.save(user);
+        }
 
     private User upsertUser(String email, String name, Integer age, String gender, Double height, Double weight, String fitnessGoal) {
         User user = userRepository.findByEmail(email).orElseGet(User::new);

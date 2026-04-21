@@ -44,6 +44,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      APP_SEED_SAMPLE_DATA: ${USER_SERVICE_SEED_SAMPLE_DATA:-true}
 
   workout-service:
     build: ./workout-service
@@ -59,6 +60,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      APP_SEED_SAMPLE_DATA: ${WORKOUT_SERVICE_SEED_SAMPLE_DATA:-true}
 
   progress-service:
     build: ./progress-service
@@ -74,6 +76,7 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      APP_SEED_SAMPLE_DATA: ${PROGRESS_SERVICE_SEED_SAMPLE_DATA:-true}
 
   nutrition-service:
     build: ./nutrition-service
@@ -99,6 +102,7 @@ services:
     environment:
       - OPENAI_API_KEY=jkadas8jT2jcUKz8CwtLUR2zImL3bHIgEEiw
       - SPRING_PROFILES_ACTIVE=docker
+      - APP_SEED_SAMPLE_DATA=${APP_SEED_SAMPLE_DATA:-false}
     depends_on:
       eureka-server:
         condition: service_healthy

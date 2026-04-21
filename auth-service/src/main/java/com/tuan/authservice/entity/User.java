@@ -27,4 +27,25 @@ public class User {
 
     @Column(nullable = false)
     private String role = "USER";
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = true)
+    private AccountStatus status = AccountStatus.ACTIVE;
+
+    @Column(nullable = true)
+    private Boolean forcePasswordReset = false;
+
+    @PrePersist
+    void ensureDefaults() {
+        if (status == null) {
+            status = AccountStatus.ACTIVE;
+        }
+        if (forcePasswordReset == null) {
+            forcePasswordReset = false;
+        }
+    }
+
+    public boolean isForcePasswordReset() {
+        return Boolean.TRUE.equals(forcePasswordReset);
+    }
 }

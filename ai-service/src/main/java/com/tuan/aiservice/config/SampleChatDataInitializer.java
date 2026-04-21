@@ -3,6 +3,7 @@ package com.tuan.aiservice.config;
 import com.tuan.aiservice.entity.ChatMessage;
 import com.tuan.aiservice.repository.ChatMessageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "app.seed", name = "sample-data", havingValue = "true")
 public class SampleChatDataInitializer implements CommandLineRunner {
 
     private final ChatMessageRepository chatMessageRepository;

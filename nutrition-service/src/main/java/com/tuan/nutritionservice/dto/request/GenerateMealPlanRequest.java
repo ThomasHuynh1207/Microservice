@@ -16,25 +16,17 @@ public class GenerateMealPlanRequest {
     @NotNull
     private LocalDate startDate;
 
-    @NotNull
+    @Min(1)
+    private Integer heightCm;
+
+    @Min(1)
+    private Integer weightKg;
+
+    private String activityLevel;
+    private String goal;
+
     @Min(1)
     private Integer mealsPerDay;
-
-    @NotNull
-    @Min(1)
-    private Integer targetCalories;
-
-    @NotNull
-    @Min(1)
-    private Integer proteinTarget;
-
-    @NotNull
-    @Min(1)
-    private Integer carbsTarget;
-
-    @NotNull
-    @Min(1)
-    private Integer fatTarget;
 
     private Set<String> preferences;
     private Set<String> allergies;

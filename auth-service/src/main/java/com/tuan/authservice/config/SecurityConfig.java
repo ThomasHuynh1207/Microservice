@@ -28,6 +28,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers(EndpointRequest.toAnyEndpoint()).permitAll()
                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/validate/**").permitAll()
+                .requestMatchers("/api/auth/onboarding-config").permitAll()
                 .requestMatchers("/api/auth/users", "/api/auth/users/**").permitAll()
                 .requestMatchers("/api/admin/**").authenticated()
                 .anyRequest().authenticated()

@@ -32,5 +32,8 @@ public class SeedWorkoutRequest {
     @NotBlank
     private String trainingLevel; // Người mới, Tập 1-2 buổi/tuần, 3-4 buổi, 5+ buổi
 
+    @Min(1)
+    private Integer trainingDaysPerWeek;
+
     private List<String> preferences; // Sở thích tập luyện
 }

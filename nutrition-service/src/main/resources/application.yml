@@ -5,7 +5,7 @@ spring:
   application:
     name: nutrition-service
   datasource:
-    url: jdbc:postgresql://postgres:5432/fitness_app
+    url: jdbc:postgresql://postgres:5432/nutritiondb
     username: ${POSTGRES_USER:Tuan}
     password: ${POSTGRES_PASSWORD:123456789}
     driver-class-name: org.postgresql.Driver

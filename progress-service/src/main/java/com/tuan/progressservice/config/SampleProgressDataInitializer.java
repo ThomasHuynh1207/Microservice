@@ -3,6 +3,7 @@ package com.tuan.progressservice.config;
 import com.tuan.progressservice.entity.ProgressLog;
 import com.tuan.progressservice.repository.ProgressLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "app.seed", name = "sample-data", havingValue = "true")
 public class SampleProgressDataInitializer implements CommandLineRunner {
 
     private final ProgressLogRepository progressLogRepository;

@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FitLife Admin</title>
-    <link rel="stylesheet" href="styles.css?v=20260419-4" />
+    <link rel="stylesheet" href="styles.css?v=20260421-2" />
   </head>
   <body>
     <section class="auth-screen" id="authScreen">
       <div class="auth-card">
         <h1>FitLife Admin</h1>
-        <p>Đăng nhập bằng tài khoản ADMIN để truy cập hệ thống quản trị người dùng.</p>
+        <p>Đăng nhập bằng tài khoản ADMIN để truy cập hệ thống quản trị.</p>
         <form id="loginForm" class="auth-form">
           <label for="emailInput">Email quản trị</label>
           <input type="email" id="emailInput" required />
@@ -30,10 +30,9 @@
         <div class="brand">FitLife Admin</div>
         <nav class="nav-list">
           <button class="nav-item active" type="button" id="navUsers">Quản lý người dùng</button>
-          <button class="nav-item" type="button" id="navOnboarding">Cài đặt onboarding</button>
-          <button class="nav-item" type="button" disabled>Dữ liệu vận động</button>
-          <button class="nav-item" type="button" disabled>Dữ liệu dinh dưỡng</button>
-          <button class="nav-item" type="button" disabled>Lịch sử AI</button>
+          <button class="nav-item" type="button" id="navWorkout">Kế hoạch tập luyện</button>
+          <button class="nav-item" type="button" id="navNutrition">Kế hoạch dinh dưỡng</button>
+          <button class="nav-item" type="button" id="navProgress">Tiến độ</button>
         </nav>
       </aside>
 
@@ -48,112 +47,434 @@
           <section id="usersView" class="view-section">
             <section class="panel toolbar-panel">
               <div class="toolbar-title-wrap">
-                <h2 class="panel-title">Điều phối người dùng</h2>
-                <p>Tìm kiếm nhanh, lọc theo quyền và cập nhật role trực tiếp trên một màn hình.</p>
+                <h2 class="panel-title">Quản lý người dùng</h2>
               </div>
-              <div class="toolbar-controls">
-                <input type="text" id="searchInput" />
-                <select id="roleFilter">
-                  <option value="ALL">Tất cả role</option>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="USER">USER</option>
+              <div class="toolbar-controls users-toolbar">
+                <div class="page-size-wrap top-page-size">
+                  <label for="pageSizeSelect">Hiển thị</label>
+                  <select id="pageSizeSelect">
+                    <option value="5" selected>5</option>
+                    <option value="10">10</option>
+                    <option value="20">20</option>
+                  </select>
+                  <span>mục/trang</span>
+                </div>
+                <input type="text" id="searchInput" placeholder="Tìm theo tên hoặc email" />
+                <select id="statusFilter">
+                  <option value="ALL">Tất cả trạng thái</option>
+                  <option value="ACTIVE">Đang hoạt động</option>
+                  <option value="LOCKED">Đã khóa</option>
                 </select>
                 <button type="button" class="btn secondary" id="searchBtn">Tìm kiếm</button>
                 <button type="button" class="btn primary" id="refreshBtn">Làm mới</button>
               </div>
             </section>
 
-            <section class="kpi-grid">
-              <article class="kpi-card">
-                <p class="kpi-label">Tổng người dùng</p>
-                <h2 id="kpiTotalUsers">0</h2>
-              </article>
-              <article class="kpi-card">
-                <p class="kpi-label">Tài khoản ADMIN</p>
-                <h2 id="kpiAdmins">0</h2>
-              </article>
-              <article class="kpi-card">
-                <p class="kpi-label">Tài khoản USER</p>
-                <h2 id="kpiUsers">0</h2>
-              </article>
-              <article class="kpi-card">
-                <p class="kpi-label">Hiển thị hiện tại</p>
-                <h2 id="kpiVisible">0</h2>
-              </article>
-            </section>
-
             <section class="panel">
               <div class="table-head">
                 <h3>Danh sách người dùng</h3>
-                <p id="lastUpdated">Cập nhật: chưa có dữ liệu</p>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Họ tên</th>
+                      <th>Email</th>
+                      <th>Trạng thái</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userRows"></tbody>
+                </table>
+              </div>
+              <div class="table-pagination">
+                <div class="page-controls">
+                  <button type="button" class="inline-btn" id="prevPageBtn">Trang trước</button>
+                  <span id="pageInfo">Trang 1/1</span>
+                  <button type="button" class="inline-btn" id="nextPageBtn">Trang sau</button>
+                </div>
+              </div>
+            </section>
+          </section>
+
+          <section id="workoutView" class="view-section hidden workout-view">
+            <section class="panel toolbar-panel workout-hero">
+              <div class="toolbar-title-wrap">
+                <p class="workout-eyebrow">Quản lý kế hoạch tập luyện</p>
+                <h2 class="panel-title">Điều phối plan, session và thư viện bài tập theo từng user</h2>
+                <p>Theo dõi kế hoạch theo người dùng, xem chi tiết ngày tập, chỉnh metadata và tạo dữ liệu mẫu khi chưa có.</p>
+                <div class="workout-chip-row">
+                  <span class="workout-chip">Theo user</span>
+                  <span class="workout-chip">Sửa plan tại chỗ</span>
+                  <span class="workout-chip">Thư viện bài tập</span>
+                </div>
+              </div>
+              <div class="toolbar-controls workout-toolbar">
+                <input type="number" id="workoutUserIdInput" min="1" placeholder="ID người dùng" />
+                <input type="text" id="workoutPlanSearchInput" placeholder="Tìm theo tên, goal hoặc split" />
+                <select id="workoutPlanDifficultyFilter">
+                  <option value="ALL">Tất cả mức</option>
+                  <option value="BEGINNER">Người mới</option>
+                  <option value="INTERMEDIATE">Trung cấp</option>
+                  <option value="ADVANCED">Nâng cao</option>
+                </select>
+                <button type="button" class="btn secondary" id="loadWorkoutBtn">Tải kế hoạch tập luyện</button>
+                <button type="button" class="btn primary" id="generateWorkoutBtn">Tạo kế hoạch mẫu</button>
+              </div>
+            </section>
+
+            <section class="kpi-grid workout-kpi-grid">
+              <article class="kpi-card">
+                <p class="kpi-label">Số kế hoạch tập luyện</p>
+                <h2 id="workoutPlanCount">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Số buổi tập đã ghi</p>
+                <h2 id="workoutSessionCount">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Buổi đã hoàn tất</p>
+                <h2 id="workoutCompletedCount">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Mục tiêu chính</p>
+                <h2 id="workoutGoalLabel">-</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Thời lượng TB</p>
+                <h2 id="workoutAverageDuration">0m</h2>
+              </article>
+            </section>
+
+            <div class="workout-dashboard-grid">
+              <div class="workout-main-column">
+                <section class="panel workout-panel workout-plan-list-panel">
+              <div class="table-head">
+                <h3>Danh sách kế hoạch tập luyện</h3>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
-                      <th>Họ tên</th>
-                      <th>Email</th>
-                      <th>Role hiện tại</th>
-                      <th>Cập nhật role</th>
+                      <th>Tên kế hoạch</th>
+                      <th>Độ khó</th>
+                      <th>Split</th>
+                      <th>Số tuần</th>
+                      <th>Hành động</th>
                     </tr>
                   </thead>
-                  <tbody id="userRows"></tbody>
+                  <tbody id="workoutPlanRows"></tbody>
+                </table>
+              </div>
+              </section>
+
+              <section class="panel workout-panel workout-detail-panel">
+              <div class="table-head">
+                <div>
+                  <h3>Chi tiết bài tập</h3>
+                  <p>Chọn một kế hoạch để xem lộ trình ngày tập, số bài và thiết lập từng ngày.</p>
+                </div>
+              </div>
+              <div id="workoutDetailBody" class="detail-list empty">Chọn một kế hoạch để xem lịch ngày tập.</div>
+                </section>
+
+              </div>
+              <div class="workout-side-column">
+                <section class="panel workout-panel workout-editor-panel" id="workoutPlanEditorPanel">
+              <div class="table-head">
+                <div>
+                  <h3>Chỉnh sửa kế hoạch</h3>
+                  <p>Thay đổi metadata của plan đang chọn mà không rời khỏi màn hình quản lý.</p>
+                </div>
+              </div>
+
+              <div class="workout-editor-grid">
+                <div class="library-field full">
+                  <label for="workoutPlanEditorId">Plan ID</label>
+                  <input type="text" id="workoutPlanEditorId" readonly />
+                </div>
+                <div class="library-field full">
+                  <label for="workoutPlanNameInput">Tên kế hoạch</label>
+                  <input type="text" id="workoutPlanNameInput" placeholder="Tên plan" />
+                </div>
+                <div class="library-field full">
+                  <label for="workoutPlanDescriptionInput">Mô tả</label>
+                  <textarea id="workoutPlanDescriptionInput" rows="3" placeholder="Mô tả ngắn cho kế hoạch"></textarea>
+                </div>
+                <div class="library-field">
+                  <label for="workoutPlanDifficultyInput">Độ khó</label>
+                  <input type="text" id="workoutPlanDifficultyInput" placeholder="Beginner / Intermediate / Advanced" />
+                </div>
+                <div class="library-field">
+                  <label for="workoutPlanGoalInput">Mục tiêu</label>
+                  <input type="text" id="workoutPlanGoalInput" placeholder="Giảm mỡ / Tăng cơ / Duy trì" />
+                </div>
+                <div class="library-field">
+                  <label for="workoutPlanSplitInput">Split</label>
+                  <input type="text" id="workoutPlanSplitInput" placeholder="Upper/Lower / Push-Pull-Legs" />
+                </div>
+                <div class="library-field">
+                  <label for="workoutPlanDurationInput">Số tuần</label>
+                  <input type="number" id="workoutPlanDurationInput" min="1" />
+                </div>
+                <div class="library-field">
+                  <label for="workoutPlanDaysPerWeekInput">Buổi/tuần</label>
+                  <input type="number" id="workoutPlanDaysPerWeekInput" min="1" />
+                </div>
+              </div>
+
+              <div class="library-form-actions">
+                <button type="button" class="btn primary" id="saveWorkoutPlanBtn">Lưu kế hoạch</button>
+                <button type="button" class="btn ghost" id="resetWorkoutPlanBtn">Khôi phục</button>
+              </div>
+              </section>
+
+              <section class="panel workout-panel workout-session-panel">
+              <div class="table-head">
+                <div>
+                  <h3>Lịch sử buổi tập</h3>
+                  <p>Session gần nhất, thời lượng thực tế và trạng thái hoàn tất của user.</p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Bắt đầu</th>
+                      <th>Kết thúc</th>
+                      <th>Thời lượng</th>
+                      <th>Trạng thái</th>
+                      <th>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody id="workoutSessionRows"></tbody>
+                </table>
+              </div>
+              </section>
+
+              <section class="panel workout-panel workout-library-panel">
+              <div class="table-head">
+                <h3>Thư viện bài tập cho User App</h3>
+                <p>Quản lý hướng dẫn, muscle highlight, kỹ thuật và video cho trang chi tiết bài tập bên User.</p>
+              </div>
+
+              <div class="workout-library-toolbar">
+                <input type="text" id="exerciseLibraryKeywordInput" placeholder="Tìm theo tên bài tập" />
+                <button type="button" class="btn secondary" id="loadExerciseLibraryBtn">Tải thư viện</button>
+              </div>
+
+              <div class="workout-library-layout">
+                <section class="workout-library-form">
+                  <div class="library-form-grid">
+                    <div class="library-field full">
+                      <label for="exerciseLibraryNameInput">Tên bài tập</label>
+                      <input type="text" id="exerciseLibraryNameInput" placeholder="Ví dụ: Dumbbell Bench Press" />
+                    </div>
+                    <div class="library-field">
+                      <label for="exerciseLibraryMuscleInput">Nhóm cơ</label>
+                      <input type="text" id="exerciseLibraryMuscleInput" placeholder="Ngực / Vai / Lưng..." />
+                    </div>
+                    <div class="library-field">
+                      <label for="exerciseLibraryVideoInput">Link video</label>
+                      <input type="text" id="exerciseLibraryVideoInput" placeholder="https://..." />
+                    </div>
+                    <div class="library-field full">
+                      <label for="exerciseLibraryGuidanceInput">Hướng dẫn chi tiết</label>
+                      <textarea id="exerciseLibraryGuidanceInput" rows="3" placeholder="Mô tả cách thực hiện bài tập"></textarea>
+                    </div>
+                    <div class="library-field full">
+                      <label for="exerciseLibraryHighlightInput">Muscle highlight</label>
+                      <textarea id="exerciseLibraryHighlightInput" rows="2" placeholder="Điểm nhấn nhóm cơ chính"></textarea>
+                    </div>
+                    <div class="library-field full">
+                      <label for="exerciseLibraryTechnicalInput">Lưu ý kỹ thuật</label>
+                      <textarea id="exerciseLibraryTechnicalInput" rows="2" placeholder="Các lưu ý quan trọng"></textarea>
+                    </div>
+                  </div>
+                  <div class="library-form-actions">
+                    <button type="button" class="btn primary" id="saveExerciseLibraryBtn">Lưu bài tập</button>
+                    <button type="button" class="btn ghost" id="resetExerciseLibraryFormBtn">Làm mới form</button>
+                  </div>
+                </section>
+
+                <section class="workout-library-table">
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Tên bài tập</th>
+                          <th>Nhóm cơ</th>
+                          <th>Video</th>
+                          <th>Hành động</th>
+                        </tr>
+                      </thead>
+                      <tbody id="exerciseLibraryRows"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+                </section>
+              </div>
+            </div>
+
+            <div class="status-bar" id="workoutStatus">Sẵn sàng quản lý kế hoạch tập luyện.</div>
+          </section>
+
+          <section id="nutritionView" class="view-section hidden">
+            <section class="panel toolbar-panel">
+              <div class="toolbar-title-wrap">
+                <h2 class="panel-title">Quản lý dinh dưỡng</h2>
+                <p>Quản lý kế hoạch dinh dưỡng theo TDEE, xem tiến độ calories/macro và tạo kế hoạch dinh dưỡng tự động.</p>
+              </div>
+              <div class="toolbar-controls compact">
+                <input type="number" id="nutritionUserIdInput" min="1" placeholder="ID người dùng" />
+                <button type="button" class="btn secondary" id="loadNutritionBtn">Tải kế hoạch dinh dưỡng</button>
+                <button type="button" class="btn primary" id="generateNutritionBtn">Tạo kế hoạch dinh dưỡng</button>
+              </div>
+            </section>
+
+            <section class="kpi-grid">
+              <article class="kpi-card">
+                <p class="kpi-label">Số kế hoạch dinh dưỡng</p>
+                <h2 id="nutritionPlanCount">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Mục tiêu calories</p>
+                <h2 id="nutritionTargetCalories">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Tiến độ calories</p>
+                <h2 id="nutritionCaloriesProgress">0%</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Trạng thái kế hoạch</p>
+                <h2 id="nutritionPlanStatus">-</h2>
+              </article>
+            </section>
+
+            <section class="panel">
+              <div class="table-head">
+                <h3>Danh sách kế hoạch dinh dưỡng</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Tên kế hoạch</th>
+                      <th>Bắt đầu</th>
+                      <th>Kết thúc</th>
+                      <th>Mục tiêu kcal</th>
+                      <th>Trạng thái</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody id="nutritionPlanRows"></tbody>
                 </table>
               </div>
             </section>
+
+            <section class="panel">
+              <div class="table-head">
+                <h3>Chi tiết bữa ăn theo ngày</h3>
+              </div>
+              <div id="nutritionMealBody" class="detail-list empty">Chọn một kế hoạch dinh dưỡng để xem các bữa ăn.</div>
+            </section>
+
+            <div class="status-bar" id="nutritionStatus">Sẵn sàng quản lý dinh dưỡng.</div>
           </section>
 
-          <section id="onboardingView" class="view-section hidden">
+          <section id="progressView" class="view-section hidden">
             <section class="panel toolbar-panel">
               <div class="toolbar-title-wrap">
-                <h2 class="panel-title">Cài đặt onboarding 7 bước</h2>
-                <p>Sửa tiêu đề, nội dung và ảnh cho từng bước. Ảnh được lưu trong database và áp dụng trực tiếp cho trang onboarding.</p>
+                <h2 class="panel-title">Quản lý tiến độ</h2>
+                <p>Xem lịch sử tập luyện/tiến độ theo người dùng, bổ sung dữ liệu nếu hệ thống chưa có.</p>
               </div>
-              <div class="onboarding-toolbar">
-                <select id="onboardingStepSelect"></select>
-                <button type="button" class="btn secondary" id="reloadOnboardingBtn">Tải lại từ DB</button>
-                <button type="button" class="btn primary" id="saveOnboardingBtn">Lưu bước hiện tại</button>
+              <div class="toolbar-controls compact">
+                <input type="number" id="progressUserIdInput" min="1" placeholder="ID người dùng" />
+                <button type="button" class="btn secondary" id="loadProgressBtn">Tải nhật ký</button>
               </div>
             </section>
 
-            <section class="panel onboarding-layout">
-              <div class="onboarding-form-grid">
-                <label for="onboardingTitleInput">Tiêu đề bước</label>
-                <input id="onboardingTitleInput" type="text" />
-
-                <label for="onboardingHeadlineInput">Tiêu đề chính</label>
-                <input id="onboardingHeadlineInput" type="text" />
-
-                <label for="onboardingHelperInput">Mô tả ngắn</label>
-                <textarea id="onboardingHelperInput" rows="3"></textarea>
-
-                <label for="onboardingImageInput">URL ảnh bước</label>
-                <input id="onboardingImageInput" type="url" />
-
-                <label for="onboardingOptionImagesInput">Ảnh option (JSON)</label>
-                <textarea id="onboardingOptionImagesInput" rows="6"></textarea>
+            <section class="panel progress-form-panel">
+              <div class="table-head">
+                <h3>Thêm nhật ký tiến độ</h3>
               </div>
-
-              <aside class="onboarding-preview" id="onboardingPreviewCard">
-                <div class="preview-image-wrap">
-                  <img id="onboardingPreviewImage" alt="Preview onboarding" />
-                </div>
-                <h3 id="onboardingPreviewTitle">Preview tiêu đề</h3>
-                <p id="onboardingPreviewHeadline">Preview headline</p>
-                <p id="onboardingPreviewHelper">Preview mô tả</p>
-                <p class="preview-note">Mẹo: với bước 4 và 5, thêm JSON ảnh option để thay icon bằng ảnh.</p>
-              </aside>
+              <div class="progress-form-grid">
+                <input type="date" id="progressDateInput" />
+                <input type="text" id="progressActivityInput" placeholder="Loại hoạt động" />
+                <input type="number" id="progressMinutesInput" min="0" placeholder="Số phút tập luyện" />
+                <input type="number" id="progressWeightInput" min="0" step="0.1" placeholder="Cân nặng (kg)" />
+                <input type="text" id="progressNotesInput" placeholder="Ghi chú" />
+                <button type="button" class="btn primary" id="addProgressBtn">Thêm bản ghi</button>
+              </div>
             </section>
 
-            <div class="status-bar" id="onboardingStatus">Sẵn sàng chỉnh sửa cài đặt onboarding.</div>
+            <section class="kpi-grid">
+              <article class="kpi-card">
+                <p class="kpi-label">Tổng bản ghi</p>
+                <h2 id="progressLogCount">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Tổng phút tập</p>
+                <h2 id="progressMinutesTotal">0</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Cân nặng mới nhất</p>
+                <h2 id="progressLatestWeight">-</h2>
+              </article>
+              <article class="kpi-card">
+                <p class="kpi-label">Ngày cập nhật cuối</p>
+                <h2 id="progressLatestDate">-</h2>
+              </article>
+            </section>
+
+            <section class="panel">
+              <div class="table-head">
+                <h3>Lịch sử tiến độ</h3>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Ngày</th>
+                      <th>Hoạt động</th>
+                      <th>Phút tập</th>
+                      <th>Cân nặng</th>
+                      <th>Ghi chú</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody id="progressRows"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <div class="status-bar" id="progressStatus">Sẵn sàng quản lý tiến độ.</div>
           </section>
 
           <div class="status-bar" id="statusBar">Sẵn sàng.</div>
+          <div class="center-notification hidden" id="centerNotification" role="status" aria-live="polite"></div>
         </main>
       </div>
     </div>
 
-    <script src="app.js?v=20260419-4"></script>
+    <div class="modal-backdrop hidden" id="userDetailModal">
+      <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="userDetailTitle">
+        <div class="modal-head">
+          <h3 id="userDetailTitle">Chi tiết tài khoản</h3>
+          <button type="button" class="inline-btn" id="closeUserDetailBtn">Đóng</button>
+        </div>
+        <p id="userDetailHint">Chọn một người dùng để xem thông tin cá nhân, profile và thao tác quản trị.</p>
+        <div id="userDetailBody" class="detail-list empty">Chưa có người dùng nào được chọn.</div>
+      </section>
+    </div>
+
+    <script src="app.js?v=20260421-1"></script>
   </body>
 </html>

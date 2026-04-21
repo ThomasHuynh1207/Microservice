@@ -12,6 +12,8 @@ import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -22,6 +24,10 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
 
     @Value("${jwt.secret}")
     private String jwtSecret;
+
+    private final WebClient webClient = WebClient.builder()
+            .baseUrl("http://auth-service:8081")
+            .build();
 
     private static final List<String> EXCLUDED_PATHS = List.of("/api/auth/login", "/api/auth/register");
 
@@ -61,7 +67,36 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
                         .header("X-User-Email", claims.get("email", String.class))
                         .build();
 
-                return chain.filter(exchange.mutate().request(modifiedRequest).build());
+                return webClient.get()
+                        .uri("/api/auth/validate/{token}", token)
+                        .retrieve()
+                        .bodyToMono(AccountStatusResponse.class)
+                        .flatMap(account -> {
+                            if (account == null || account.status() == null) {
+                                return onError(exchange, "Account status could not be verified", HttpStatus.UNAUTHORIZED);
+                            }
+
+                            if (!"ACTIVE".equalsIgnoreCase(account.status())) {
+                                return onError(exchange, "Account is locked or deleted", HttpStatus.FORBIDDEN);
+                            }
+
+                            ServerHttpRequest verifiedRequest = modifiedRequest.mutate()
+                                    .header("X-User-Status", account.status())
+                                    .header("X-Force-Password-Reset", String.valueOf(Boolean.TRUE.equals(account.forcePasswordReset())))
+                                    .build();
+
+                            return chain.filter(exchange.mutate().request(verifiedRequest).build());
+                        })
+                        .onErrorResume(error -> {
+                            if (error instanceof WebClientResponseException responseException
+                                    && responseException.getStatusCode().value() == HttpStatus.FORBIDDEN.value()) {
+                                log.error("Account validation failed: {}", responseException.getMessage());
+                                return onError(exchange, "Account is locked or deleted", HttpStatus.FORBIDDEN);
+                            }
+
+                            log.error("Account validation failed: {}", error.getMessage());
+                            return onError(exchange, "Unable to validate account status", HttpStatus.UNAUTHORIZED);
+                        });
 
             } catch (Exception e) {
                 log.error("JWT validation failed: {}", e.getMessage());
@@ -83,4 +118,6 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
     public static class Config {
         // Configuration properties if needed
     }
+
+    private record AccountStatusResponse(String status, Boolean forcePasswordReset) {}
 }
