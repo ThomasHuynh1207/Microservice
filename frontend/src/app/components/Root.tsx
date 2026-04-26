@@ -37,20 +37,20 @@ export function Root() {
       <div className="flex min-h-screen flex-col">
         <header className="sticky top-0 z-[100] border-b border-slate-200/80 bg-white/95 shadow-[0_10px_30px_-24px_rgba(15,23,42,0.35)] backdrop-blur">
           <div className="border-b border-slate-100 bg-slate-50/70">
-            <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+            <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-4 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500 sm:px-6 sm:text-[11px]">
               <span>FitLife Pro Official</span>
-              <span>Miễn phí gói cá nhân 14 ngày</span>
+              <span className="text-right">Miễn phí gói cá nhân 14 ngày</span>
             </div>
           </div>
 
-          <div className="mx-auto w-full max-w-7xl px-6 py-4">
+          <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-6">
             <div className="grid grid-cols-1 items-center gap-4 lg:grid-cols-[auto_minmax(280px,1fr)_auto] lg:gap-6">
               <Link to="/dashboard" className="group inline-flex items-center gap-3 text-slate-900">
                 <span className="grid h-11 w-11 place-items-center rounded-lg bg-[linear-gradient(135deg,#2563EB_0%,#4F46E5_100%)] text-white shadow-[0_10px_24px_-16px_rgba(37,99,235,0.9)] transition-transform duration-200 group-hover:scale-105">
                   <Activity className="h-5 w-5" />
                 </span>
                 <span className="leading-tight">
-                  <span className="block text-2xl font-semibold tracking-tight">FitLife Pro</span>
+                  <span className="block text-xl font-semibold tracking-tight sm:text-2xl">FitLife Pro</span>
                   <span className="block text-xs text-slate-500">Nền tảng sức khỏe cá nhân hóa</span>
                 </span>
               </Link>

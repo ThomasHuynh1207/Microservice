@@ -90,6 +90,25 @@ public class UserService {
         return applyLegacyProfileFallback(dto);
     }
 
+    public UserProfileDTO getUserProfileByEmail(String email) {
+        Optional<User> localUser = userRepository.findByEmail(email);
+        if (localUser.isEmpty()) {
+             throw new RuntimeException("User not found by email: " + email);
+        }
+        Long userId = localUser.get().getId();
+        UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+
+        if (profile == null) {
+            UserProfileDTO fallback = new UserProfileDTO();
+            fallback.setUserId(userId);
+            return applyLegacyProfileFallback(applyProfileFallbackFromUser(fallback, localUser.get()));
+        }
+
+        UserProfileDTO dto = convertProfileToDTO(profile);
+        dto = applyProfileFallbackFromUser(dto, localUser.get());
+        return applyLegacyProfileFallback(dto);
+    }
+
     public UserProfileDTO createOrUpdateProfile(Long userId, UserProfileDTO profileDTO) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
                 .orElse(new UserProfile());

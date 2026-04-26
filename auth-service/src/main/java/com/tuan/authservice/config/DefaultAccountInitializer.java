@@ -30,21 +30,6 @@ public class DefaultAccountInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
-        // Ensure the problematic seeded account is removed from DB if present.
-        try {
-            userRepository.deleteByEmailIgnoreCase("nguyenvanb@gmail.com");
-        } catch (Exception ignore) {
-            // ignore failures during deletion attempt
-        }
-
-        try {
-            userRepository.deleteByEmailIgnoreCase("nguyenvanc@gmail.com");
-        } catch (Exception ignore) {
-            // ignore failures during deletion attempt
-        }
-
-        removeLegacyAdminAccount("coach.fitlife@gmail.com");
-
         for (SeedAccount account : DEFAULT_ACCOUNTS) {
             synchronizeAccount(account);
         }

@@ -96,7 +96,7 @@ public class AuthService {
 
     public AdminUserDetailDTO getAdminUserDetail(Long id) {
         User user = findUserById(id);
-        return convertToAdminDetail(user, loadUserProfile(id));
+        return convertToAdminDetail(user, loadUserProfile(user.getEmail()));
     }
 
     public UserDTO getUserById(Long id) {
@@ -136,7 +136,7 @@ public class AuthService {
         User savedUser = userRepository.save(user);
 
         PasswordResetResponseDTO response = new PasswordResetResponseDTO();
-        response.setUser(convertToAdminDetail(savedUser, loadUserProfile(id)));
+        response.setUser(convertToAdminDetail(savedUser, loadUserProfile(user.getEmail())));
         response.setTemporaryPassword(temporaryPassword);
         return response;
     }
@@ -318,9 +318,9 @@ public class AuthService {
         return dto;
     }
 
-    private UserProfileSnapshotDTO loadUserProfile(Long userId) {
+    private UserProfileSnapshotDTO loadUserProfile(String email) {
         try {
-            return userServiceClient.getUserProfile(userId);
+            return userServiceClient.getUserProfileByEmail(email);
         } catch (Exception exception) {
             return null;
         }
@@ -328,7 +328,8 @@ public class AuthService {
 
     private String generateToken(User user) {
         return Jwts.builder()
-                .setSubject(user.getId().toString())
+                .setSubject(user.getEmail())
+                .claim("userId", user.getId().toString())
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole())
                 .claim("status", resolveStatus(user).name())

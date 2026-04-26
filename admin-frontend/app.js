@@ -594,7 +594,7 @@ function renderWorkoutSessions() {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 6;
-    cell.textContent = "Người dùng này chưa có session tập luyện nào.";
+    cell.textContent = "Người dùng này chưa có buổi tập nào.";
     row.appendChild(cell);
     refs.workoutSessionRows.appendChild(row);
     return;
@@ -846,7 +846,7 @@ function renderUserDetail(detail = selectedUserDetail) {
         <div class="user-detail-actions">
           ${canLock ? '<button type="button" class="inline-btn lock" data-user-action="lock">Khóa tài khoản</button>' : ""}
           ${canUnlock ? '<button type="button" class="inline-btn unlock" data-user-action="unlock">Mở khóa tài khoản</button>' : ""}
-          ${canReset ? '<button type="button" class="inline-btn" data-user-action="reset">Reset mật khẩu</button>' : ""}
+          ${canReset ? '<button type="button" class="inline-btn" data-user-action="reset">Đặt lại mật khẩu</button>' : ""}
           ${canDelete ? '<button type="button" class="inline-btn danger" data-user-action="delete">Xóa vĩnh viễn</button>' : ""}
         </div>
     </article>
@@ -951,7 +951,7 @@ function renderUserRows(users) {
       const resetButton = document.createElement("button");
       resetButton.type = "button";
       resetButton.className = "inline-btn";
-      resetButton.textContent = "Reset";
+      resetButton.textContent = "Đặt lại mật khẩu";
       resetButton.addEventListener("click", async () => {
         await handleUserAction("reset", userId);
       });
@@ -975,7 +975,7 @@ function renderUserRows(users) {
     detailButton.addEventListener("click", () => {
       openUserDetailModal();
       loadUserDetail(userId).catch((error) => {
-        setStatus(error.message || "Không thể tải chi tiết user.", "error");
+        setStatus(error.message || "Không thể tải chi tiết người dùng.", "error");
       });
     });
     actionWrap.appendChild(detailButton);
@@ -994,7 +994,7 @@ function renderDashboard() {
 async function loadUsers(resetPage = true) {
   if (!authToken) {
     showAuthScreen();
-    setAuthStatus("Vui lòng đăng nhập để truy cập trang admin.", true);
+    setAuthStatus("Vui lòng đăng nhập để truy cập trang quản trị.", true);
     return;
   }
 
@@ -1109,7 +1109,14 @@ async function handleUserAction(action, userId) {
   }
 
   try {
-    setStatus(`Đang xử lý thao tác ${action} cho user #${numericUserId}...`);
+    const actionLabels = {
+      lock: "khóa tài khoản",
+      unlock: "mở khóa tài khoản",
+      delete: "xóa tài khoản",
+      reset: "đặt lại mật khẩu"
+    };
+    const actionLabel = actionLabels[action] || "cập nhật tài khoản";
+    setStatus(`Đang xử lý thao tác ${actionLabel} cho người dùng #${numericUserId}...`);
 
     let updatedUser = null;
     let notice = "";
@@ -1122,7 +1129,7 @@ async function handleUserAction(action, userId) {
         updatedUser = await request(`/admin/users/${numericUserId}/unlock`, { method: "POST" });
         break;
       case "delete": {
-        const confirmed = window.confirm(`Bạn có chắc muốn xóa vĩnh viễn user #${numericUserId}?`);
+        const confirmed = window.confirm(`Bạn có chắc muốn xóa vĩnh viễn người dùng #${numericUserId}?`);
         if (!confirmed) {
           setStatus("Đã hủy thao tác xóa.");
           return;
@@ -1145,11 +1152,11 @@ async function handleUserAction(action, userId) {
     await refreshAfterMutation(numericUserId, updatedUser, notice, action === "delete");
 
     if (action === "reset") {
-      setStatus(`Đã tạo mật khẩu tạm thời cho user #${numericUserId}.`);
+      setStatus(`Đã tạo mật khẩu tạm thời cho người dùng #${numericUserId}.`);
     } else if (action === "delete") {
       showCenteredStatus("Đã xóa thành công", "success", 4000);
     } else if (action === "lock") {
-      setStatus(`Đã khóa user #${numericUserId}.`);
+      setStatus(`Đã khóa người dùng #${numericUserId}.`);
     } else if (action === "unlock") {
       setStatus("Cập nhật trạng thái tài khoản thành công.");
     }
@@ -1394,7 +1401,7 @@ function renderWorkoutPlans() {
 async function loadWorkoutData() {
   const userId = parseUserId(refs.workoutUserIdInput);
   if (!userId) {
-    setWorkoutStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setWorkoutStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 
@@ -1434,7 +1441,7 @@ async function loadWorkoutData() {
 async function generateWorkoutSample() {
   const userId = parseUserId(refs.workoutUserIdInput);
   if (!userId) {
-    setWorkoutStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setWorkoutStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 
@@ -1754,7 +1761,7 @@ function renderNutritionPlans() {
 async function loadNutritionData() {
   const userId = parseUserId(refs.nutritionUserIdInput);
   if (!userId) {
-    setNutritionStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setNutritionStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 
@@ -1777,7 +1784,7 @@ async function loadNutritionData() {
 async function generateNutritionPlan() {
   const userId = parseUserId(refs.nutritionUserIdInput);
   if (!userId) {
-    setNutritionStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setNutritionStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 
@@ -1869,7 +1876,7 @@ function renderProgressRows() {
 async function loadProgressData() {
   const userId = parseUserId(refs.progressUserIdInput);
   if (!userId) {
-    setProgressStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setProgressStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 
@@ -1891,7 +1898,7 @@ async function loadProgressData() {
 async function addProgressLog() {
   const userId = parseUserId(refs.progressUserIdInput);
   if (!userId) {
-    setProgressStatus("Vui lòng nhập User ID hợp lệ.", true);
+    setProgressStatus("Vui lòng nhập ID người dùng hợp lệ.", true);
     return;
   }
 

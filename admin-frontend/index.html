@@ -102,17 +102,17 @@
             <section class="panel toolbar-panel workout-hero">
               <div class="toolbar-title-wrap">
                 <p class="workout-eyebrow">Quản lý kế hoạch tập luyện</p>
-                <h2 class="panel-title">Điều phối plan, session và thư viện bài tập theo từng user</h2>
-                <p>Theo dõi kế hoạch theo người dùng, xem chi tiết ngày tập, chỉnh metadata và tạo dữ liệu mẫu khi chưa có.</p>
+                <h2 class="panel-title">Điều phối kế hoạch, buổi tập và thư viện bài tập theo từng người dùng</h2>
+                <p>Theo dõi kế hoạch theo người dùng, xem chi tiết ngày tập, chỉnh thông tin kế hoạch và tạo dữ liệu mẫu khi chưa có.</p>
                 <div class="workout-chip-row">
-                  <span class="workout-chip">Theo user</span>
-                  <span class="workout-chip">Sửa plan tại chỗ</span>
+                  <span class="workout-chip">Theo người dùng</span>
+                  <span class="workout-chip">Sửa kế hoạch tại chỗ</span>
                   <span class="workout-chip">Thư viện bài tập</span>
                 </div>
               </div>
               <div class="toolbar-controls workout-toolbar">
                 <input type="number" id="workoutUserIdInput" min="1" placeholder="ID người dùng" />
-                <input type="text" id="workoutPlanSearchInput" placeholder="Tìm theo tên, goal hoặc split" />
+                <input type="text" id="workoutPlanSearchInput" placeholder="Tìm theo tên, mục tiêu hoặc lịch tập" />
                 <select id="workoutPlanDifficultyFilter">
                   <option value="ALL">Tất cả mức</option>
                   <option value="BEGINNER">Người mới</option>
@@ -160,7 +160,7 @@
                       <th>ID</th>
                       <th>Tên kế hoạch</th>
                       <th>Độ khó</th>
-                      <th>Split</th>
+                      <th>Lịch tập</th>
                       <th>Số tuần</th>
                       <th>Hành động</th>
                     </tr>
@@ -186,18 +186,18 @@
               <div class="table-head">
                 <div>
                   <h3>Chỉnh sửa kế hoạch</h3>
-                  <p>Thay đổi metadata của plan đang chọn mà không rời khỏi màn hình quản lý.</p>
+                  <p>Thay đổi thông tin của kế hoạch đang chọn mà không rời khỏi màn hình quản lý.</p>
                 </div>
               </div>
 
               <div class="workout-editor-grid">
                 <div class="library-field full">
-                  <label for="workoutPlanEditorId">Plan ID</label>
+                  <label for="workoutPlanEditorId">ID kế hoạch</label>
                   <input type="text" id="workoutPlanEditorId" readonly />
                 </div>
                 <div class="library-field full">
                   <label for="workoutPlanNameInput">Tên kế hoạch</label>
-                  <input type="text" id="workoutPlanNameInput" placeholder="Tên plan" />
+                  <input type="text" id="workoutPlanNameInput" placeholder="Tên kế hoạch" />
                 </div>
                 <div class="library-field full">
                   <label for="workoutPlanDescriptionInput">Mô tả</label>
@@ -205,15 +205,15 @@
                 </div>
                 <div class="library-field">
                   <label for="workoutPlanDifficultyInput">Độ khó</label>
-                  <input type="text" id="workoutPlanDifficultyInput" placeholder="Beginner / Intermediate / Advanced" />
+                  <input type="text" id="workoutPlanDifficultyInput" placeholder="Cơ bản / Trung cấp / Nâng cao" />
                 </div>
                 <div class="library-field">
                   <label for="workoutPlanGoalInput">Mục tiêu</label>
                   <input type="text" id="workoutPlanGoalInput" placeholder="Giảm mỡ / Tăng cơ / Duy trì" />
                 </div>
                 <div class="library-field">
-                  <label for="workoutPlanSplitInput">Split</label>
-                  <input type="text" id="workoutPlanSplitInput" placeholder="Upper/Lower / Push-Pull-Legs" />
+                  <label for="workoutPlanSplitInput">Lịch tập</label>
+                  <input type="text" id="workoutPlanSplitInput" placeholder="Thân trên/Thân dưới / Đẩy-Kéo-Chân" />
                 </div>
                 <div class="library-field">
                   <label for="workoutPlanDurationInput">Số tuần</label>
@@ -235,7 +235,7 @@
               <div class="table-head">
                 <div>
                   <h3>Lịch sử buổi tập</h3>
-                  <p>Session gần nhất, thời lượng thực tế và trạng thái hoàn tất của user.</p>
+                  <p>Buổi tập gần nhất, thời lượng thực tế và trạng thái hoàn tất của người dùng.</p>
                 </div>
               </div>
               <div class="table-wrap">
@@ -257,8 +257,8 @@
 
               <section class="panel workout-panel workout-library-panel">
               <div class="table-head">
-                <h3>Thư viện bài tập cho User App</h3>
-                <p>Quản lý hướng dẫn, muscle highlight, kỹ thuật và video cho trang chi tiết bài tập bên User.</p>
+                <h3>Thư viện bài tập cho ứng dụng người dùng</h3>
+                <p>Quản lý hướng dẫn, điểm nhấn nhóm cơ, kỹ thuật và video cho trang chi tiết bài tập bên người dùng.</p>
               </div>
 
               <div class="workout-library-toolbar">
@@ -286,7 +286,7 @@
                       <textarea id="exerciseLibraryGuidanceInput" rows="3" placeholder="Mô tả cách thực hiện bài tập"></textarea>
                     </div>
                     <div class="library-field full">
-                      <label for="exerciseLibraryHighlightInput">Muscle highlight</label>
+                      <label for="exerciseLibraryHighlightInput">Điểm nhấn nhóm cơ</label>
                       <textarea id="exerciseLibraryHighlightInput" rows="2" placeholder="Điểm nhấn nhóm cơ chính"></textarea>
                     </div>
                     <div class="library-field full">

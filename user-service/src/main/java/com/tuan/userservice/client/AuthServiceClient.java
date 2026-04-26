@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
 
-@FeignClient(name = "auth-service", url = "http://auth-service:8081")
+@FeignClient(name = "auth-service")
 public interface AuthServiceClient {
 
     @GetMapping("/api/auth/validate/{token}")

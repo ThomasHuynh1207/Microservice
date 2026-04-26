@@ -125,6 +125,14 @@ export function NutritionTracker() {
   const loadNutritionData = async () => {
     if (!user) return;
 
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setStatus("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      setMealPlan(null);
+      setProgress(null);
+      return;
+    }
+
     setIsLoading(true);
     setStatus("");
 

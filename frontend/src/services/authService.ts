@@ -9,6 +9,7 @@ export interface LoggedUser {
 
 interface JwtPayload {
   sub?: string;
+  userId?: string;
   email?: string;
 }
 
@@ -33,12 +34,20 @@ const decodeJwtPayload = (token: string): JwtPayload | null => {
 
 const getUserIdFromToken = (token: string): number | null => {
   const payload = decodeJwtPayload(token);
-  if (!payload?.sub) {
-    return null;
+  
+  if (payload?.userId) {
+    const parsed = Number(payload.userId);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }
 
-  const parsed = Number(payload.sub);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  if (payload?.sub) {
+      const parsedSub = Number(payload.sub);
+      if (Number.isFinite(parsedSub) && parsedSub > 0) {
+          return parsedSub;
+      }
+  }
+
+  return null;
 };
 
 const USER_STORAGE_KEY = "fituser";

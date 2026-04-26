@@ -25,14 +25,13 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
     @Value("${jwt.secret}")
     private String jwtSecret;
 
-    private final WebClient webClient = WebClient.builder()
-            .baseUrl("http://auth-service:8081")
-            .build();
+    private final WebClient webClient;
 
     private static final List<String> EXCLUDED_PATHS = List.of("/api/auth/login", "/api/auth/register");
 
-    public JwtAuthenticationFilter() {
+    public JwtAuthenticationFilter(WebClient.Builder webClientBuilder) {
         super(Config.class);
+        this.webClient = webClientBuilder.baseUrl("lb://auth-service").build();
     }
 
     @Override
@@ -119,5 +118,5 @@ public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAut
         // Configuration properties if needed
     }
 
-    private record AccountStatusResponse(String status, Boolean forcePasswordReset) {}
+    public record AccountStatusResponse(String status, Boolean forcePasswordReset) {}
 }

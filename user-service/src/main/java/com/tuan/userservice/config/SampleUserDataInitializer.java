@@ -22,16 +22,7 @@ public class SampleUserDataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-                // Remove seeded user if present
-                try {
-                        userRepository.findByEmail("nguyenvanc@gmail.com").ifPresent(u -> {
-                                userProfileRepository.findByUserId(u.getId()).ifPresent(userProfileRepository::delete);
-                                userRepository.delete(u);
-                        });
-                } catch (Exception ignore) {
-                        // ignore any deletion errors here
-                }
-
+                User admin = upsertUser("admin@gmail.com", "Admin", 30, "male", 175.0, 70.0, "Maintain");
                 User user1 = upsertUser("nguyenvanc@gmail.com", "Nguyễn văn C", 27, "male", 170.0, 68.0, "Giam mo");
                 User user2 = upsertUser("tranlinh@gmail.com", "Tran Linh", 24, "female", 162.0, 55.0, "Tang co");
                 User user3 = upsertUser("phamminh@gmail.com", "Pham Minh", 29, "male", 175.0, 78.0, "Suc ben");
