@@ -1,11 +1,10 @@
+# RunSwim Club Frontend
 
-  # Fitness & Nutrition Assistant
+React + Vite frontend for onboarding, social feed, run/swim activity logging, nutrition, and AI coach.
 
-  This is a code bundle for Fitness & Nutrition Assistant. The original project is available at https://www.figma.com/design/9800F0APDxLTQZxBDTAOgn/Fitness---Nutrition-Assistant.
+```powershell
+npm install
+npm run dev
+```
 
-  ## Running the code
-
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
-  
+The Vite dev server proxies `/api` to `http://localhost:8080`.

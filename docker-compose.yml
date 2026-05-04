@@ -4,16 +4,34 @@ services:
     ports:
       - "8761:8761"
     networks:
-      microservice-network:
-        aliases:
-          - eureka-service
+      - runswim-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8761/"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8761/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      POSTGRES_DB: ${POSTGRES_DB:-runswim_app}
+    ports:
+      - "5432:5432"
+    volumes:
+      - runswim_postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - runswim-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-runswim} -d ${POSTGRES_DB:-runswim_app}"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+    restart: unless-stopped
 
   auth-service:
     build: ./auth-service
@@ -24,14 +42,19 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    networks:
-      - microservice-network
-    restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_NAME: authdb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      JWT_SECRET: ${JWT_SECRET:-UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
 
-  user-service:
-    build: ./user-service
+  athlete-service:
+    build: ./athlete-service
     ports:
       - "8082:8082"
     depends_on:
@@ -39,14 +62,18 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    networks:
-      - microservice-network
-    restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_NAME: athletedb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
 
-  workout-service:
-    build: ./workout-service
+  activity-service:
+    build: ./activity-service
     ports:
       - "8083:8083"
     depends_on:
@@ -54,26 +81,15 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-    networks:
-      - microservice-network
-    restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
-
-  progress-service:
-    build: ./progress-service
-    ports:
-      - "8084:8084"
-    depends_on:
-      eureka-server:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      DB_HOST: postgres
+      DB_NAME: activitydb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
-      - microservice-network
+      - runswim-network
     restart: unless-stopped
-    environment:
-      SPRING_PROFILES_ACTIVE: docker
 
   nutrition-service:
     build: ./nutrition-service
@@ -84,28 +100,34 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      user-service:
-        condition: service_started
-    networks:
-      - microservice-network
-    restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_NAME: nutritiondb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
 
   ai-service:
     build: ./ai-service
     ports:
       - "8085:8085"
-    environment:
-      - OPENAI_API_KEY=jkadas8jT2jcUKz8CwtLUR2zImL3bHIgEEiw
-      - SPRING_PROFILES_ACTIVE=docker
     depends_on:
       eureka-server:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_NAME: aidb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      AI_PROVIDER: ${AI_PROVIDER:-local}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
-      - microservice-network
+      - runswim-network
     restart: unless-stopped
 
   api-gateway:
@@ -117,19 +139,20 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_started
-      user-service:
+      athlete-service:
         condition: service_started
-      workout-service:
+      activity-service:
         condition: service_started
-      progress-service:
+      nutrition-service:
         condition: service_started
       ai-service:
         condition: service_started
-    networks:
-      - microservice-network
-    restart: unless-stopped
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      JWT_SECRET: ${JWT_SECRET:-UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
@@ -138,45 +161,25 @@ services:
     depends_on:
       - api-gateway
     networks:
-      - microservice-network
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-Tuan}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456789}
-      POSTGRES_DB: ${POSTGRES_DB:-fitness_app}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - microservice-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-Tuan} -d ${POSTGRES_DB:-fitness_app}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - runswim-network
     restart: unless-stopped
 
   pgadmin:
     image: dpage/pgadmin4
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@fitnessapp.com
+      PGADMIN_DEFAULT_EMAIL: admin@runswim.local
       PGADMIN_DEFAULT_PASSWORD: admin123
     ports:
       - "5050:80"
     depends_on:
       - postgres
     networks:
-      - microservice-network
+      - runswim-network
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  runswim_postgres_data:
 
 networks:
-  microservice-network:
+  runswim-network:
     driver: bridge

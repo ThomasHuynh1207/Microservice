@@ -2,85 +2,77 @@ package com.tuan.apigateway.config;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import lombok.extern.slf4j.Slf4j;
+import io.jsonwebtoken.security.Keys;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.List;
+import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
 import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
-import reactor.core.publisher.Mono;
 
-import java.util.List;
-
-@Slf4j
 @Component
 public class JwtAuthenticationFilter extends AbstractGatewayFilterFactory<JwtAuthenticationFilter.Config> {
+    private final SecretKey signingKey;
+    private final List<String> publicPaths = List.of(
+            "/api/auth/login",
+            "/api/auth/register",
+            "/actuator"
+    );
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-
-    private static final List<String> EXCLUDED_PATHS = List.of("/api/auth/login", "/api/auth/register");
-
-    public JwtAuthenticationFilter() {
+    public JwtAuthenticationFilter(@Value("${jwt.secret}") String secret) {
         super(Config.class);
+        byte[] decoded = Base64.getDecoder().decode(secret);
+        this.signingKey = Keys.hmacShaKeyFor(decoded.length >= 32 ? decoded : secret.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public GatewayFilter apply(Config config) {
         return (exchange, chain) -> {
-            ServerHttpRequest request = exchange.getRequest();
-
-            // Skip authentication for auth endpoints
-            if (isExcludedPath(request.getPath().value())) {
+            String path = exchange.getRequest().getURI().getPath();
+            if (exchange.getRequest().getMethod() == HttpMethod.OPTIONS || isPublic(path)) {
                 return chain.filter(exchange);
             }
 
-            // Extract token from Authorization header
-            String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return onError(exchange, "Missing or invalid Authorization header", HttpStatus.UNAUTHORIZED);
+            String authorization = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+            if (authorization == null || !authorization.startsWith("Bearer ")) {
+                return reject(exchange);
             }
 
-            String token = authHeader.substring(7);
-
             try {
-                // Validate JWT token
                 Claims claims = Jwts.parserBuilder()
-                        .setSigningKey(jwtSecret.getBytes())
+                        .setSigningKey(signingKey)
                         .build()
-                        .parseClaimsJws(token)
+                        .parseClaimsJws(authorization.substring(7))
                         .getBody();
 
-                // Add user info to headers for downstream services
-                ServerHttpRequest modifiedRequest = request.mutate()
-                        .header("X-User-Id", claims.getSubject())
-                        .header("X-User-Email", claims.get("email", String.class))
+                ServerHttpRequest request = exchange.getRequest().mutate()
+                        .header("X-User-Id", String.valueOf(claims.get("userId")))
+                        .header("X-User-Email", claims.getSubject())
+                        .header("X-User-Role", String.valueOf(claims.get("role")))
                         .build();
-
-                return chain.filter(exchange.mutate().request(modifiedRequest).build());
-
-            } catch (Exception e) {
-                log.error("JWT validation failed: {}", e.getMessage());
-                return onError(exchange, "Invalid JWT token", HttpStatus.UNAUTHORIZED);
+                return chain.filter(exchange.mutate().request(request).build());
+            } catch (Exception ex) {
+                return reject(exchange);
             }
         };
     }
 
-    private boolean isExcludedPath(String path) {
-        return EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
+    private boolean isPublic(String path) {
+        return publicPaths.stream().anyMatch(path::startsWith);
     }
 
-    private Mono<Void> onError(ServerWebExchange exchange, String error, HttpStatus status) {
-        ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(status);
-        return response.setComplete();
+    private reactor.core.publisher.Mono<Void> reject(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return exchange.getResponse().setComplete();
     }
 
     public static class Config {
-        // Configuration properties if needed
     }
 }

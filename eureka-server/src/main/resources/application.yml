@@ -3,12 +3,12 @@ server:
 
 spring:
   application:
-    name: eureka-service  # Tên này để các service khác gọi
+    name: eureka-server
 
 eureka:
   client:
-    register-with-eureka: false    # ✅ ĐỔI thành false
-    fetch-registry: false          # ✅ ĐỔI thành false
+    register-with-eureka: false
+    fetch-registry: false
   instance:
     prefer-ip-address: true
     hostname: localhost

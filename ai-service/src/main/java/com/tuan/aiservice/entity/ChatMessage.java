@@ -1,34 +1,62 @@
 package com.tuan.aiservice.entity;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import java.time.Instant;
 
 @Entity
-@Table(name = "chat_history")
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "ai_chat_messages")
 public class ChatMessage {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(nullable = false)
     private Long userId;
+    private String role;
 
-    @Column(nullable = false)
-    private String message;
+    @Column(length = 4000)
+    private String content;
 
-    @Column(nullable = false)
-    private String response;
+    private Instant createdAt;
 
-    @Column(nullable = false)
-    private LocalDateTime timestamp;
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
 
-    private String messageType; // user, assistant
+    public Long getId() {
+        return id;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
 }

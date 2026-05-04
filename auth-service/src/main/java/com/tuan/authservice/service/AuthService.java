@@ -1,99 +1,94 @@
 package com.tuan.authservice.service;
 
-import com.tuan.authservice.dto.LoginRequest;
-import com.tuan.authservice.dto.RegisterRequest;
-import com.tuan.authservice.dto.UserDTO;
-import com.tuan.authservice.entity.User;
-import com.tuan.authservice.repository.UserRepository;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import com.tuan.authservice.entity.UserAccount;
+import com.tuan.authservice.repository.UserAccountRepository;
+import java.util.Locale;
+import java.util.stream.Collectors;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.List;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class AuthService {
+    private final UserAccountRepository users;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    private final UserRepository userRepository;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    public AuthService(UserAccountRepository users, PasswordEncoder passwordEncoder, JwtService jwtService) {
+        this.users = users;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
+    }
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-
-    @Value("${jwt.expiration}")
-    private long jwtExpiration;
-
-    public User register(RegisterRequest request) {
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("User already exists");
+    @Transactional
+    public AuthResponse register(RegisterRequest request) {
+        String email = normalizeEmail(request.email());
+        if (users.existsByEmailIgnoreCase(email)) {
+            throw new IllegalArgumentException("Email already exists");
         }
 
-        User user = new User();
-        user.setName(request.getName());
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole("USER");
-
-        return userRepository.save(user);
+        UserAccount account = new UserAccount();
+        account.setFullName(blankToDefault(request.fullName(), "New athlete"));
+        account.setEmail(email);
+        account.setPasswordHash(passwordEncoder.encode(request.password()));
+        account.setPreferredSports(request.preferredSports() == null || request.preferredSports().isEmpty()
+                ? "RUN,SWIM"
+                : request.preferredSports().stream().map(String::toUpperCase).collect(Collectors.joining(",")));
+        users.save(account);
+        return toResponse(account);
     }
 
-    public List<UserDTO> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(this::convertToDTO)
-                .toList();
-    }
-
-    public UserDTO getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        return convertToDTO(user);
-    }
-
-    public UserDTO validateToken(String token) {
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(jwtSecret.getBytes())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
-
-        Long userId = Long.parseLong(claims.getSubject());
-        return getUserById(userId);
-    }
-
-    public UserDTO convertToDTO(User user) {
-        UserDTO dto = new UserDTO();
-        dto.setId(user.getId());
-        dto.setEmail(user.getEmail());
-        dto.setName(user.getName());
-        dto.setRole(user.getRole());
-        return dto;
-    }
-
-    public String login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
+    @Transactional(readOnly = true)
+    public AuthResponse login(LoginRequest request) {
+        UserAccount account = users.findByEmailIgnoreCase(normalizeEmail(request.email()))
+                .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+        if (!passwordEncoder.matches(request.password(), account.getPasswordHash())) {
+            throw new IllegalArgumentException("Invalid email or password");
         }
-
-        return generateToken(user);
+        return toResponse(account);
     }
 
-    private String generateToken(User user) {
-        return Jwts.builder()
-                .setSubject(user.getId().toString())
-                .claim("email", user.getEmail())
-                .claim("role", user.getRole())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + jwtExpiration))
-                .signWith(Keys.hmacShaKeyFor(jwtSecret.getBytes()))
-                .compact();
+    @Transactional
+    public void markOnboardingCompleted(Long userId) {
+        users.findById(userId).ifPresent(account -> account.setOnboardingCompleted(true));
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponse me(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            throw new IllegalArgumentException("Missing token");
+        }
+        String email = jwtService.parse(authorization.substring(7)).getSubject();
+        UserAccount account = users.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        return toResponse(account);
+    }
+
+    private AuthResponse toResponse(UserAccount account) {
+        return new AuthResponse(
+                jwtService.createToken(account),
+                account.getId(),
+                account.getFullName(),
+                account.getEmail(),
+                account.getRole(),
+                account.isOnboardingCompleted()
+        );
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String blankToDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    public record RegisterRequest(String fullName, String email, String password, java.util.List<String> preferredSports) {
+    }
+
+    public record LoginRequest(String email, String password) {
+    }
+
+    public record AuthResponse(String token, Long userId, String fullName, String email, String role, boolean onboardingCompleted) {
     }
 }

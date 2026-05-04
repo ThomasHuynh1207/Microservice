@@ -9,10 +9,25 @@ on:
 jobs:
 
   build:
-
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - activity-service
+          - ai-service
+          - api-gateway
+          - athlete-service
+          - auth-service
+          - eureka-server
+          - frontend
+          - nutrition-service
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f ${{ matrix.service }}/Dockerfile \
+            -t my-image-name:${{ matrix.service }}-${GITHUB_SHA::7} \
+            ${{ matrix.service }}

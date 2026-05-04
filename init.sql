@@ -1,5 +1,5 @@
 CREATE DATABASE authdb;
-CREATE DATABASE userdb;
-CREATE DATABASE workoutdb;
-CREATE DATABASE progressdb;
+CREATE DATABASE athletedb;
+CREATE DATABASE activitydb;
 CREATE DATABASE aidb;
+CREATE DATABASE nutritiondb;
