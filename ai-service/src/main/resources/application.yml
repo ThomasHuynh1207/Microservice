@@ -4,57 +4,26 @@ server:
 spring:
   application:
     name: ai-service
-
-  # ====================== Database Configuration ======================
   datasource:
-    url: jdbc:postgresql://postgres:5432/aidb
-    driver-class-name: org.postgresql.Driver
-    username: ${POSTGRES_USER:Tuan}
-    password: ${POSTGRES_PASSWORD:123456789}
-
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:aidb}
+    username: ${POSTGRES_USER:runswim}
+    password: ${POSTGRES_PASSWORD:runswim123}
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
       ddl-auto: update
-    show-sql: true
+    open-in-view: false
     properties:
       hibernate:
-        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
-  # Profile cho Docker
-  profiles:
-    active: docker
-
-# ====================== Eureka Configuration (Rất quan trọng) ======================
 eureka:
   client:
-    register-with-eureka: true
-    fetch-registry: true
     service-url:
-      defaultZone: http://eureka-service:8761/eureka/
-
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
-    hostname: ai-service
-    lease-renewal-interval-in-seconds: 10
-    lease-expiration-duration-in-seconds: 30
+    instance-id: ${spring.application.name}:${server.port}
 
-# ====================== OpenAI Configuration ======================
-openai:
-  api:
-    key: ${OPENAI_API_KEY}
-    url: https://api.openai.com/v1/chat/completions
-
-# ====================== n8n Webhook Configuration (dành cho AI Fitness) ======================
-n8n:
-  webhook:
-    # Nếu bạn chạy n8n trong Docker cùng network
-    url: http://n8n:5678/webhook/fitness-chat
-    # Nếu dùng n8n Cloud hoặc ngrok (dùng tạm khi test)
-    # url: https://your-ngrok-url.ngrok-free.dev/webhook/fitness-chat
-
-# ====================== Logging (dễ debug) ======================
-logging:
-  level:
-    org.springframework.cloud.netflix.eureka: DEBUG
-    com.tuan.fitness: DEBUG
+app:
+  ai:
+    provider: ${AI_PROVIDER:local}

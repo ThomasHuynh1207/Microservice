@@ -1,3 +1,0 @@
-com\tuan\apigateway\ApiGatewayApplication.class
-com\tuan\apigateway\config\JwtAuthenticationFilter.class
-com\tuan\apigateway\config\JwtAuthenticationFilter$Config.class

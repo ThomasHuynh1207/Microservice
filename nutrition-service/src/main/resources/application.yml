@@ -5,28 +5,21 @@ spring:
   application:
     name: nutrition-service
   datasource:
-    url: jdbc:postgresql://postgres:5432/nutritiondb
-    username: ${POSTGRES_USER:Tuan}
-    password: ${POSTGRES_PASSWORD:123456789}
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:nutritiondb}
+    username: ${POSTGRES_USER:runswim}
+    password: ${POSTGRES_PASSWORD:runswim123}
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    open-in-view: false
     properties:
       hibernate:
-        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka-service:8761/eureka/
-    register-with-eureka: true
-    fetch-registry: true
-
-feign:
-  client:
-    config:
-      default:
-        connectTimeout: 5000
-        readTimeout: 10000
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
