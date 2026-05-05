@@ -2,26 +2,56 @@ package com.tuan.aiservice.service;
 
 import com.tuan.aiservice.entity.ChatMessage;
 import com.tuan.aiservice.repository.ChatMessageRepository;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.reactive.function.client.WebClient;
 
 @Service
 public class AiCoachService {
-    private final ChatMessageRepository messages;
+    private static final Logger log = LoggerFactory.getLogger(AiCoachService.class);
+    private static final Duration N8N_TIMEOUT = Duration.ofSeconds(75);
+    private static final Duration GEMINI_TIMEOUT = Duration.ofSeconds(75);
+    private static final String GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    private static final String GEMINI_SYSTEM_PROMPT = "You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.";
 
-    public AiCoachService(ChatMessageRepository messages) {
+    private final ChatMessageRepository messages;
+    private final WebClient webClient;
+    private final String provider;
+    private final String n8nWebhookUrl;
+    private final String geminiApiKey;
+    private final String geminiModel;
+
+    public AiCoachService(
+            ChatMessageRepository messages,
+            WebClient.Builder webClientBuilder,
+            @Value("${app.ai.provider:local}") String provider,
+            @Value("${app.ai.n8n-webhook-url:http://localhost:5678/webhook/ai-fitness}") String n8nWebhookUrl,
+            @Value("${app.ai.gemini-api-key:}") String geminiApiKey,
+            @Value("${app.ai.gemini-model:gemini-2.5-flash}") String geminiModel) {
         this.messages = messages;
+        this.webClient = webClientBuilder.build();
+        this.provider = provider;
+        this.n8nWebhookUrl = n8nWebhookUrl;
+        this.geminiApiKey = geminiApiKey;
+        this.geminiModel = geminiModel;
     }
 
     @Transactional
     public ChatResponse chat(ChatRequest request) {
         save(request.userId(), "user", request.message());
-        String reply = coachReply(request.message(), request.context());
-        save(request.userId(), "assistant", reply);
-        return new ChatResponse(reply, "local-endurance-coach");
+        GeneratedReply generatedReply = generateReply(request);
+        save(request.userId(), "assistant", generatedReply.reply());
+        return new ChatResponse(generatedReply.reply(), generatedReply.provider());
     }
 
     @Transactional(readOnly = true)
@@ -55,21 +85,134 @@ public class AiCoachService {
         messages.save(message);
     }
 
+    private GeneratedReply generateReply(ChatRequest request) {
+        if (isN8nProvider()) {
+            return requestN8n(request)
+                .map(reply -> new GeneratedReply(reply, "n8n-gemini"))
+                .or(() -> requestGemini(request).map(reply -> new GeneratedReply(reply, "gemini-direct")))
+                    .orElseGet(() -> new GeneratedReply(
+                            coachReply(request.message(), request.context()),
+                            "local-endurance-coach-fallback"));
+        }
+
+        return new GeneratedReply(coachReply(request.message(), request.context()), "local-endurance-coach");
+    }
+
+    private boolean isN8nProvider() {
+        return "n8n".equalsIgnoreCase(provider);
+    }
+
+    private Optional<String> requestN8n(ChatRequest request) {
+        if (n8nWebhookUrl == null || n8nWebhookUrl.isBlank()) {
+            log.warn("n8n AI provider is enabled but app.ai.n8n-webhook-url is empty");
+            return Optional.empty();
+        }
+
+        try {
+            Object response = webClient.post()
+                    .uri(n8nWebhookUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(Object.class)
+                    .block(N8N_TIMEOUT);
+
+            return extractReply(response);
+        } catch (Exception ex) {
+            log.warn("n8n AI webhook call failed: {}", ex.getMessage());
+            return requestGemini(request);
+        }
+    }
+
+    private Optional<String> requestGemini(ChatRequest request) {
+        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            log.warn("Gemini API key is not configured");
+            return Optional.empty();
+        }
+
+        try {
+            Object response = webClient.post()
+                    .uri(GEMINI_ENDPOINT)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + geminiApiKey)
+                    .bodyValue(Map.of(
+                            "model", geminiModel == null || geminiModel.isBlank() ? "gemini-2.5-flash" : geminiModel,
+                            "messages", List.of(
+                                    Map.of("role", "system", "content", GEMINI_SYSTEM_PROMPT),
+                                    Map.of(
+                                            "role", "user",
+                                            "content", "User ID: " + safeString(request.userId())
+                                                    + "\nContext: " + safeString(request.context())
+                                                    + "\nMessage: " + safeString(request.message()))
+                            )))
+                    .retrieve()
+                    .bodyToMono(Object.class)
+                    .block(GEMINI_TIMEOUT);
+
+            return extractReply(response);
+        } catch (Exception ex) {
+            log.warn("Direct Gemini call failed: {}", ex.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> extractReply(Object response) {
+        if (response instanceof String text && !text.isBlank()) {
+            return Optional.of(text.trim());
+        }
+
+        if (response instanceof List<?> list) {
+            return list.stream()
+                    .map(this::extractReply)
+                    .flatMap(Optional::stream)
+                    .findFirst();
+        }
+
+        if (response instanceof Map<?, ?> map) {
+            for (String key : List.of("reply", "recommendation", "output_text", "text", "content")) {
+                Object value = map.get(key);
+                if (value instanceof String text && !text.isBlank()) {
+                    return Optional.of(text.trim());
+                }
+            }
+
+            for (String key : List.of("body", "data", "message", "choices", "output")) {
+                Optional<String> nestedReply = extractReply(map.get(key));
+                if (nestedReply.isPresent()) {
+                    return nestedReply;
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
     private String coachReply(String message, String context) {
         String text = (message == null ? "" : message).toLowerCase(Locale.ROOT);
-        if (text.contains("bơi") || text.contains("swim")) {
-            return "Cho buoi boi tiep theo: khoi dong 300m, 6x100m o RPE 6 voi nghi 20s, 4x50m drill bat kip tho, roi tha long 200m. Neu vai cang, giam toc do va giu stroke dai.";
+        if (text.contains("boi") || text.contains("swim")) {
+            return "Cho buổi bơi tiếp theo: khởi động 300m, 6x100m ở RPE 6 với nghỉ 20s, 4x50m drill bắt nhịp thở, rồi thả lỏng 200m. Nếu vai căng, giảm tốc độ và giữ sải dài.";
         }
-        if (text.contains("chạy") || text.contains("run") || text.contains("pace")) {
-            return "Voi chay bo, hay giu 80% buoi tap o cuong do de noi chuyen duoc. Tuan nay them 1 buoi tempo ngan: 10 phut khoi dong, 3x6 phut nhanh vua, nghi 2 phut, roi tha long.";
+        if (text.contains("chay") || text.contains("run") || text.contains("pace")) {
+            return "Với chạy bộ, hãy giữ 80% buổi tập ở cường độ có thể nói chuyện được. Tuần này thêm 1 buổi tempo ngắn: 10 phút khởi động, 3x6 phút nhanh vừa, nghỉ 2 phút, rồi thả lỏng.";
         }
-        if (text.contains("ăn") || text.contains("nutrition") || text.contains("meal") || text.contains("carb")) {
-            return "Truoc buoi tap chat luong, an carb de tieu hoa nhu chuoi, banh mi, com hoac yen mach. Sau tap, ghep 25-35g protein voi carb va uong nuoc co dien giai neu do mo hoi nhieu.";
+        if (text.contains("an") || text.contains("nutrition") || text.contains("meal") || text.contains("carb")) {
+            return "Trước buổi tập chất lượng, ăn carb dễ tiêu như chuối, bánh mì, cơm hoặc yến mạch. Sau tập, ghép 25-35g protein với carb và uống nước có điện giải nếu đổ mồ hôi nhiều.";
         }
         if (context != null && !context.isBlank()) {
-            return "Du tren ngu canh hien tai, uu tien tinh deu dan: 2-3 buoi chay de, 2 buoi boi ky thuat, va 1 ngay nghi that su. Gui them muc tieu cu the, minh se tach thanh lich 7 ngay.";
+            return "Dựa trên ngữ cảnh hiện tại, ưu tiên tính đều đặn: 2-3 buổi chạy dễ, 2 buổi bơi kỹ thuật, và 1 ngày nghỉ thật sự. Gửi thêm mục tiêu cụ thể, mình sẽ tách thành lịch 7 ngày.";
         }
-        return "Minh se dong vai AI coach cho chay va boi: noi cho minh biet muc tieu, so buoi/tuần, va buoi tap gan nhat cua ban. Minh se goi y lich tap, phuc hoi va dinh duong phu hop.";
+        return "Mình sẽ đóng vai AI coach cho chạy và bơi: nói cho mình biết mục tiêu, số buổi/tuần, và buổi tập gần nhất của bạn. Mình sẽ gợi ý lịch tập, phục hồi và dinh dưỡng phù hợp.";
+    }
+
+    private String safeString(Long value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private String safeString(String value) {
+        return value == null ? "" : value;
+    }
+
+    private record GeneratedReply(String reply, String provider) {
     }
 
     public record ChatRequest(Long userId, String message, String context) {

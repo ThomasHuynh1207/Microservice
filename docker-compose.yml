@@ -33,6 +33,93 @@ services:
       retries: 5
     restart: unless-stopped
 
+  n8n-db-init:
+    image: postgres:15-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      N8N_DB_NAME: ${N8N_DB_NAME:-n8ndb}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - >
+        psql -h postgres -U "$POSTGRES_USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = '$N8N_DB_NAME'" | grep -q 1
+        || createdb -h postgres -U "$POSTGRES_USER" "$N8N_DB_NAME"
+    networks:
+      - runswim-network
+    restart: "no"
+
+  n8n-import:
+    image: docker.n8n.io/n8nio/n8n:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n-db-init:
+        condition: service_completed_successfully
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8ndb}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-runswim}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-runswim-local-n8n-encryption-key-change-me}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Asia/Ho_Chi_Minh}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - runswim_n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    networks:
+      - runswim-network
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - >
+        n8n import:workflow --input=/workflows/ai-fitness.json &&
+        n8n publish:workflow --id=ai-fitness-openai
+    restart: "no"
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n-import:
+        condition: service_completed_successfully
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8ndb}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-runswim}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-runswim-local-n8n-encryption-key-change-me}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:5678/}
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Asia/Ho_Chi_Minh}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - runswim_n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    networks:
+      - runswim-network
+    restart: unless-stopped
+
   auth-service:
     build: ./auth-service
     ports:
@@ -119,12 +206,17 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      n8n:
+        condition: service_started
     environment:
       DB_HOST: postgres
       DB_NAME: aidb
       POSTGRES_USER: ${POSTGRES_USER:-runswim}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
-      AI_PROVIDER: ${AI_PROVIDER:-local}
+      AI_PROVIDER: ${AI_PROVIDER:-n8n}
+      N8N_AI_WEBHOOK_URL: ${N8N_AI_WEBHOOK_URL:-http://n8n:5678/webhook/ai-fitness}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
       - runswim-network
@@ -179,6 +271,7 @@ services:
 
 volumes:
   runswim_postgres_data:
+  runswim_n8n_data:
 
 networks:
   runswim-network:
