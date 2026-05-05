@@ -1,0 +1,136 @@
+{
+  "id": "ai-fitness-openai",
+  "name": "AI Fitness Gemini Webhook",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-fitness",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ai-fitness-webhook-node",
+      "name": "AI Fitness Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ],
+      "webhookId": "ai-fitness-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.GEMINI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "={{ $env.GEMINI_MODEL || 'gemini-2.5-flash' }}"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{ role: 'system', content: 'You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.' }, { role: 'user', content: 'User ID: ' + ($json.body.userId ?? '') + '\\nContext: ' + ($json.body.context ?? '') + '\\nMessage: ' + ($json.body.message ?? '') }] }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "call-gemini-openai-compatibility-node",
+      "name": "Call Gemini Chat Completions API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nlet reply = data.output_text;\n\nif (!reply && Array.isArray(data.output)) {\n  reply = data.output\n    .flatMap((item) => Array.isArray(item.content) ? item.content : [])\n    .map((content) => content.text || '')\n    .filter(Boolean)\n    .join('\\n');\n}\n\nif (!reply && data.choices?.[0]?.message?.content) {\n  reply = data.choices[0].message.content;\n}\n\nreturn [{\n  json: {\n    reply: String(reply || 'Gemini did not return a fitness recommendation.').trim()\n  }\n}];"
+      },
+      "id": "normalize-gemini-response-node",
+      "name": "Normalize Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {}
+      },
+      "id": "respond-to-backend-node",
+      "name": "Respond to Backend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "AI Fitness Webhook": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini Chat Completions API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini Chat Completions API": {
+      "main": [
+        [
+          {
+            "node": "Normalize Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "tags": []
+}

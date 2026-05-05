@@ -1191,6 +1191,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
   const [mode, setMode] = useState<"signup" | "login">("signup");
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [demoError, setDemoError] = useState("");
   const [form, setForm] = useState({
     fullName: "Mèo Mũ Vận Học",
     email: "runner@example.com",
@@ -1242,6 +1243,35 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
 
     setLoading(false);
     onDone({ ...auth, onboardingCompleted: true });
+  }
+
+  async function startDemo() {
+    setLoading(true);
+    setDemoError("");
+
+    try {
+      const response = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: demoSession.email,
+          password: "RunSwim123",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const auth = await response.json() as Session;
+      onDone({ ...auth, onboardingCompleted: true });
+    } catch {
+      setDemoError("Không thể mở bản demo ngay lúc này. Hãy thử đăng nhập lại.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -1298,7 +1328,10 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
           <button className="orange-button wide" disabled={loading}>
             {loading ? "Đang xử lý..." : mode === "signup" && step < 2 ? "Tiếp tục" : "Bắt đầu luyện tập"}
           </button>
-          <button type="button" className="outline-button centered" onClick={() => onDone(demoSession)}>Vào bản demo</button>
+          <button type="button" className="outline-button centered" disabled={loading} onClick={() => void startDemo()}>
+            {loading ? "Đang mở demo..." : "Vào bản demo"}
+          </button>
+          {demoError && <p className="form-error">{demoError}</p>}
         </form>
       </section>
     </main>

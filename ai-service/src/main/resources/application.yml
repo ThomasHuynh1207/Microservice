@@ -27,3 +27,6 @@ eureka:
 app:
   ai:
     provider: ${AI_PROVIDER:local}
+    n8n-webhook-url: ${N8N_AI_WEBHOOK_URL:http://localhost:5678/webhook/ai-fitness}
+    gemini-api-key: ${GEMINI_API_KEY:}
+    gemini-model: ${GEMINI_MODEL:gemini-2.5-flash}
