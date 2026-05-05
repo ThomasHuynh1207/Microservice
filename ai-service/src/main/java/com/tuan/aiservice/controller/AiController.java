@@ -7,12 +7,15 @@ import com.tuan.aiservice.service.AiCoachService.ChatResponse;
 import com.tuan.aiservice.service.AiCoachService.InsightRequest;
 import com.tuan.aiservice.service.AiCoachService.InsightResponse;
 import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api/ai")
@@ -36,5 +39,18 @@ public class AiController {
     @PostMapping("/insights")
     InsightResponse insights(@RequestBody InsightRequest request) {
         return aiCoachService.insights(request);
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(ResponseStatusException.class)
+    ResponseEntity<ErrorResponse> handleUnavailable(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        HttpStatus responseStatus = status == null ? HttpStatus.SERVICE_UNAVAILABLE : status;
+        String message = ex.getReason() == null || ex.getReason().isBlank()
+                ? "AI Coach is currently unavailable."
+                : ex.getReason();
+        return ResponseEntity.status(responseStatus).body(new ErrorResponse(message));
+    }
+
+    record ErrorResponse(String message) {
     }
 }

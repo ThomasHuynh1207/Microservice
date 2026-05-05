@@ -21,7 +21,7 @@ public class AiCoachService {
     private static final Logger log = LoggerFactory.getLogger(AiCoachService.class);
     private static final Duration N8N_TIMEOUT = Duration.ofSeconds(75);
     private static final Duration GEMINI_TIMEOUT = Duration.ofSeconds(75);
-    private static final String GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    private static final String GEMINI_ENDPOINT_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent";
     private static final String GEMINI_SYSTEM_PROMPT = "You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.";
 
     private final ChatMessageRepository messages;
@@ -87,12 +87,19 @@ public class AiCoachService {
 
     private GeneratedReply generateReply(ChatRequest request) {
         if (isN8nProvider()) {
-            return requestN8n(request)
-                .map(reply -> new GeneratedReply(reply, "n8n-gemini"))
-                .or(() -> requestGemini(request).map(reply -> new GeneratedReply(reply, "gemini-direct")))
-                    .orElseGet(() -> new GeneratedReply(
-                            coachReply(request.message(), request.context()),
-                            "local-endurance-coach-fallback"));
+            Optional<String> n8nReply = requestN8n(request);
+            if (n8nReply.isPresent()) {
+                return new GeneratedReply(n8nReply.get(), "n8n-gemini");
+            }
+
+            Optional<String> geminiReply = requestGemini(request);
+            if (geminiReply.isPresent()) {
+                log.warn("n8n provider failed; falling back to direct Gemini");
+                return new GeneratedReply(geminiReply.get(), "direct-gemini");
+            }
+
+            log.warn("n8n and Gemini failed; falling back to local coach");
+            return new GeneratedReply(coachReply(request.message(), request.context()), "local-endurance-coach");
         }
 
         return new GeneratedReply(coachReply(request.message(), request.context()), "local-endurance-coach");
@@ -117,10 +124,14 @@ public class AiCoachService {
                     .bodyToMono(Object.class)
                     .block(N8N_TIMEOUT);
 
-            return extractReply(response);
+            Optional<String> reply = extractReply(response);
+            if (reply.isEmpty()) {
+                log.warn("n8n webhook returned no usable AI reply");
+            }
+            return reply;
         } catch (Exception ex) {
             log.warn("n8n AI webhook call failed: {}", ex.getMessage());
-            return requestGemini(request);
+            return Optional.empty();
         }
     }
 
@@ -131,19 +142,20 @@ public class AiCoachService {
         }
 
         try {
+            String model = geminiModel == null || geminiModel.isBlank() ? "gemini-2.5-flash" : geminiModel;
+            String endpoint = String.format(GEMINI_ENDPOINT_TEMPLATE, model);
+            
             Object response = webClient.post()
-                    .uri(GEMINI_ENDPOINT)
+                    .uri(endpoint + "?key=" + geminiApiKey)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + geminiApiKey)
                     .bodyValue(Map.of(
-                            "model", geminiModel == null || geminiModel.isBlank() ? "gemini-2.5-flash" : geminiModel,
-                            "messages", List.of(
-                                    Map.of("role", "system", "content", GEMINI_SYSTEM_PROMPT),
-                                    Map.of(
-                                            "role", "user",
-                                            "content", "User ID: " + safeString(request.userId())
+                            "systemInstruction", Map.of("parts", List.of(Map.of("text", GEMINI_SYSTEM_PROMPT))),
+                            "contents", List.of(
+                                    Map.of("role", "user", "parts", List.of(
+                                            Map.of("text", "User ID: " + safeString(request.userId())
                                                     + "\nContext: " + safeString(request.context())
                                                     + "\nMessage: " + safeString(request.message()))
+                                    ))
                             )))
                     .retrieve()
                     .bodyToMono(Object.class)
@@ -169,6 +181,32 @@ public class AiCoachService {
         }
 
         if (response instanceof Map<?, ?> map) {
+            // Try native Gemini format: candidates[0].content.parts[0].text
+            try {
+                Object candidates = map.get("candidates");
+                if (candidates instanceof List<?> candList && !candList.isEmpty()) {
+                    Object firstCandidate = candList.get(0);
+                    if (firstCandidate instanceof Map<?, ?> candMap) {
+                        Object content = candMap.get("content");
+                        if (content instanceof Map<?, ?> contentMap) {
+                            Object parts = contentMap.get("parts");
+                            if (parts instanceof List<?> partsList && !partsList.isEmpty()) {
+                                Object firstPart = partsList.get(0);
+                                if (firstPart instanceof Map<?, ?> partMap) {
+                                    Object text = partMap.get("text");
+                                    if (text instanceof String textStr && !textStr.isBlank()) {
+                                        return Optional.of(textStr.trim());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to extract native Gemini format: {}", e.getMessage());
+            }
+            
+            // Fallback to other formats
             for (String key : List.of("reply", "recommendation", "output_text", "text", "content")) {
                 Object value = map.get(key);
                 if (value instanceof String text && !text.isBlank()) {
@@ -176,7 +214,7 @@ public class AiCoachService {
                 }
             }
 
-            for (String key : List.of("body", "data", "message", "choices", "output")) {
+            for (String key : List.of("reply", "body", "data", "message", "choices", "output")) {
                 Optional<String> nestedReply = extractReply(map.get(key));
                 if (nestedReply.isPresent()) {
                     return nestedReply;

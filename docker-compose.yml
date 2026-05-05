@@ -79,9 +79,9 @@ services:
     entrypoint:
       - /bin/sh
       - -ec
-      - >
-        n8n import:workflow --input=/workflows/ai-fitness.json &&
-        n8n publish:workflow --id=ai-fitness-openai
+      - |
+        n8n import:workflow --input=/workflows/ai-fitness.json 
+        n8n update:workflow --id=ai-fitness-openai --active=true
     restart: "no"
 
   n8n:
@@ -101,16 +101,17 @@ services:
       DB_POSTGRESDB_USER: ${POSTGRES_USER:-runswim}
       DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-runswim-local-n8n-encryption-key-change-me}
-      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_HOST: n8n
       N8N_PORT: 5678
       N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      WEBHOOK_URL: http://localhost:5678/
       N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL:-http://localhost:5678/}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_PERSONALIZATION_ENABLED: "false"
       N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Asia/Ho_Chi_Minh}
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
