@@ -23,14 +23,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + ($env.GEMINI_MODEL || 'gemini-2.5-flash') + ':generateContent?key=' + $env.GEMINI_API_KEY }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.GEMINI_API_KEY }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -42,12 +38,12 @@
         "bodyParameters": {
           "parameters": [
             {
-              "name": "model",
-              "value": "={{ $env.GEMINI_MODEL || 'gemini-2.5-flash' }}"
+              "name": "systemInstruction",
+              "value": "={{ { parts: [{ text: 'You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.' }] } }}"
             },
             {
-              "name": "messages",
-              "value": "={{ [{ role: 'system', content: 'You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.' }, { role: 'user', content: 'User ID: ' + ($json.body.userId ?? '') + '\\nContext: ' + ($json.body.context ?? '') + '\\nMessage: ' + ($json.body.message ?? '') }] }}"
+              "name": "contents",
+              "value": "={{ [{ role: 'user', parts: [{ text: 'User ID: ' + ($json.body.userId ?? '') + '\\nContext: ' + ($json.body.context ?? '') + '\\nMessage: ' + ($json.body.message ?? '') }] }] }}"
             }
           ]
         },
@@ -59,6 +55,8 @@
       "name": "Call Gemini Chat Completions API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "continueOnFail": true,
+      "alwaysOutputData": true,
       "position": [
         -360,
         0
@@ -66,7 +64,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $json;\nlet reply = data.output_text;\n\nif (!reply && Array.isArray(data.output)) {\n  reply = data.output\n    .flatMap((item) => Array.isArray(item.content) ? item.content : [])\n    .map((content) => content.text || '')\n    .filter(Boolean)\n    .join('\\n');\n}\n\nif (!reply && data.choices?.[0]?.message?.content) {\n  reply = data.choices[0].message.content;\n}\n\nreturn [{\n  json: {\n    reply: String(reply || 'Gemini did not return a fitness recommendation.').trim()\n  }\n}];"
+        "jsCode": "const data = $json ?? {};\nlet reply = '';\n\nconst statusCode = typeof data.statusCode === 'number' ? data.statusCode : null;\nconst hasError = Boolean(data.error) || (statusCode !== null && statusCode >= 400);\n\nif (Array.isArray(data.candidates) && data.candidates.length > 0) {\n  const firstCandidate = data.candidates[0];\n  const parts = firstCandidate?.content?.parts;\n\n  if (Array.isArray(parts)) {\n    reply = parts\n      .map((part) => part?.text || '')\n      .filter(Boolean)\n      .join('\\n');\n  }\n}\n\nif (!reply && data.output_text) {\n  reply = data.output_text;\n}\n\nif (!reply && Array.isArray(data.output)) {\n  reply = data.output\n    .flatMap((item) => Array.isArray(item.content) ? item.content : [])\n    .map((content) => content.text || '')\n    .filter(Boolean)\n    .join('\\n');\n}\n\nif (!reply && data.choices?.[0]?.message?.content) {\n  reply = data.choices[0].message.content;\n}\n\nif (!reply) {\n  reply = hasError\n    ? 'Gemini is unavailable. Check GEMINI_API_KEY and model.'\n    : 'Gemini did not return a fitness recommendation.';\n}\n\nreturn [{\n  json: {\n    reply: String(reply).trim()\n  }\n}];"
       },
       "id": "normalize-gemini-response-node",
       "name": "Normalize Gemini Response",

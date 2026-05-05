@@ -194,7 +194,10 @@ const challengeLibrary: Challenge[] = [
 ];
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(() => readStorage("runswim-session", null));
+  const [session, setSession] = useState<Session | null>(() => {
+    const stored = readStorage<Session | null>("runswim-session", null);
+    return stored && stored.token !== "demo" ? stored : null;
+  });
   const [page, setPage] = useState<Page>("dashboard");
   const [profile, setProfile] = useState<AthleteProfile>(fallbackProfile);
   const [stats, setStats] = useState<Stats>(fallbackStats);
@@ -993,11 +996,22 @@ function AiCoachPage({ token, userId, stats }: { token: string; userId: number; 
     if (!userMessage) return;
     setMessages((current) => [...current, { role: "user", content: userMessage }]);
     setInput("");
-    const response = await api<{ reply: string }>("/ai/chat", token, { reply: "Giữ tuần cân bằng: 2 buổi chạy dễ, 1 buổi tempo, 2 buổi bơi kỹ thuật và 1 ngày nghỉ hoàn toàn." }, {
-      method: "POST",
-      body: JSON.stringify({ userId, message: userMessage, context }),
-    });
-    setMessages((current) => [...current, { role: "assistant", content: response.reply }]);
+    if (!token || token === "demo") {
+      setMessages((current) => [...current, { role: "assistant", content: "Bạn đang ở chế độ demo hoặc chưa đăng nhập. Hãy đăng nhập để dùng AI coach." }]);
+      return;
+    }
+    try {
+      const response = await apiStrict<{ reply: string }>("/ai/chat", token, {
+        method: "POST",
+        body: JSON.stringify({ userId, message: userMessage, context }),
+      });
+      setMessages((current) => [...current, { role: "assistant", content: response.reply }]);
+    } catch (error) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Không thể kết nối AI lúc này. Hãy kiểm tra token, API gateway và n8n.";
+      setMessages((current) => [...current, { role: "assistant", content: message }]);
+    }
   }
 
   return (
@@ -1191,6 +1205,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
   const [mode, setMode] = useState<"signup" | "login">("signup");
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [demoError, setDemoError] = useState("");
   const [form, setForm] = useState({
     fullName: "Mèo Mũ Vận Học",
@@ -1214,35 +1229,42 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
     }
 
     setLoading(true);
+    setAuthError("");
     const authPath = mode === "login" ? "/auth/login" : "/auth/register";
     const authBody = mode === "login"
       ? { email: form.email, password: form.password }
       : { fullName: form.fullName, email: form.email, password: form.password, preferredSports: ["RUN", "SWIM"] };
-
-    const auth = await api<Session>(authPath, "", { ...demoSession, fullName: form.fullName }, {
-      method: "POST",
-      body: JSON.stringify(authBody),
-    });
-
-    if (mode === "signup") {
-      await api(`/athletes/${auth.userId}/onboarding`, auth.token, fallbackProfile, {
+    try {
+      const auth = await apiStrict<Session>(authPath, "", {
         method: "POST",
-        body: JSON.stringify({
-          displayName: form.fullName,
-          city: form.city,
-          primaryGoal: form.primaryGoal,
-          experienceLevel: form.experienceLevel,
-          preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
-          nutritionFocus: form.nutritionFocus,
-          weeklyRunGoalKm: form.weeklyRunGoalKm,
-          weeklySwimGoalMeters: form.weeklySwimGoalMeters,
-          visibility: "PRIVATE",
-        }),
+        body: JSON.stringify(authBody),
       });
-    }
 
-    setLoading(false);
-    onDone({ ...auth, onboardingCompleted: true });
+      if (mode === "signup") {
+        await api(`/athletes/${auth.userId}/onboarding`, auth.token, fallbackProfile, {
+          method: "POST",
+          body: JSON.stringify({
+            displayName: form.fullName,
+            city: form.city,
+            primaryGoal: form.primaryGoal,
+            experienceLevel: form.experienceLevel,
+            preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
+            nutritionFocus: form.nutritionFocus,
+            weeklyRunGoalKm: form.weeklyRunGoalKm,
+            weeklySwimGoalMeters: form.weeklySwimGoalMeters,
+            visibility: "PRIVATE",
+          }),
+        });
+      }
+
+      onDone({ ...auth, onboardingCompleted: true });
+    } catch {
+      setAuthError(mode === "login"
+        ? "Email hoặc mật khẩu chưa đúng. Hãy thử lại."
+        : "Không thể tạo tài khoản. Hãy thử lại.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function startDemo() {
@@ -1331,6 +1353,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
           <button type="button" className="outline-button centered" disabled={loading} onClick={() => void startDemo()}>
             {loading ? "Đang mở demo..." : "Vào bản demo"}
           </button>
+          {authError && <p className="form-error">{authError}</p>}
           {demoError && <p className="form-error">{demoError}</p>}
         </form>
       </section>
@@ -1428,4 +1451,29 @@ async function api<T>(path: string, token: string, fallback: T, init: RequestIni
   } catch {
     return fallback;
   }
+}
+
+async function apiStrict<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token && token !== "demo" ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const data = await response.json() as { message?: string };
+      if (data?.message) message = data.message;
+    } catch {
+      // Ignore body parse errors for non-JSON responses.
+    }
+    throw new Error(message);
+  }
+
+  if (response.status === 204) return {} as T;
+  return await response.json();
 }
