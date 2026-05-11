@@ -239,6 +239,7 @@ services:
       DB_NAME: communitydb
       POSTGRES_USER: ${POSTGRES_USER:-runswim}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      AUTH_SERVICE_URL: http://auth-service:8081
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
       - runswim-network

@@ -1,56 +1,56 @@
 package com.tuan.nutritionservice.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Entity
-@Table(name = "meal_entries")
-public class MealEntry {
+@Table(name = "foods")
+public class Food {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long userId;
-    private String mealType;
+
+    @Column(nullable = false)
     private String name;
-    private Long foodId;
-    private Double servings;
+
+    private String category;
     private String servingSize;
-    private LocalDateTime eatenAt;
     private int calories;
     private int proteinGrams;
     private int carbsGrams;
     private int fatGrams;
+    private boolean active = true;
+
+    @Column(length = 800)
+    private String aliases;
+
+    @Column(length = 800)
+    private String note;
+
+    private Instant createdAt;
+    private Instant updatedAt;
 
     @PrePersist
     void onCreate() {
-        if (eatenAt == null) {
-            eatenAt = LocalDateTime.now();
-        }
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
     }
 
     public Long getId() {
         return id;
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public void setUserId(Long userId) {
-        this.userId = userId;
-    }
-
-    public String getMealType() {
-        return mealType;
-    }
-
-    public void setMealType(String mealType) {
-        this.mealType = mealType;
     }
 
     public String getName() {
@@ -61,20 +61,12 @@ public class MealEntry {
         this.name = name;
     }
 
-    public Long getFoodId() {
-        return foodId;
+    public String getCategory() {
+        return category;
     }
 
-    public void setFoodId(Long foodId) {
-        this.foodId = foodId;
-    }
-
-    public Double getServings() {
-        return servings;
-    }
-
-    public void setServings(Double servings) {
-        this.servings = servings;
+    public void setCategory(String category) {
+        this.category = category;
     }
 
     public String getServingSize() {
@@ -83,14 +75,6 @@ public class MealEntry {
 
     public void setServingSize(String servingSize) {
         this.servingSize = servingSize;
-    }
-
-    public LocalDateTime getEatenAt() {
-        return eatenAt;
-    }
-
-    public void setEatenAt(LocalDateTime eatenAt) {
-        this.eatenAt = eatenAt;
     }
 
     public int getCalories() {
@@ -123,5 +107,37 @@ public class MealEntry {
 
     public void setFatGrams(int fatGrams) {
         this.fatGrams = fatGrams;
+    }
+
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public String getAliases() {
+        return aliases;
+    }
+
+    public void setAliases(String aliases) {
+        this.aliases = aliases;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 }

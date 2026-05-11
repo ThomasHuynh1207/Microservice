@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   LayoutDashboard,
@@ -11,6 +11,10 @@ import {
   RefreshCw,
   Search,
   Activity,
+  MessageSquare,
+  Salad,
+  Utensils,
+  Flame,
   MapPin,
   Trophy,
   Dumbbell,
@@ -30,7 +34,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "challenges" | "training";
+type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training";
 
 type AdminSession = {
   token: string;
@@ -43,12 +47,13 @@ type AdminSession = {
 type DashboardStats = { totalUsers: number; activeUsers: number; premiumUsers: number };
 type ActivityOverview = {
   totalActivities: number; runActivities: number; swimActivities: number;
-  totalRoutes: number; totalChallenges: number;
+  totalRoutes: number;
 };
 
 type AdminUser = {
   id: number; fullName: string; email: string; role: string;
-  active: boolean; premiumActive: boolean; createdAt: string;
+  active: boolean; premiumActive: boolean; onboardingCompleted: boolean;
+  preferredSports?: string; createdAt: string; premiumSince?: string | null;
 };
 
 type ActivityItem = {
@@ -60,6 +65,34 @@ type ActivityItem = {
 type RouteItem = {
   id: number; name: string; sportType: "RUN" | "SWIM"; place: string;
   distanceMeters: number; note: string; createdAt: string;
+};
+
+type CommunityPostItem = {
+  id: number; userId: number; athleteName: string; title?: string; content: string;
+  sportType?: "RUN" | "SWIM"; distanceMeters?: number; durationMinutes?: number;
+  calories?: number; routeName?: string; createdAt: string;
+  likeCount: number; commentCount: number; likedByMe: boolean;
+};
+
+type CommunityOverview = {
+  totalPosts: number; totalComments: number; totalLikes: number; activeAuthors: number;
+};
+
+type NutritionFood = {
+  id: number; name: string; category: string; servingSize: string;
+  calories: number; proteinGrams: number; carbsGrams: number; fatGrams: number;
+  active: boolean; aliases?: string; note?: string; createdAt?: string; updatedAt?: string;
+};
+
+type NutritionOverview = {
+  totalFoods: number; activeFoods: number; mealsLogged: number;
+  usersWithPlans: number; usersLoggedMeals: number; caloriesToday: number;
+};
+
+type NutritionMealEntry = {
+  id: number; userId: number; mealType: string; name: string; foodId?: number;
+  servings?: number; servingSize?: string; calories: number;
+  proteinGrams: number; carbsGrams: number; fatGrams: number; eatenAt: string;
 };
 
 type ChallengeItem = {
@@ -98,6 +131,12 @@ async function del(token: string, url: string): Promise<void> {
 
 async function post<T>(token: string, url: string, body: unknown): Promise<T> {
   const res = await fetch(url, { method: "POST", headers: h(token), body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function put<T>(token: string, url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, { method: "PUT", headers: h(token), body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -202,10 +241,17 @@ function LoginPage({ onLogin }: { onLogin: (s: AdminSession) => void }) {
 
 const NAV_GROUPS: { label: string; items: { id: Page; label: string; icon: ReactNode }[] }[] = [
   {
+    label: "Van hanh",
+    items: [
+      { id: "nutrition", label: "Dinh duong", icon: <Salad size={16} /> },
+    ],
+  },
+  {
     label: "Tổng quan",
     items: [
       { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
       { id: "users", label: "Người dùng", icon: <Users size={16} /> },
+      { id: "community", label: "Cộng đồng", icon: <MessageSquare size={16} /> },
     ],
   },
   {
@@ -213,7 +259,6 @@ const NAV_GROUPS: { label: string; items: { id: Page; label: string; icon: React
     items: [
       { id: "activities", label: "Hoạt động", icon: <Activity size={16} /> },
       { id: "routes", label: "Lộ trình", icon: <MapPin size={16} /> },
-      { id: "challenges", label: "Thử thách", icon: <Trophy size={16} /> },
       { id: "training", label: "Cài đặt tập luyện", icon: <Dumbbell size={16} /> },
     ],
   },
@@ -362,6 +407,230 @@ function DashboardPage({ session }: { session: AdminSession }) {
 }
 
 // ─── Users Page ───────────────────────────────────────────────────────────────
+
+function UsersManagementPage({ session }: { session: AdminSession }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [profiles, setProfiles] = useState<AthleteProfile[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE" | "PREMIUM" | "FREE" | "PENDING" | "ADMIN">("ALL");
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [updating, setUpdating] = useState<number | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const [u, p, a] = await Promise.all([
+        get<AdminUser[]>(session.token, "/api/auth/admin/users"),
+        get<AthleteProfile[]>(session.token, "/api/athletes/admin/all"),
+        get<ActivityItem[]>(session.token, "/api/activities/admin/all"),
+      ]);
+      setUsers(u);
+      setProfiles(p);
+      setActivities(a);
+      setSelectedUserId((current) => current ?? u[0]?.id ?? null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
+    } finally {
+      setLoading(false);
+    }
+  }, [session.token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function patchUser(userId: number, update: { role?: string; active?: boolean; premiumActive?: boolean }) {
+    setUpdating(userId);
+    try {
+      const updated = await patch<AdminUser>(session.token, `/api/auth/admin/users/${userId}`, update);
+      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Lỗi cập nhật");
+    } finally {
+      setUpdating(null);
+    }
+  }
+
+  const profileByUser = useMemo(() => new Map(profiles.map(p => [p.userId, p])), [profiles]);
+  const activitiesByUser = useMemo(() => {
+    const map = new Map<number, ActivityItem[]>();
+    for (const activity of activities) {
+      map.set(activity.userId, [...(map.get(activity.userId) ?? []), activity]);
+    }
+    return map;
+  }, [activities]);
+
+  const filtered = users.filter(u => {
+    const q = search.toLowerCase();
+    const matchSearch = u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+    const matchFilter =
+      filter === "ALL" ||
+      (filter === "ACTIVE" && u.active) ||
+      (filter === "INACTIVE" && !u.active) ||
+      (filter === "PREMIUM" && u.premiumActive) ||
+      (filter === "FREE" && !u.premiumActive) ||
+      (filter === "PENDING" && !u.onboardingCompleted) ||
+      (filter === "ADMIN" && u.role === "ADMIN");
+    return matchSearch && matchFilter;
+  });
+
+  const selectedUser = users.find(u => u.id === selectedUserId) ?? filtered[0] ?? null;
+  const selectedProfile = selectedUser ? profileByUser.get(selectedUser.id) : undefined;
+  const selectedActivities = selectedUser ? (activitiesByUser.get(selectedUser.id) ?? []) : [];
+  const selectedRunKm = selectedActivities.filter(a => a.sportType === "RUN").reduce((sum, a) => sum + a.distanceMeters, 0) / 1000;
+  const selectedSwimM = selectedActivities.filter(a => a.sportType === "SWIM").reduce((sum, a) => sum + a.distanceMeters, 0);
+
+  return (
+    <>
+      <PageHeader title="Người dùng" sub="Quản lý tài khoản, gói, onboarding và hồ sơ tập luyện của app người dùng" />
+      <div className="al-content">
+        <div className="al-stats-row">
+          {[
+            { label: "Tổng người dùng", value: users.length, color: "#3b82f6" },
+            { label: "Đang hoạt động", value: users.filter(u => u.active).length, color: "#22c55e" },
+            { label: "Premium", value: users.filter(u => u.premiumActive).length, color: "#eab308" },
+            { label: "Chưa onboarding", value: users.filter(u => !u.onboardingCompleted).length, color: "#ef4444" },
+          ].map(card => (
+            <div key={card.label} className="al-stat-card">
+              <div className="al-stat-value" style={{ color: card.color }}>{card.value}</div>
+              <div className="al-stat-label">{card.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="al-controls">
+          <div className="al-search-wrap">
+            <Search size={14} className="al-search-icon" />
+            <input className="al-search" placeholder="Tìm tên hoặc email..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="al-tabs">
+            {[
+              ["ALL", "Tất cả"],
+              ["ACTIVE", "Hoạt động"],
+              ["INACTIVE", "Đã khoá"],
+              ["PREMIUM", "Premium"],
+              ["FREE", "Free"],
+              ["PENDING", "Chưa onboarding"],
+              ["ADMIN", "Admin"],
+            ].map(([id, label]) => (
+              <button key={id} className={`al-tab${filter === id ? " active" : ""}`} onClick={() => setFilter(id as typeof filter)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+        </div>
+
+        <div className="al-user-management-grid">
+          <div className="al-table-wrap">
+            {loading ? <div className="al-loading">Đang tải...</div>
+              : error ? <ErrMsg msg={error} />
+              : filtered.length === 0 ? <div className="al-empty">Không tìm thấy người dùng</div>
+              : (
+                <table className="al-table">
+                  <thead><tr>
+                    <th>Người dùng</th><th>Gói</th><th>Onboarding</th>
+                    <th>Hoạt động</th><th>Trạng thái</th><th>Thao tác</th>
+                  </tr></thead>
+                  <tbody>
+                    {filtered.map(u => {
+                      const busy = updating === u.id;
+                      const isSelf = u.id === session.userId;
+                      const userActivityCount = activitiesByUser.get(u.id)?.length ?? 0;
+                      return (
+                        <tr key={u.id} className={selectedUserId === u.id ? "al-row-selected" : ""}>
+                          <td onClick={() => setSelectedUserId(u.id)}>
+                            <div className="al-user-cell">
+                              <div className="al-avatar" style={{ background: avatarColor(u.id) }}>{initials(u.fullName)}</div>
+                              <div>
+                                <div className="al-uname">{u.fullName}{isSelf && <span className="al-self-tag">(bạn)</span>}</div>
+                                <div className="al-uemail">{u.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td><span className={`al-badge ${u.premiumActive ? "badge-premium" : "badge-free"}`}>{u.premiumActive ? "Premium" : "Free"}</span></td>
+                          <td><span className={`al-badge ${u.onboardingCompleted ? "badge-active" : "badge-inactive"}`}>{u.onboardingCompleted ? "Hoàn thành" : "Chưa xong"}</span></td>
+                          <td><span className="al-date">{userActivityCount} buổi</span></td>
+                          <td><span className={`al-badge ${u.active ? "badge-active" : "badge-inactive"}`}>{u.active ? "Hoạt động" : "Đã khoá"}</span></td>
+                          <td>
+                            <div className="al-actions">
+                              <button className={`al-action-btn ${u.premiumActive ? "yellow" : "green"}`} disabled={busy}
+                                onClick={() => patchUser(u.id, { premiumActive: !u.premiumActive })}>
+                                {u.premiumActive ? "Huỷ premium" : "Cấp premium"}
+                              </button>
+                              <button className={`al-action-btn ${u.active ? "red" : "green"}`} disabled={busy || isSelf}
+                                onClick={() => patchUser(u.id, { active: !u.active })}>
+                                {u.active ? "Khoá" : "Mở khoá"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+          </div>
+
+          <aside className="al-user-detail">
+            {selectedUser ? (
+              <>
+                <div className="al-user-detail-head">
+                  <div className="al-avatar large" style={{ background: avatarColor(selectedUser.id) }}>{initials(selectedUser.fullName)}</div>
+                  <div>
+                    <h3>{selectedUser.fullName}</h3>
+                    <span>{selectedUser.email}</span>
+                  </div>
+                </div>
+                <div className="al-detail-badges">
+                  <span className={`al-badge ${selectedUser.role === "ADMIN" ? "badge-admin" : "badge-user"}`}>{selectedUser.role === "ADMIN" ? "Admin" : "User"}</span>
+                  <span className={`al-badge ${selectedUser.premiumActive ? "badge-premium" : "badge-free"}`}>{selectedUser.premiumActive ? "Premium" : "Free"}</span>
+                  <span className={`al-badge ${selectedUser.active ? "badge-active" : "badge-inactive"}`}>{selectedUser.active ? "Hoạt động" : "Đã khoá"}</span>
+                </div>
+                <div className="al-detail-grid">
+                  <div><span>Ngày tham gia</span><strong>{fmtDate(selectedUser.createdAt)}</strong></div>
+                  <div><span>Premium từ</span><strong>{selectedUser.premiumSince ? fmtDate(selectedUser.premiumSince) : "—"}</strong></div>
+                  <div><span>Thành phố</span><strong>{selectedProfile?.city ?? "—"}</strong></div>
+                  <div><span>Trình độ</span><strong>{selectedProfile?.experienceLevel ?? "—"}</strong></div>
+                </div>
+                <div className="al-detail-grid">
+                  <div><span>Tổng buổi</span><strong>{selectedActivities.length}</strong></div>
+                  <div><span>Chạy</span><strong>{selectedRunKm.toFixed(1)} km</strong></div>
+                  <div><span>Bơi</span><strong>{Math.round(selectedSwimM)} m</strong></div>
+                  <div><span>Mục tiêu chạy</span><strong>{selectedProfile?.weeklyRunGoalKm ?? 0} km/tuần</strong></div>
+                </div>
+                <div className="al-detail-section">
+                  <h4>Mục tiêu người dùng</h4>
+                  <p>{selectedProfile?.primaryGoal ?? "Chưa có hồ sơ tập luyện."}</p>
+                </div>
+                <div className="al-detail-section">
+                  <h4>Hoạt động gần nhất</h4>
+                  {selectedActivities.slice(0, 4).map(activity => (
+                    <div key={activity.id} className="al-mini-activity">
+                      <span className={`al-badge ${activity.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>{activity.sportType === "RUN" ? "Chạy" : "Bơi"}</span>
+                      <strong>{activity.title}</strong>
+                      <small>{fmtDist(activity.distanceMeters)} · {activity.durationMinutes} phút</small>
+                    </div>
+                  ))}
+                  {selectedActivities.length === 0 && <p>Chưa có hoạt động.</p>}
+                </div>
+                <div className="al-detail-actions">
+                  <button className={`al-action-btn ${selectedUser.role === "ADMIN" ? "yellow" : "blue"}`} disabled={selectedUser.id === session.userId || updating === selectedUser.id}
+                    onClick={() => patchUser(selectedUser.id, { role: selectedUser.role === "ADMIN" ? "USER" : "ADMIN" })}>
+                    {selectedUser.role === "ADMIN" ? "Hạ admin" : "Cấp admin"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="al-empty">Chọn người dùng để xem chi tiết</div>
+            )}
+          </aside>
+        </div>
+      </div>
+    </>
+  );
+}
 
 function UsersPage({ session }: { session: AdminSession }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -517,13 +786,12 @@ function ActivitiesPage({ session }: { session: AdminSession }) {
       <PageHeader title="Hoạt động" sub={`${activities.length} hoạt động trong hệ thống`} />
       <div className="al-content">
         {overview && (
-          <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(5,1fr)", marginBottom: 20 }}>
+          <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
             {[
               { label: "Tổng hoạt động", value: overview.totalActivities, color: "#f97316" },
               { label: "Chạy bộ", value: overview.runActivities, color: "#3b82f6" },
               { label: "Bơi lội", value: overview.swimActivities, color: "#06b6d4" },
               { label: "Lộ trình", value: overview.totalRoutes, color: "#22c55e" },
-              { label: "Thử thách", value: overview.totalChallenges, color: "#a855f7" },
             ].map(c => (
               <div key={c.label} className="al-stat-card" style={{ padding: "14px 16px" }}>
                 <div className="al-stat-value" style={{ fontSize: "1.4rem", color: c.color }}>{c.value}</div>
@@ -721,6 +989,128 @@ function RoutesPage({ session }: { session: AdminSession }) {
 }
 
 // ─── Challenges Page ──────────────────────────────────────────────────────────
+
+function CommunityAdminPage({ session }: { session: AdminSession }) {
+  const [overview, setOverview] = useState<CommunityOverview | null>(null);
+  const [posts, setPosts] = useState<CommunityPostItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [sportFilter, setSportFilter] = useState<"ALL" | "RUN" | "SWIM">("ALL");
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const [ov, p] = await Promise.all([
+        get<CommunityOverview>(session.token, "/api/community/admin/overview"),
+        get<CommunityPostItem[]>(session.token, "/api/community/admin/posts"),
+      ]);
+      setOverview(ov);
+      setPosts(p);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Lỗi tải cộng đồng");
+    } finally {
+      setLoading(false);
+    }
+  }, [session.token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function removePost(id: number) {
+    if (!confirm("Xoá bài viết cộng đồng này?")) return;
+    setDeleting(id);
+    try {
+      await del(session.token, `/api/community/admin/posts/${id}`);
+      setPosts(prev => prev.filter(p => p.id !== id));
+      setOverview(prev => prev ? { ...prev, totalPosts: Math.max(0, prev.totalPosts - 1) } : prev);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Lỗi xoá bài viết");
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  const filtered = posts.filter(post => {
+    const q = search.toLowerCase();
+    const matchesSearch = `${post.athleteName} ${post.title ?? ""} ${post.content} ${post.routeName ?? ""}`.toLowerCase().includes(q);
+    const matchesSport = sportFilter === "ALL" || post.sportType === sportFilter;
+    return matchesSearch && matchesSport;
+  });
+
+  return (
+    <>
+      <PageHeader title="Cộng đồng" sub="Quản lý bài đăng, tương tác và nội dung người dùng chia sẻ" />
+      <div className="al-content">
+        {overview && (
+          <div className="al-stats-row">
+            {[
+              { label: "Bài viết", value: overview.totalPosts, color: "#3b82f6" },
+              { label: "Bình luận", value: overview.totalComments, color: "#22c55e" },
+              { label: "Lượt thích", value: overview.totalLikes, color: "#eab308" },
+              { label: "Người đăng", value: overview.activeAuthors, color: "#f97316" },
+            ].map(card => (
+              <div key={card.label} className="al-stat-card">
+                <div className="al-stat-value" style={{ color: card.color }}>{card.value}</div>
+                <div className="al-stat-label">{card.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="al-controls">
+          <div className="al-search-wrap">
+            <Search size={14} className="al-search-icon" />
+            <input className="al-search" placeholder="Tìm tác giả, nội dung, lộ trình..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="al-tabs">
+            {(["ALL", "RUN", "SWIM"] as const).map(s => (
+              <button key={s} className={`al-tab${sportFilter === s ? " active" : ""}`} onClick={() => setSportFilter(s)}>
+                {s === "ALL" ? "Tất cả" : s === "RUN" ? "Chạy" : "Bơi"}
+              </button>
+            ))}
+          </div>
+          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+        </div>
+
+        <div className="al-community-grid">
+          {loading ? <div className="al-loading">Đang tải...</div>
+            : error ? <ErrMsg msg={error} />
+            : filtered.length === 0 ? <div className="al-empty">Không có bài viết phù hợp</div>
+            : filtered.map(post => (
+              <article key={post.id} className="al-community-card">
+                <div className="al-community-card-head">
+                  <div className="al-user-cell">
+                    <div className="al-avatar" style={{ background: avatarColor(post.userId) }}>{initials(post.athleteName)}</div>
+                    <div>
+                      <div className="al-uname">{post.athleteName}</div>
+                      <div className="al-uemail">User ID {post.userId} · {fmtDate(post.createdAt)}</div>
+                    </div>
+                  </div>
+                  <button className="al-icon-del" disabled={deleting === post.id} onClick={() => removePost(post.id)} title="Xoá">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                {post.title && (
+                  <div className="al-community-activity">
+                    <span className={`al-badge ${post.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>{post.sportType === "RUN" ? "Chạy" : "Bơi"}</span>
+                    <strong>{post.title}</strong>
+                    <span>{post.distanceMeters ? fmtDist(post.distanceMeters) : "—"} · {post.durationMinutes ?? "—"} phút</span>
+                  </div>
+                )}
+                <p>{post.content}</p>
+                <div className="al-community-metrics">
+                  <span>{post.likeCount} thích</span>
+                  <span>{post.commentCount} bình luận</span>
+                  {post.routeName && <span>{post.routeName}</span>}
+                </div>
+              </article>
+            ))}
+        </div>
+      </div>
+    </>
+  );
+}
 
 function ChallengesPage({ session }: { session: AdminSession }) {
   const [challenges, setChallenges] = useState<ChallengeItem[]>([]);
@@ -990,6 +1380,262 @@ function TrainingPage({ session }: { session: AdminSession }) {
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
+function NutritionAdminPage({ session }: { session: AdminSession }) {
+  const emptyForm = {
+    name: "",
+    category: "MEAL",
+    servingSize: "1 serving",
+    calories: 300,
+    proteinGrams: 20,
+    carbsGrams: 35,
+    fatGrams: 8,
+    aliases: "",
+    note: "",
+    active: true,
+  };
+  const [overview, setOverview] = useState<NutritionOverview | null>(null);
+  const [foods, setFoods] = useState<NutritionFood[]>([]);
+  const [recentMeals, setRecentMeals] = useState<NutritionMealEntry[]>([]);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const [ov, foodItems, meals] = await Promise.all([
+        get<NutritionOverview>(session.token, "/api/nutrition/admin/overview"),
+        get<NutritionFood[]>(session.token, "/api/nutrition/admin/foods"),
+        get<NutritionMealEntry[]>(session.token, "/api/nutrition/admin/meals/recent"),
+      ]);
+      setOverview(ov);
+      setFoods(foodItems);
+      setRecentMeals(meals);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Loi tai du lieu dinh duong");
+    } finally {
+      setLoading(false);
+    }
+  }, [session.token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function editFood(food: NutritionFood) {
+    setEditingId(food.id);
+    setForm({
+      name: food.name,
+      category: food.category,
+      servingSize: food.servingSize,
+      calories: food.calories,
+      proteinGrams: food.proteinGrams,
+      carbsGrams: food.carbsGrams,
+      fatGrams: food.fatGrams,
+      aliases: food.aliases ?? "",
+      note: food.note ?? "",
+      active: food.active,
+    });
+    setShowForm(true);
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(false);
+  }
+
+  async function saveFood(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    const body = {
+      ...form,
+      calories: Number(form.calories),
+      proteinGrams: Number(form.proteinGrams),
+      carbsGrams: Number(form.carbsGrams),
+      fatGrams: Number(form.fatGrams),
+    };
+    try {
+      const saved = editingId
+        ? await put<NutritionFood>(session.token, `/api/nutrition/admin/foods/${editingId}`, body)
+        : await post<NutritionFood>(session.token, "/api/nutrition/admin/foods", body);
+      setFoods(prev => editingId ? prev.map(item => item.id === saved.id ? saved : item) : [saved, ...prev]);
+      resetForm();
+      load();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Loi luu mon an");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivateFood(id: number) {
+    if (!confirm("An mon an nay khoi database nguoi dung?")) return;
+    try {
+      await del(session.token, `/api/nutrition/admin/foods/${id}`);
+      setFoods(prev => prev.map(item => item.id === id ? { ...item, active: false } : item));
+      load();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Loi cap nhat mon an");
+    }
+  }
+
+  const filteredFoods = foods.filter(food => {
+    const q = search.toLowerCase();
+    const matchSearch = `${food.name} ${food.category} ${food.aliases ?? ""}`.toLowerCase().includes(q);
+    return matchSearch && (showInactive || food.active);
+  });
+
+  return (
+    <>
+      <PageHeader title="Dinh duong" sub="Quan ly database mon an, macro va nhat ky bua an cua nguoi dung" />
+      <div className="al-content">
+        {overview && (
+          <div className="al-stats-row">
+            {[
+              { label: "Mon dang dung", value: overview.activeFoods, color: "#22c55e", icon: <Salad size={18} /> },
+              { label: "Tong mon", value: overview.totalFoods, color: "#3b82f6", icon: <Utensils size={18} /> },
+              { label: "Bua da log", value: overview.mealsLogged, color: "#f97316", icon: <Activity size={18} /> },
+              { label: "Kcal hom nay", value: overview.caloriesToday, color: "#ef4444", icon: <Flame size={18} /> },
+            ].map(card => (
+              <div key={card.label} className="al-stat-card">
+                <div className="al-stat-icon" style={{ background: `${card.color}18`, color: card.color }}>{card.icon}</div>
+                <div className="al-stat-value" style={{ color: card.color }}>{card.value.toLocaleString("vi-VN")}</div>
+                <div className="al-stat-label">{card.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="al-controls">
+          <div className="al-search-wrap">
+            <Search size={14} className="al-search-icon" />
+            <input className="al-search" placeholder="Tim mon, category, alias..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="al-tabs">
+            <button className={`al-tab${!showInactive ? " active" : ""}`} onClick={() => setShowInactive(false)}>Dang dung</button>
+            <button className={`al-tab${showInactive ? " active" : ""}`} onClick={() => setShowInactive(true)}>Tat ca</button>
+          </div>
+          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Lam moi</button>
+          <button className="al-add-btn" onClick={() => { setShowForm(v => !v); setEditingId(null); }}>
+            {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? "Dong" : "Them mon"}
+          </button>
+        </div>
+
+        {showForm && (
+          <div className="al-form-card al-nutrition-form-card">
+            <div className="al-form-card-title">{editingId ? "Cap nhat mon an" : "Them mon an vao database"}</div>
+            <form onSubmit={saveFood} className="al-inline-form">
+              <div className="al-form-row">
+                <div className="al-form-group">
+                  <label className="al-form-label">Ten mon</label>
+                  <input className="al-form-input" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div className="al-form-group">
+                  <label className="al-form-label">Category</label>
+                  <select className="al-form-input" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                    <option value="MEAL">MEAL</option>
+                    <option value="CARB">CARB</option>
+                    <option value="PROTEIN">PROTEIN</option>
+                    <option value="SNACK">SNACK</option>
+                    <option value="DRINK">DRINK</option>
+                  </select>
+                </div>
+                <div className="al-form-group">
+                  <label className="al-form-label">Khau phan</label>
+                  <input className="al-form-input" value={form.servingSize} onChange={e => setForm(f => ({ ...f, servingSize: e.target.value }))} />
+                </div>
+              </div>
+              <div className="al-form-row">
+                {[
+                  ["calories", "Calories"],
+                  ["proteinGrams", "Protein (g)"],
+                  ["carbsGrams", "Carb (g)"],
+                  ["fatGrams", "Fat (g)"],
+                ].map(([key, label]) => (
+                  <div key={key} className="al-form-group">
+                    <label className="al-form-label">{label}</label>
+                    <input className="al-form-input" type="number" min={0} value={form[key as keyof typeof form] as number} onChange={e => setForm(f => ({ ...f, [key]: Number(e.target.value) }))} />
+                  </div>
+                ))}
+              </div>
+              <div className="al-form-row">
+                <div className="al-form-group">
+                  <label className="al-form-label">Alias search</label>
+                  <input className="al-form-input" value={form.aliases} onChange={e => setForm(f => ({ ...f, aliases: e.target.value }))} placeholder="pho bo beef noodle..." />
+                </div>
+                <div className="al-form-group">
+                  <label className="al-form-label">Ghi chu</label>
+                  <input className="al-form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+                </div>
+                <div className="al-form-group al-check-group">
+                  <label className="al-form-label">Trang thai</label>
+                  <label className="al-check-line"><input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Dang hien thi</label>
+                </div>
+              </div>
+              <div className="al-form-actions">
+                <button className="al-add-btn" type="submit" disabled={saving}>{saving ? "Dang luu..." : "Luu mon an"}</button>
+                <button className="al-refresh-btn" type="button" onClick={resetForm}>Huy</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="al-nutrition-grid">
+          <div className="al-table-wrap">
+            {loading ? <div className="al-loading">Dang tai...</div>
+              : error ? <ErrMsg msg={error} />
+              : filteredFoods.length === 0 ? <div className="al-empty">Khong co mon phu hop</div>
+              : (
+                <table className="al-table">
+                  <thead><tr>
+                    <th>Mon an</th><th>Khau phan</th><th>Calories</th><th>Macro</th><th>Trang thai</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {filteredFoods.map(food => (
+                      <tr key={food.id}>
+                        <td>
+                          <div className="al-uname">{food.name}</div>
+                          <div className="al-uemail">{food.category} {food.aliases ? `| ${food.aliases}` : ""}</div>
+                        </td>
+                        <td><span className="al-date">{food.servingSize}</span></td>
+                        <td><strong>{food.calories}</strong> kcal</td>
+                        <td><span className="al-date">P {food.proteinGrams}g | C {food.carbsGrams}g | F {food.fatGrams}g</span></td>
+                        <td><span className={`al-badge ${food.active ? "badge-active" : "badge-inactive"}`}>{food.active ? "Active" : "Hidden"}</span></td>
+                        <td>
+                          <div className="al-row-actions">
+                            <button className="al-refresh-btn" onClick={() => editFood(food)}>Sua</button>
+                            {food.active && <button className="al-icon-del" onClick={() => deactivateFood(food.id)}><Trash2 size={13} /></button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+          </div>
+
+          <div className="al-card al-nutrition-recent">
+            <div className="al-card-title">Bua an gan day</div>
+            {recentMeals.length === 0 ? <div className="al-empty">Chua co log bua an</div> : recentMeals.slice(0, 10).map(meal => (
+              <div key={meal.id} className="al-mini-activity">
+                <div>
+                  <strong>{meal.name}</strong>
+                  <span>User {meal.userId} | {meal.mealType}</span>
+                </div>
+                <span>{meal.calories} kcal</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const SESSION_KEY = "runswim_admin_session";
 
 export default function App() {
@@ -1007,10 +1653,11 @@ export default function App() {
         onLogout={() => { localStorage.removeItem(SESSION_KEY); setSession(null); }} />
       <div className="al-main">
         {page === "dashboard"   && <DashboardPage session={session} />}
-        {page === "users"       && <UsersPage session={session} />}
+        {page === "users"       && <UsersManagementPage session={session} />}
         {page === "activities"  && <ActivitiesPage session={session} />}
         {page === "routes"      && <RoutesPage session={session} />}
-        {page === "challenges"  && <ChallengesPage session={session} />}
+        {page === "community"   && <CommunityAdminPage session={session} />}
+        {page === "nutrition"   && <NutritionAdminPage session={session} />}
         {page === "training"    && <TrainingPage session={session} />}
       </div>
     </div>

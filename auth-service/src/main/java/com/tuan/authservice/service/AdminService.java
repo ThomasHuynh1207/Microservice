@@ -61,13 +61,17 @@ public class AdminService {
     private UserSummary toSummary(UserAccount u) {
         return new UserSummary(
                 u.getId(), u.getFullName(), u.getEmail(),
-                u.getRole(), u.isActive(), u.isPremiumActive(), u.getCreatedAt()
+                u.getRole(), u.isActive(), u.isPremiumActive(),
+                u.isOnboardingCompleted(), u.getPreferredSports(),
+                u.getCreatedAt(), u.getPremiumSince()
         );
     }
 
     public record UserSummary(
             Long id, String fullName, String email,
-            String role, boolean active, boolean premiumActive, Instant createdAt) {}
+            String role, boolean active, boolean premiumActive,
+            boolean onboardingCompleted, String preferredSports,
+            Instant createdAt, Instant premiumSince) {}
 
     public record DashboardStats(long totalUsers, long activeUsers, long premiumUsers) {}
 

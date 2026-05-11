@@ -1,27 +1,106 @@
 package com.tuan.nutritionservice.service;
 
+import com.tuan.nutritionservice.entity.Food;
 import com.tuan.nutritionservice.entity.MealEntry;
 import com.tuan.nutritionservice.entity.NutritionPlan;
 import com.tuan.nutritionservice.entity.WaterEntry;
+import com.tuan.nutritionservice.repository.FoodRepository;
 import com.tuan.nutritionservice.repository.MealEntryRepository;
 import com.tuan.nutritionservice.repository.NutritionPlanRepository;
 import com.tuan.nutritionservice.repository.WaterEntryRepository;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class NutritionService {
+    private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d+(?:[\\.,]\\d+)?)");
+    private static final Pattern GRAM_PATTERN = Pattern.compile("(\\d+(?:[\\.,]\\d+)?)\\s*(g|gram|grams|gam)\\b", Pattern.CASE_INSENSITIVE);
+
     private final NutritionPlanRepository plans;
     private final MealEntryRepository meals;
     private final WaterEntryRepository waterEntries;
+    private final FoodRepository foods;
 
-    public NutritionService(NutritionPlanRepository plans, MealEntryRepository meals, WaterEntryRepository waterEntries) {
+    public NutritionService(NutritionPlanRepository plans,
+                            MealEntryRepository meals,
+                            WaterEntryRepository waterEntries,
+                            FoodRepository foods) {
         this.plans = plans;
         this.meals = meals;
         this.waterEntries = waterEntries;
+        this.foods = foods;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Food> foods(String query) {
+        String needle = normalizeFoodText(query);
+        List<Food> activeFoods = foods.findAllByActiveTrueOrderByNameAsc();
+        if (needle.isBlank()) {
+            return activeFoods;
+        }
+        return activeFoods.stream()
+                .filter(food -> foodMatches(food, needle))
+                .sorted(Comparator.comparingInt(food -> matchScore(food, needle)))
+                .limit(20)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<Food> adminFoods() {
+        return foods.findAllByOrderByNameAsc();
+    }
+
+    @Transactional
+    public Food createFood(FoodRequest request) {
+        Food food = new Food();
+        applyFoodRequest(food, request);
+        return foods.save(food);
+    }
+
+    @Transactional
+    public Food updateFood(Long foodId, FoodRequest request) {
+        Food food = foods.findById(foodId)
+                .orElseThrow(() -> new IllegalArgumentException("Food not found: " + foodId));
+        applyFoodRequest(food, request);
+        return foods.save(food);
+    }
+
+    @Transactional
+    public void deactivateFood(Long foodId) {
+        Food food = foods.findById(foodId)
+                .orElseThrow(() -> new IllegalArgumentException("Food not found: " + foodId));
+        food.setActive(false);
+        foods.save(food);
+    }
+
+    @Transactional(readOnly = true)
+    public NutritionAdminOverview adminOverview() {
+        LocalDate today = LocalDate.now();
+        int todayCalories = meals.findByEatenAtBetween(today.atStartOfDay(), today.plusDays(1).atStartOfDay())
+                .stream()
+                .mapToInt(MealEntry::getCalories)
+                .sum();
+        return new NutritionAdminOverview(
+                foods.count(),
+                foods.countByActiveTrue(),
+                meals.count(),
+                plans.count(),
+                meals.countDistinctUsers(),
+                todayCalories
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public List<MealEntry> recentMeals() {
+        return meals.findTop30ByOrderByEatenAtDesc();
     }
 
     @Transactional
@@ -53,12 +132,29 @@ public class NutritionService {
         meal.setUserId(request.userId());
         meal.setMealType(defaultText(request.mealType(), "SNACK").toUpperCase());
         meal.setName(defaultText(request.name(), "Training meal"));
+        meal.setFoodId(request.foodId());
+        meal.setServings(request.servings());
+        meal.setServingSize(request.servingSize());
         meal.setEatenAt(request.eatenAt());
-        meal.setCalories(request.calories());
-        meal.setProteinGrams(request.proteinGrams());
-        meal.setCarbsGrams(request.carbsGrams());
-        meal.setFatGrams(request.fatGrams());
+        meal.setCalories(Math.max(0, request.calories()));
+        meal.setProteinGrams(Math.max(0, request.proteinGrams()));
+        meal.setCarbsGrams(Math.max(0, request.carbsGrams()));
+        meal.setFatGrams(Math.max(0, request.fatGrams()));
         return meals.save(meal);
+    }
+
+    @Transactional
+    public MealEntry addMealFromFood(Long userId, FoodMealRequest request) {
+        Food food = foods.findById(request.foodId())
+                .orElseThrow(() -> new IllegalArgumentException("Food not found: " + request.foodId()));
+        return meals.save(mealFromFood(userId, food, request.mealType(), request.servings(), request.customName(), request.eatenAt()));
+    }
+
+    @Transactional
+    public MealEntry quickAddMeal(Long userId, QuickMealRequest request) {
+        Food food = bestFoodMatch(request.query());
+        double servings = request.servings() == null ? inferServings(request.query(), food) : sanitizeServings(request.servings());
+        return meals.save(mealFromFood(userId, food, request.mealType(), servings, request.query(), request.eatenAt()));
     }
 
     @Transactional(readOnly = true)
@@ -73,6 +169,26 @@ public class NutritionService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public RecoverySuggestion recoverySuggestion(RecoveryRequest request) {
+        int burned = request.calories() == null || request.calories() <= 0
+                ? estimateCalories(request.sportType(), request.distanceMeters(), request.durationMinutes())
+                : request.calories();
+        int targetCalories = clamp((int) Math.round(burned * 0.55), 280, 850);
+        int carbs = clamp((int) Math.round(targetCalories * 0.58 / 4), 45, 140);
+        int protein = request.sportType() != null && request.sportType().equalsIgnoreCase("SWIM") ? 30 : 28;
+        if (burned >= 650) {
+            protein = 35;
+        }
+        List<String> ideas = burned >= 650
+                ? List.of("Com trang + uc ga + chuoi", "Pho bo them trung", "Bun bo + sua chua Hy Lap")
+                : List.of("Chuoi + whey protein", "Trung ga + com trang", "Sua chua Hy Lap + chuoi");
+        String message = burned >= 650
+                ? "Buoi tap tieu hao cao. Nen bo sung carb de nap glycogen va them protein trong 60-90 phut sau tap."
+                : "Buoi tap vua phai. Uu tien mot bua nhe co carb de hoi phuc va protein de ho tro co bap.";
+        return new RecoverySuggestion(message, burned, targetCalories, protein, carbs, ideas);
+    }
+
     public List<FoodSuggestion> library() {
         return List.of(
                 new FoodSuggestion("Pre-run banana toast", "BEFORE_RUN", 310, "Carbs, a little protein, easy digestion."),
@@ -80,6 +196,114 @@ public class NutritionService {
                 new FoodSuggestion("Pool-session smoothie", "AFTER_SWIM", 420, "Milk, banana, oats, whey or yogurt."),
                 new FoodSuggestion("Long day hydration", "HYDRATION", 120, "Electrolytes and 500-750ml fluid per hour.")
         );
+    }
+
+    private MealEntry mealFromFood(Long userId, Food food, String mealType, Double requestedServings, String customName, LocalDateTime eatenAt) {
+        double servings = sanitizeServings(requestedServings);
+        MealEntry meal = new MealEntry();
+        meal.setUserId(userId);
+        meal.setMealType(defaultText(mealType, "SNACK").toUpperCase());
+        meal.setName(defaultText(customName, food.getName()));
+        meal.setFoodId(food.getId());
+        meal.setServings(servings);
+        meal.setServingSize(food.getServingSize());
+        meal.setEatenAt(eatenAt);
+        meal.setCalories(scale(food.getCalories(), servings));
+        meal.setProteinGrams(scale(food.getProteinGrams(), servings));
+        meal.setCarbsGrams(scale(food.getCarbsGrams(), servings));
+        meal.setFatGrams(scale(food.getFatGrams(), servings));
+        return meal;
+    }
+
+    private Food bestFoodMatch(String query) {
+        String needle = normalizeFoodText(query);
+        if (needle.isBlank()) {
+            throw new IllegalArgumentException("Please enter a food name");
+        }
+        return foods.findAllByActiveTrueOrderByNameAsc().stream()
+                .filter(food -> foodMatches(food, needle))
+                .min(Comparator.comparingInt(food -> matchScore(food, needle)))
+                .orElseThrow(() -> new IllegalArgumentException("Food not found in library: " + query));
+    }
+
+    private boolean foodMatches(Food food, String needle) {
+        String name = normalizeFoodText(food.getName());
+        String aliases = normalizeFoodText(food.getAliases());
+        return name.contains(needle)
+                || aliases.contains(needle)
+                || needle.contains(name)
+                || (!aliases.isBlank() && needle.contains(aliases));
+    }
+
+    private int matchScore(Food food, String needle) {
+        String name = normalizeFoodText(food.getName());
+        String aliases = normalizeFoodText(food.getAliases());
+        if (name.equals(needle)) return 0;
+        if (aliases.equals(needle)) return 1;
+        if (name.startsWith(needle) || needle.startsWith(name)) return 2;
+        if (aliases.contains(needle)) return 3;
+        return 4;
+    }
+
+    private double inferServings(String query, Food food) {
+        String raw = query == null ? "" : query;
+        Matcher gramMatcher = GRAM_PATTERN.matcher(raw);
+        if (gramMatcher.find()) {
+            Double grams = parseDouble(gramMatcher.group(1));
+            Double servingGrams = gramsFromServing(food.getServingSize());
+            if (grams != null && servingGrams != null && servingGrams > 0) {
+                return sanitizeServings(grams / servingGrams);
+            }
+        }
+        Matcher matcher = NUMBER_PATTERN.matcher(raw);
+        if (matcher.find()) {
+            Double servings = parseDouble(matcher.group(1));
+            if (servings != null) {
+                return sanitizeServings(servings);
+            }
+        }
+        return 1.0;
+    }
+
+    private Double gramsFromServing(String servingSize) {
+        if (servingSize == null) return null;
+        Matcher matcher = GRAM_PATTERN.matcher(servingSize);
+        return matcher.find() ? parseDouble(matcher.group(1)) : null;
+    }
+
+    private Double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value.replace(",", "."));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private int estimateCalories(String sportType, Double distanceMeters, Integer durationMinutes) {
+        if (distanceMeters != null && distanceMeters > 0) {
+            double km = distanceMeters / 1000.0;
+            if (sportType != null && sportType.equalsIgnoreCase("SWIM")) {
+                return (int) Math.round(km * 280);
+            }
+            return (int) Math.round(km * 70);
+        }
+        if (durationMinutes != null && durationMinutes > 0) {
+            return durationMinutes * 8;
+        }
+        return 360;
+    }
+
+    private void applyFoodRequest(Food food, FoodRequest request) {
+        food.setName(defaultText(request.name(), food.getName() == null ? "Food" : food.getName()));
+        food.setCategory(defaultText(request.category(), food.getCategory() == null ? "GENERAL" : food.getCategory()).toUpperCase());
+        food.setServingSize(defaultText(request.servingSize(), food.getServingSize() == null ? "1 serving" : food.getServingSize()));
+        food.setCalories(Math.max(0, request.calories() == null ? food.getCalories() : request.calories()));
+        food.setProteinGrams(Math.max(0, request.proteinGrams() == null ? food.getProteinGrams() : request.proteinGrams()));
+        food.setCarbsGrams(Math.max(0, request.carbsGrams() == null ? food.getCarbsGrams() : request.carbsGrams()));
+        food.setFatGrams(Math.max(0, request.fatGrams() == null ? food.getFatGrams() : request.fatGrams()));
+        food.setAliases(defaultText(request.aliases(), food.getAliases() == null ? "" : food.getAliases()));
+        food.setNote(defaultText(request.note(), food.getNote() == null ? "" : food.getNote()));
+        food.setActive(request.active() == null || request.active());
     }
 
     private NutritionPlan defaultPlan(Long userId) {
@@ -95,8 +319,35 @@ public class NutritionService {
         return plan;
     }
 
+    private String normalizeFoodText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value.toLowerCase(Locale.ROOT).replace('đ', 'd'), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^a-z0-9\\s.,]", " ");
+        normalized = normalized.replaceAll("\\b\\d+(?:[\\.,]\\d+)?\\b", " ");
+        normalized = normalized.replaceAll("\\b(to|qua|trai|chen|dia|suat|khau phan|ly|goi|muong|thia|bat|g|gram|grams|gam|kg|ml)\\b", " ");
+        return normalized.replaceAll("\\s+", " ").trim();
+    }
+
     private String defaultText(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private double sanitizeServings(Double servings) {
+        if (servings == null || servings <= 0) {
+            return 1.0;
+        }
+        return Math.min(10.0, Math.round(servings * 100.0) / 100.0);
+    }
+
+    private int scale(int value, double servings) {
+        return Math.max(0, (int) Math.round(value * servings));
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     public record NutritionPlanRequest(
@@ -114,6 +365,9 @@ public class NutritionService {
             Long userId,
             String mealType,
             String name,
+            Long foodId,
+            Double servings,
+            String servingSize,
             LocalDateTime eatenAt,
             int calories,
             int proteinGrams,
@@ -122,10 +376,70 @@ public class NutritionService {
     ) {
     }
 
+    public record FoodMealRequest(
+            Long foodId,
+            String mealType,
+            Double servings,
+            String customName,
+            LocalDateTime eatenAt
+    ) {
+    }
+
+    public record QuickMealRequest(
+            String query,
+            String mealType,
+            Double servings,
+            LocalDateTime eatenAt
+    ) {
+    }
+
     public record NutritionSummary(int calories, int proteinGrams, int carbsGrams, int fatGrams) {
     }
 
     public record FoodSuggestion(String name, String timing, int calories, String note) {
+    }
+
+    public record RecoveryRequest(
+            Long userId,
+            String sportType,
+            Double distanceMeters,
+            Integer durationMinutes,
+            Integer calories
+    ) {
+    }
+
+    public record RecoverySuggestion(
+            String message,
+            int burnedCalories,
+            int targetCalories,
+            int targetProteinGrams,
+            int targetCarbsGrams,
+            List<String> mealIdeas
+    ) {
+    }
+
+    public record FoodRequest(
+            String name,
+            String category,
+            String servingSize,
+            Integer calories,
+            Integer proteinGrams,
+            Integer carbsGrams,
+            Integer fatGrams,
+            String aliases,
+            String note,
+            Boolean active
+    ) {
+    }
+
+    public record NutritionAdminOverview(
+            long totalFoods,
+            long activeFoods,
+            long mealsLogged,
+            long usersWithPlans,
+            long usersLoggedMeals,
+            int caloriesToday
+    ) {
     }
 
     @Transactional

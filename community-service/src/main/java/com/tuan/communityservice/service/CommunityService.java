@@ -9,6 +9,7 @@ import com.tuan.communityservice.repository.PostCommentRepository;
 import com.tuan.communityservice.repository.PostLikeRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -91,6 +92,35 @@ public class CommunityService {
         return posts.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .map(p -> toView(p, userId))
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<PostView> adminPosts() {
+        return posts.findAllByOrderByCreatedAtDesc().stream()
+                .map(p -> toView(p, null))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> adminOverview() {
+        List<CommunityPost> allPosts = posts.findAll();
+        long activeAuthors = allPosts.stream().map(CommunityPost::getUserId).distinct().count();
+        return Map.of(
+                "totalPosts", posts.count(),
+                "totalComments", comments.count(),
+                "totalLikes", likes.count(),
+                "activeAuthors", activeAuthors
+        );
+    }
+
+    @Transactional
+    public void deletePost(Long postId) {
+        if (!posts.existsById(postId)) {
+            throw new IllegalArgumentException("Post not found: " + postId);
+        }
+        likes.deleteByPost_Id(postId);
+        comments.deleteByPost_Id(postId);
+        posts.deleteById(postId);
     }
 
     private PostView toView(CommunityPost p, Long requestUserId) {

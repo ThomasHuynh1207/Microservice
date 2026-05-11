@@ -44,7 +44,9 @@ public class SampleDataInitializer {
                         run(1L, "Demo Runner", "Canal tempo run", "Held the middle 4K right under target pace.", 7200, 42, 91, 460),
                         swim(1L, "Demo Runner", "Lunch freestyle ladder", "Easy 400 warmup, 8x100 steady, short cooldown.", 1800, 42, 138, 520),
                         run(2L, "Linh Tran", "Bridge repeats", "Six climbs with a relaxed jog home.", 9800, 58, 164, 690),
-                        swim(3L, "Minh Pham", "Smooth 2K set", "Focused on long strokes and even breathing.", 2050, 48, 132, 560)
+                        swim(3L, "Minh Pham", "Smooth 2K set", "Focused on long strokes and even breathing.", 2050, 48, 132, 560),
+                        run(4L, "Hang Thu", "Recovery park run", "Short easy run to keep the legs fresh.", 5000, 34, 124, 310),
+                        swim(5L, "An Nguyen", "Morning endurance swim", "Controlled aerobic set before work.", 1600, 40, 128, 430)
                 ));
                 activities.saveAll(List.of(
                         withDate(run(1L, "Demo Runner", "Easy recovery", "Kept it light after yesterday's swim.", 5200, 34, 124, 310), 2, 3),

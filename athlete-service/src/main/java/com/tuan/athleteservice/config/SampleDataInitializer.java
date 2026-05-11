@@ -14,20 +14,24 @@ public class SampleDataInitializer {
     @Bean
     CommandLineRunner seedAthletes(AthleteProfileRepository profiles, FollowRepository follows) {
         return args -> {
-            if (profiles.count() == 0) {
-                profiles.saveAll(List.of(
-                        profile(1L, "Demo Runner", "Ho Chi Minh City", "Sub-60 10K and 3K swim week", 35, 3200),
-                        profile(2L, "Linh Tran", "Da Nang", "Build a steady half-marathon base", 45, 1600),
-                        profile(3L, "Minh Pham", "Ha Noi", "Swim smoother freestyle sets", 18, 5200),
-                        profile(4L, "Hang Thu", "Nha Trang", "Add one more swim technique day", 28, 1800)
-                ));
+            List<AthleteProfile> sampleProfiles = List.of(
+                    profile(1L, "Demo Runner", "Ho Chi Minh City", "Sub-60 10K and 3K swim week", 35, 3200),
+                    profile(2L, "Linh Tran", "Da Nang", "Build a steady half-marathon base", 45, 1600),
+                    profile(3L, "Minh Pham", "Ha Noi", "Swim smoother freestyle sets", 18, 5200),
+                    profile(4L, "Hang Thu", "Nha Trang", "Add one more swim technique day", 28, 1800),
+                    profile(5L, "An Nguyen", "Can Tho", "Swim endurance and easy weekend runs", 22, 3600)
+            );
+            for (AthleteProfile sample : sampleProfiles) {
+                profiles.findByUserId(sample.getUserId()).orElseGet(() -> profiles.save(sample));
             }
 
             if (follows.count() == 0) {
                 follows.saveAll(List.of(
                         follow(1L, 2L),
                         follow(1L, 3L),
-                        follow(2L, 1L)
+                        follow(2L, 1L),
+                        follow(3L, 5L),
+                        follow(5L, 1L)
                 ));
             }
         };

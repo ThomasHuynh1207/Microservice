@@ -129,10 +129,37 @@ type MealEntry = {
   id: number;
   mealType: string;
   name: string;
+  foodId?: number;
+  servings?: number;
+  servingSize?: string;
+  eatenAt?: string;
   calories: number;
   proteinGrams: number;
   carbsGrams: number;
   fatGrams: number;
+};
+
+type FoodItem = {
+  id: number;
+  name: string;
+  category: string;
+  servingSize: string;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
+  active?: boolean;
+  aliases?: string;
+  note?: string;
+};
+
+type RecoverySuggestion = {
+  message: string;
+  burnedCalories: number;
+  targetCalories: number;
+  targetProteinGrams: number;
+  targetCarbsGrams: number;
+  mealIdeas: string[];
 };
 
 type TrainingDay = {
@@ -174,6 +201,7 @@ type Post = {
   distanceMeters?: number;
   durationMinutes?: number;
   calories?: number;
+  routeName?: string;
   likes: number;
   liked: boolean;
   comments: PostComment[];
@@ -187,6 +215,14 @@ type PostComment = {
   authorName: string;
   content: string;
   createdAt: string;
+};
+
+type FollowSummary = {
+  userId: number;
+  displayName: string;
+  city?: string;
+  primaryGoal?: string;
+  experienceLevel?: string;
 };
 
 type Badge = {
@@ -374,20 +410,20 @@ export default function App() {
   type PostApiView = {
     id: number; userId: number; athleteName: string; title?: string; content: string;
     sportType?: Sport; distanceMeters?: number; durationMinutes?: number; calories?: number;
-    createdAt: string; likeCount: number; commentCount: number; likedByMe: boolean;
+    routeName?: string; createdAt: string; likeCount: number; commentCount: number; likedByMe: boolean;
   };
 
   function mapPost(v: PostApiView): Post {
     return {
       id: v.id, userId: v.userId, authorName: v.athleteName, title: v.title,
       content: v.content, sportType: v.sportType, distanceMeters: v.distanceMeters,
-      durationMinutes: v.durationMinutes, calories: v.calories, createdAt: v.createdAt,
+      durationMinutes: v.durationMinutes, calories: v.calories, routeName: v.routeName, createdAt: v.createdAt,
       likes: v.likeCount, liked: v.likedByMe, commentCount: v.commentCount, comments: [],
     };
   }
 
   async function loadDashboard(current: Session) {
-    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, postData] = await Promise.all([
+    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, postData, followingData] = await Promise.all([
       api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
@@ -397,6 +433,7 @@ export default function App() {
       api<number[]>(`/activities/routes/saved/${current.userId}`, current.token, []),
       api<Challenge[]>(`/activities/challenges/user/${current.userId}`, current.token, []),
       api<PostApiView[]>(`/community/posts?userId=${current.userId}`, current.token, []),
+      api<FollowSummary[]>(`/athletes/${current.userId}/following`, current.token, []),
     ]);
     setProfile({ ...fallbackProfile, ...profileData });
     setStats(recalculateStats(activityData, statsData));
@@ -407,6 +444,7 @@ export default function App() {
     setSavedRoutes(savedRouteData);
     setChallenges(challengeData);
     setPosts(postData.map(mapPost));
+    setFollowing(followingData.map((item) => item.userId));
   }
 
   async function createActivity(payload: Omit<FitnessActivity, "id" | "startedAt"> & { gpsRouteJson?: string; averagePaceSecondsPerKm?: number }) {
@@ -495,6 +533,52 @@ export default function App() {
     } catch { /* keep optimistic */ }
   }
 
+  async function createCommunityPost(content: string, activityId?: number) {
+    if (!session) return;
+    const linkedActivity = activityId ? activities.find((activity) => activity.id === activityId) : undefined;
+    const cleanContent = content.trim();
+    if (!cleanContent && !linkedActivity) return;
+    const optimistic: Post = {
+      id: Date.now(),
+      userId: session.userId,
+      authorName: profile.displayName,
+      title: linkedActivity?.title,
+      content: cleanContent || `Vừa hoàn thành ${linkedActivity?.title}.`,
+      sportType: linkedActivity?.sportType,
+      distanceMeters: linkedActivity?.distanceMeters,
+      durationMinutes: linkedActivity?.durationMinutes,
+      calories: linkedActivity?.calories,
+      routeName: linkedActivity?.routeName,
+      likes: 0,
+      liked: false,
+      comments: [],
+      commentCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+    setPosts((prev) => [optimistic, ...prev]);
+    notify(linkedActivity ? "Đã đăng bài kèm hoạt động." : "Đã đăng bài lên cộng đồng.");
+    try {
+      const saved = await apiStrict<PostApiView>("/community/posts", session.token, {
+        method: "POST",
+        body: JSON.stringify({
+          userId: session.userId,
+          athleteName: profile.displayName,
+          title: linkedActivity?.title,
+          content: optimistic.content,
+          sportType: linkedActivity?.sportType,
+          distanceMeters: linkedActivity?.distanceMeters,
+          durationMinutes: linkedActivity?.durationMinutes,
+          calories: linkedActivity?.calories,
+          routeName: linkedActivity?.routeName,
+          visibility: "PUBLIC",
+        }),
+      });
+      setPosts((prev) => [mapPost(saved), ...prev.filter((p) => p.id !== optimistic.id)]);
+    } catch {
+      notify("Đang giữ bài viết tạm thời, chưa đồng bộ được với máy chủ.");
+    }
+  }
+
   async function shareActivity(activity: FitnessActivity) {
     if (!session) return;
     const optimistic: Post = {
@@ -506,6 +590,7 @@ export default function App() {
       sportType: activity.sportType,
       distanceMeters: activity.distanceMeters,
       durationMinutes: activity.durationMinutes,
+      routeName: activity.routeName,
       likes: 0, liked: false, comments: [], commentCount: 0,
       createdAt: new Date().toISOString(),
     };
@@ -524,6 +609,7 @@ export default function App() {
           distanceMeters: activity.distanceMeters,
           durationMinutes: activity.durationMinutes,
           calories: activity.calories,
+          routeName: activity.routeName,
           visibility: "PUBLIC",
         }),
       });
@@ -603,6 +689,7 @@ export default function App() {
             setPlan={setNutritionPlan}
             meals={meals}
             setMeals={setMeals}
+            activities={activities}
             notify={notify}
           />
         )}
@@ -611,15 +698,19 @@ export default function App() {
           <AdminPage token={session.token} userId={session.userId} notify={notify} />
         )}
         {page === "community" && (
-          <CommunityPage
+          <CommunityHubPage
             posts={posts}
             setPosts={setPosts}
             token={session.token}
             currentUserId={session.userId}
+            profile={profile}
+            activities={activities}
             following={following}
             onLike={likePost}
             onComment={addComment}
             onFollow={toggleFollow}
+            onCreatePost={createCommunityPost}
+            onShareActivity={shareActivity}
             onAddActivity={() => setShowActivityModal(true)}
           />
         )}
@@ -767,8 +858,40 @@ function AppHeader({
         )}
         {profileMenuOpen && (
           <div className="popover profile-popover">
-            <button onClick={onEditProfile}><Settings size={16} /> Sửa hồ sơ</button>
-            <button onClick={onLogout}><LogOut size={16} /> Đăng xuất</button>
+            <div className="profile-popover-head">
+              <div className="profile-popover-avatar">{initials(profile.displayName)}</div>
+              <div className="profile-popover-user">
+                <strong>{profile.displayName}</strong>
+                <span>{session.email}</span>
+                <small>{profile.city}</small>
+              </div>
+            </div>
+
+            <div className="profile-popover-badges">
+              <span>{session.role === "ADMIN" ? "Admin" : "Athlete"}</span>
+              <span>{session.premiumActive ? "Premium" : "Free"}</span>
+              <span>{profile.primaryGoal}</span>
+            </div>
+
+            <div className="profile-popover-stats">
+              <div>
+                <strong>{profile.weeklyRunGoalKm} km</strong>
+                <span>Goal chạy</span>
+              </div>
+              <div>
+                <strong>{profile.weeklySwimGoalMeters} m</strong>
+                <span>Goal bơi</span>
+              </div>
+              <div>
+                <strong>{profile.completedOnboarding ? "Đã xong" : "Chưa xong"}</strong>
+                <span>Onboarding</span>
+              </div>
+            </div>
+
+            <div className="profile-popover-actions">
+              <button className="profile-popover-primary" onClick={onEditProfile}><Settings size={16} /> Sửa hồ sơ</button>
+              <button className="profile-popover-secondary" onClick={onLogout}><LogOut size={16} /> Đăng xuất</button>
+            </div>
           </div>
         )}
       </div>
@@ -1735,7 +1858,328 @@ function ChallengesPage({ challenges, onToggle }: { challenges: Challenge[]; onT
   );
 }
 
-function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }: {
+function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activities, notify }: {
+  token: string;
+  userId: number;
+  plan: NutritionPlan;
+  setPlan: (plan: NutritionPlan) => void;
+  meals: MealEntry[];
+  setMeals: (meals: MealEntry[]) => void;
+  activities: FitnessActivity[];
+  notify: (msg: string) => void;
+}) {
+  const [draft, setDraft] = useState(plan);
+  const [mealType, setMealType] = useState("SNACK");
+  const [quickInput, setQuickInput] = useState("1 to pho bo");
+  const [foodQuery, setFoodQuery] = useState("");
+  const [foods, setFoods] = useState<FoodItem[]>([]);
+  const [selectedFoodId, setSelectedFoodId] = useState<number | null>(null);
+  const [servings, setServings] = useState(1);
+  const [manualMeal, setManualMeal] = useState({ mealType: "SNACK", name: "Recovery smoothie", calories: 420, proteinGrams: 32, carbsGrams: 58, fatGrams: 8 });
+  const [waterMl, setWaterMl] = useState(250);
+  const [waterTotalMl, setWaterTotalMl] = useState(0);
+  const [selectedActivityId, setSelectedActivityId] = useState<number | "">("");
+  const [recovery, setRecovery] = useState<RecoverySuggestion | null>(null);
+  const [busyMeal, setBusyMeal] = useState(false);
+
+  useEffect(() => setDraft(plan), [plan]);
+
+  useEffect(() => {
+    if (!token || token === "demo") return;
+    api<{ totalMl: number }>(`/nutrition/${userId}/water/today`, token, { totalMl: 0 }).then((r) => setWaterTotalMl(r.totalMl));
+  }, [token, userId]);
+
+  useEffect(() => {
+    if (!token || token === "demo") return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      const query = foodQuery.trim();
+      const path = `/nutrition/foods${query ? `?q=${encodeURIComponent(query)}` : ""}`;
+      api<FoodItem[]>(path, token, []).then((items) => {
+        if (!active) return;
+        setFoods(items);
+        setSelectedFoodId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null);
+      });
+    }, 200);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [foodQuery, token]);
+
+  const recentActivities = useMemo(() => [...activities]
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, 6), [activities]);
+
+  useEffect(() => {
+    setSelectedActivityId((current) => (current || recentActivities[0]?.id) ?? "");
+  }, [recentActivities]);
+
+  async function savePlan(e: FormEvent) {
+    e.preventDefault();
+    const saved = await api<NutritionPlan>(`/nutrition/${userId}/plan`, token, draft, { method: "PUT", body: JSON.stringify(draft) });
+    setPlan(saved);
+    notify("Da luu ke hoach dinh duong.");
+  }
+
+  async function quickAddMeal(e: FormEvent) {
+    e.preventDefault();
+    if (!quickInput.trim()) return;
+    setBusyMeal(true);
+    try {
+      const created = await apiStrict<MealEntry>(`/nutrition/${userId}/meals/quick`, token, {
+        method: "POST",
+        body: JSON.stringify({ query: quickInput, mealType }),
+      });
+      setMeals([created, ...meals]);
+      setQuickInput("");
+      notify(`Da tinh va them ${created.name}.`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Khong tim thay mon phu hop.");
+    } finally {
+      setBusyMeal(false);
+    }
+  }
+
+  async function addSelectedFood(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedFoodId) return;
+    setBusyMeal(true);
+    try {
+      const food = foods.find((item) => item.id === selectedFoodId);
+      const created = await apiStrict<MealEntry>(`/nutrition/${userId}/meals/from-food`, token, {
+        method: "POST",
+        body: JSON.stringify({ foodId: selectedFoodId, mealType, servings, customName: food?.name }),
+      });
+      setMeals([created, ...meals]);
+      notify(`Da them ${created.name} vao nhat ky.`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Khong the them mon an.");
+    } finally {
+      setBusyMeal(false);
+    }
+  }
+
+  async function addManualMeal(e: FormEvent) {
+    e.preventDefault();
+    setBusyMeal(true);
+    try {
+      const created = await apiStrict<MealEntry>("/nutrition/meals", token, {
+        method: "POST",
+        body: JSON.stringify({ userId, ...manualMeal }),
+      });
+      setMeals([created, ...meals]);
+      notify("Da them bua an vao nhat ky.");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Khong the them bua an.");
+    } finally {
+      setBusyMeal(false);
+    }
+  }
+
+  async function logWater(e: FormEvent) {
+    e.preventDefault();
+    await api<{ amountMl: number }>(`/nutrition/${userId}/water`, token, { amountMl: waterMl }, {
+      method: "POST",
+      body: JSON.stringify({ amountMl: waterMl }),
+    });
+    setWaterTotalMl((prev) => prev + waterMl);
+    notify(`Da ghi ${waterMl}ml nuoc uong.`);
+  }
+
+  async function requestRecoverySuggestion() {
+    const activity = recentActivities.find((item) => item.id === selectedActivityId) ?? recentActivities[0];
+    if (!activity) return;
+    try {
+      const suggestion = await apiStrict<RecoverySuggestion>("/nutrition/recovery-suggestion", token, {
+        method: "POST",
+        body: JSON.stringify({
+          userId,
+          sportType: activity.sportType,
+          distanceMeters: activity.distanceMeters,
+          durationMinutes: activity.durationMinutes,
+          calories: activity.calories,
+        }),
+      });
+      setRecovery(suggestion);
+      notify("Da tao goi y phuc hoi sau buoi tap.");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Khong the tao goi y phuc hoi.");
+    }
+  }
+
+  const todayKey = new Date().toDateString();
+  const todayMeals = meals.filter((meal) => !meal.eatenAt || new Date(meal.eatenAt).toDateString() === todayKey);
+  const totals = todayMeals.reduce((s, m) => ({ calories: s.calories + m.calories, protein: s.protein + m.proteinGrams, carbs: s.carbs + m.carbsGrams, fat: s.fat + m.fatGrams }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const waterGoalMl = Math.round(plan.hydrationLiters * 1000);
+  const waterPercent = waterGoalMl > 0 ? Math.min(100, Math.round((waterTotalMl / waterGoalMl) * 100)) : 0;
+  const selectedFood = foods.find((item) => item.id === selectedFoodId) ?? foods[0];
+  const selectedFoodEstimate = selectedFood ? {
+    calories: Math.round(selectedFood.calories * servings),
+    protein: Math.round(selectedFood.proteinGrams * servings),
+    carbs: Math.round(selectedFood.carbsGrams * servings),
+    fat: Math.round(selectedFood.fatGrams * servings),
+  } : null;
+
+  return (
+    <div className="nutrition-page nutrition-page-pro">
+      <section className="page-title">
+        <span className="section-kicker">Dinh duong</span>
+        <h1>Ke hoach nap nang luong</h1>
+        <p>Theo doi calories, macro, nuoc uong va bua phuc hoi sau cac buoi chay/boi.</p>
+      </section>
+
+      <section className="nutrition-summary-strip">
+        <MacroBox icon={<Flame size={18} />} label="Calories" value={`${totals.calories}/${plan.dailyCalories}`} />
+        <MacroBox icon={<Utensils size={18} />} label="Protein" value={`${totals.protein}/${plan.proteinGrams}g`} />
+        <MacroBox icon={<Activity size={18} />} label="Carb" value={`${totals.carbs}/${plan.carbsGrams}g`} />
+        <MacroBox icon={<Droplets size={18} />} label="Fat" value={`${totals.fat}/${plan.fatGrams}g`} />
+      </section>
+
+      <section className="nutrition-panels nutrition-panels-pro">
+        <form className="white-panel nutrition-form" onSubmit={savePlan}>
+          <h2>Muc tieu hang ngay</h2>
+          <label>Muc tieu<input value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} /></label>
+          <div className="input-grid">
+            <NumberField label="Calories" value={draft.dailyCalories} onChange={(v) => setDraft({ ...draft, dailyCalories: v })} />
+            <NumberField label="Protein (g)" value={draft.proteinGrams} onChange={(v) => setDraft({ ...draft, proteinGrams: v })} />
+            <NumberField label="Carb (g)" value={draft.carbsGrams} onChange={(v) => setDraft({ ...draft, carbsGrams: v })} />
+            <NumberField label="Fat (g)" value={draft.fatGrams} onChange={(v) => setDraft({ ...draft, fatGrams: v })} />
+          </div>
+          <label>Nuoc/ngay (lit)<input type="number" step="0.1" value={draft.hydrationLiters} onChange={(e) => setDraft({ ...draft, hydrationLiters: Number(e.target.value) })} /></label>
+          <label>Goi y<textarea value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} /></label>
+          <button className="orange-button"><CheckCircle2 size={18} /> Luu ke hoach</button>
+        </form>
+
+        <div className="white-panel nutrition-log-panel">
+          <div className="nutrition-panel-head">
+            <h2>Nhat ky bua an</h2>
+            <select value={mealType} onChange={(e) => setMealType(e.target.value)}>
+              <option>BREAKFAST</option><option>LUNCH</option><option>DINNER</option><option>SNACK</option>
+            </select>
+          </div>
+
+          <form className="quick-food-form" onSubmit={quickAddMeal}>
+            <div className="food-search-box">
+              <Search size={17} />
+              <input value={quickInput} onChange={(e) => setQuickInput(e.target.value)} placeholder="VD: 1 to pho bo, 2 qua trung, 200g com" />
+            </div>
+            <button className="orange-button" disabled={busyMeal}><Sparkles size={16} /> Tu tinh</button>
+          </form>
+
+          <div className="food-library-picker">
+            <div className="food-search-box">
+              <Search size={17} />
+              <input value={foodQuery} onChange={(e) => setFoodQuery(e.target.value)} placeholder="Tim trong database mon an" />
+            </div>
+            <div className="food-result-list">
+              {foods.length === 0 ? (
+                <div className="empty-log compact">Chua co mon phu hop trong database.</div>
+              ) : foods.slice(0, 6).map((food) => (
+                <button key={food.id} type="button" className={`food-result${selectedFoodId === food.id ? " active" : ""}`} onClick={() => setSelectedFoodId(food.id)}>
+                  <span>
+                    <strong>{food.name}</strong>
+                    <small>{food.servingSize}</small>
+                  </span>
+                  <span>{food.calories} kcal</span>
+                </button>
+              ))}
+            </div>
+            {selectedFood && selectedFoodEstimate && (
+              <form className="selected-food-panel" onSubmit={addSelectedFood}>
+                <div>
+                  <strong>{selectedFood.name}</strong>
+                  <p>{selectedFoodEstimate.calories} kcal | P {selectedFoodEstimate.protein}g | C {selectedFoodEstimate.carbs}g | F {selectedFoodEstimate.fat}g</p>
+                </div>
+                <label>Khau phan
+                  <input type="number" min="0.25" max="10" step="0.25" value={servings} onChange={(e) => setServings(Number(e.target.value))} />
+                </label>
+                <button className="outline-button" disabled={busyMeal}><CirclePlus size={16} /> Them</button>
+              </form>
+            )}
+          </div>
+
+          <details className="manual-meal-details">
+            <summary>Nhap macro thu cong</summary>
+            <form className="meal-form" onSubmit={addManualMeal}>
+              <select value={manualMeal.mealType} onChange={(e) => setManualMeal({ ...manualMeal, mealType: e.target.value })}>
+                <option>BREAKFAST</option><option>LUNCH</option><option>DINNER</option><option>SNACK</option>
+              </select>
+              <input value={manualMeal.name} onChange={(e) => setManualMeal({ ...manualMeal, name: e.target.value })} />
+              <NumberField label="Calories" value={manualMeal.calories} onChange={(v) => setManualMeal({ ...manualMeal, calories: v })} />
+              <NumberField label="Protein" value={manualMeal.proteinGrams} onChange={(v) => setManualMeal({ ...manualMeal, proteinGrams: v })} />
+              <NumberField label="Carb" value={manualMeal.carbsGrams} onChange={(v) => setManualMeal({ ...manualMeal, carbsGrams: v })} />
+              <NumberField label="Fat" value={manualMeal.fatGrams} onChange={(v) => setManualMeal({ ...manualMeal, fatGrams: v })} />
+              <button className="orange-button">Them bua</button>
+            </form>
+          </details>
+
+          <h3>Da an hom nay</h3>
+          <div className="meal-list">
+            {todayMeals.length === 0 ? (
+              <div className="empty-log"><Utensils size={44} /><h3>Chua co bua an</h3><p>Them bua an dau tien.</p></div>
+            ) : (
+              todayMeals.map((m) => (
+                <div key={m.id} className="meal-row meal-row-pro">
+                  <span>{m.mealType}</span>
+                  <strong>{m.name}<small>{m.servings ? ` x${m.servings}` : ""} {m.servingSize ?? ""}</small></strong>
+                  <small>{m.calories} kcal</small>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="white-panel recovery-panel">
+          <h2><Sparkles size={20} /> AI phuc hoi sau tap</h2>
+          <select value={selectedActivityId} onChange={(e) => setSelectedActivityId(Number(e.target.value))}>
+            {recentActivities.length === 0 ? <option value="">Chua co buoi tap</option> : recentActivities.map((activity) => (
+              <option key={activity.id} value={activity.id}>
+                {activity.title} - {(activity.distanceMeters / 1000).toFixed(activity.sportType === "RUN" ? 1 : 2)} km
+              </option>
+            ))}
+          </select>
+          <button className="orange-button" type="button" onClick={requestRecoverySuggestion} disabled={recentActivities.length === 0}>
+            <Sparkles size={16} /> Goi y bua phuc hoi
+          </button>
+          {recovery && (
+            <div className="recovery-result">
+              <p>{recovery.message}</p>
+              <div className="recovery-targets">
+                <span>{recovery.burnedCalories} kcal da dot</span>
+                <span>{recovery.targetCarbsGrams}g carb</span>
+                <span>{recovery.targetProteinGrams}g protein</span>
+              </div>
+              <div className="recovery-ideas">
+                {recovery.mealIdeas.map((idea) => <button type="button" key={idea} onClick={() => setQuickInput(idea)}>{idea}</button>)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="white-panel water-panel">
+          <h2><Droplets size={20} /> Nuoc uong hom nay</h2>
+          <div className="water-progress-bar">
+            <div className="water-progress-fill" style={{ width: `${waterPercent}%` }} />
+          </div>
+          <p className="water-total">{waterTotalMl} ml / {waterGoalMl} ml ({waterPercent}%)</p>
+          <form className="water-form" onSubmit={logWater}>
+            <select value={waterMl} onChange={(e) => setWaterMl(Number(e.target.value))}>
+              <option value={150}>150 ml</option>
+              <option value={250}>250 ml</option>
+              <option value={350}>350 ml</option>
+              <option value={500}>500 ml</option>
+              <option value={750}>750 ml</option>
+            </select>
+            <button className="orange-button" type="submit"><Droplets size={16} /> Ghi nuoc</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LegacyNutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }: {
   token: string;
   userId: number;
   plan: NutritionPlan;
@@ -1921,6 +2365,309 @@ function AiCoachPage({ token, userId, stats }: { token: string; userId: number; 
           <button className="orange-button icon-only" aria-label="Gửi"><Send size={18} /></button>
         </form>
       </section>
+    </div>
+  );
+}
+
+function CommunityHubPage({
+  posts,
+  setPosts,
+  token,
+  currentUserId,
+  profile,
+  activities,
+  following,
+  onLike,
+  onComment,
+  onFollow,
+  onCreatePost,
+  onShareActivity,
+  onAddActivity,
+}: {
+  posts: Post[];
+  setPosts: (fn: (prev: Post[]) => Post[]) => void;
+  token: string;
+  currentUserId: number;
+  profile: AthleteProfile;
+  activities: FitnessActivity[];
+  following: number[];
+  onLike: (postId: number) => Promise<void>;
+  onComment: (postId: number, content: string) => Promise<void>;
+  onFollow: (userId: number) => void | Promise<void>;
+  onCreatePost: (content: string, activityId?: number) => Promise<void>;
+  onShareActivity: (activity: FitnessActivity) => Promise<void>;
+  onAddActivity: () => void;
+}) {
+  const [expandedComments, setExpandedComments] = useState<number[]>([]);
+  const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
+  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({});
+  const [feedFilter, setFeedFilter] = useState<"all" | "following" | "mine" | "run" | "swim">("all");
+  const [query, setQuery] = useState("");
+  const [composeText, setComposeText] = useState("");
+  const [selectedActivityId, setSelectedActivityId] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  const recentActivities = useMemo(() => activities.slice(0, 5), [activities]);
+  const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likes, 0), [posts]);
+  const filteredPosts = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return posts.filter((post) => {
+      const matchesFilter =
+        feedFilter === "all" ||
+        (feedFilter === "following" && following.includes(post.userId)) ||
+        (feedFilter === "mine" && post.userId === currentUserId) ||
+        (feedFilter === "run" && post.sportType === "RUN") ||
+        (feedFilter === "swim" && post.sportType === "SWIM");
+      const haystack = `${post.authorName} ${post.title ?? ""} ${post.content} ${post.routeName ?? ""}`.toLowerCase();
+      return matchesFilter && (!normalized || haystack.includes(normalized));
+    });
+  }, [posts, query, feedFilter, following, currentUserId]);
+
+  async function submitPost(e: FormEvent) {
+    e.preventDefault();
+    const activityId = selectedActivityId ? Number(selectedActivityId) : undefined;
+    if (!composeText.trim() && !activityId) return;
+    setPosting(true);
+    await onCreatePost(composeText, activityId);
+    setComposeText("");
+    setSelectedActivityId("");
+    setPosting(false);
+  }
+
+  async function toggleComments(postId: number) {
+    if (expandedComments.includes(postId)) {
+      setExpandedComments((prev) => prev.filter((id) => id !== postId));
+      return;
+    }
+    setExpandedComments((prev) => [...prev, postId]);
+    const post = posts.find((p) => p.id === postId);
+    if (!post || post.comments.length > 0) return;
+    setLoadingComments((prev) => ({ ...prev, [postId]: true }));
+    try {
+      const loaded = await apiStrict<{ id: number; userId: number; displayName: string; content: string; createdAt: string }[]>(
+        `/community/posts/${postId}/comments`, token, { method: "GET" }
+      );
+      const mapped: PostComment[] = loaded.map((c) => ({ id: c.id, userId: c.userId, authorName: c.displayName, content: c.content, createdAt: c.createdAt }));
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: mapped } : p));
+    } catch { /* ignore */ } finally {
+      setLoadingComments((prev) => ({ ...prev, [postId]: false }));
+    }
+  }
+
+  async function submitComment(postId: number) {
+    const text = commentInputs[postId]?.trim();
+    if (!text) return;
+    setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+    await onComment(postId, text);
+    if (!expandedComments.includes(postId)) setExpandedComments((prev) => [...prev, postId]);
+  }
+
+  return (
+    <div className="community-page community-page-wide">
+      <section className="page-title">
+        <span className="section-kicker">Cộng đồng</span>
+        <h1>Feed hoạt động</h1>
+        <p>Chia sẻ buổi tập, theo dõi bạn bè và cùng nhau tiến bộ mỗi ngày.</p>
+        <div className="page-actions">
+          <button className="orange-button" onClick={onAddActivity}><CirclePlus size={18} /> Ghi hoạt động</button>
+        </div>
+      </section>
+
+      <div className="community-layout">
+        <div className="community-feed-column">
+          <form className="community-composer" onSubmit={(e) => void submitPost(e)}>
+            <div className="post-header">
+              <div className="post-avatar-small">{initials(profile.displayName)}</div>
+              <div className="post-meta">
+                <strong>{profile.displayName}</strong>
+                <span>Đăng cập nhật hoặc gắn một buổi tập đã hoàn thành</span>
+              </div>
+            </div>
+            <textarea
+              value={composeText}
+              onChange={(e) => setComposeText(e.target.value)}
+              placeholder="Buổi tập hôm nay của bạn thế nào?"
+            />
+            <div className="composer-actions">
+              <select value={selectedActivityId} onChange={(e) => setSelectedActivityId(e.target.value)}>
+                <option value="">Không gắn hoạt động</option>
+                {recentActivities.map((activity) => (
+                  <option key={activity.id} value={activity.id}>
+                    {activity.title} · {formatDistance(activity)} · {activity.durationMinutes} phút
+                  </option>
+                ))}
+              </select>
+              <button className="orange-button" disabled={posting || (!composeText.trim() && !selectedActivityId)}>
+                <Send size={16} /> Đăng bài
+              </button>
+            </div>
+          </form>
+
+          <div className="community-toolbar">
+            <div className="community-search">
+              <Search size={15} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm bài, người hoặc lộ trình..." />
+            </div>
+            <div className="community-filter-tabs">
+              {[
+                ["all", "Tất cả"],
+                ["following", "Đang theo dõi"],
+                ["mine", "Của tôi"],
+                ["run", "Chạy"],
+                ["swim", "Bơi"],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  className={feedFilter === id ? "active" : ""}
+                  onClick={() => setFeedFilter(id as typeof feedFilter)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="community-feed">
+            {filteredPosts.length === 0 ? (
+              <div className="empty-log community-empty">
+                <Users size={44} />
+                <h3>Chưa có bài phù hợp</h3>
+                <p>Hãy ghi một hoạt động hoặc đổi bộ lọc để xem thêm cập nhật.</p>
+                <button className="orange-button" onClick={onAddActivity}>Ghi hoạt động</button>
+              </div>
+            ) : filteredPosts.map((post) => (
+              <article key={post.id} className="post-card">
+                <div className="post-header">
+                  <div className="post-avatar-small">{initials(post.authorName)}</div>
+                  <div className="post-meta">
+                    <strong>{post.authorName}</strong>
+                    <span>{formatTimeAgo(post.createdAt)}</span>
+                  </div>
+                  {post.userId !== currentUserId && (
+                    <button
+                      className={following.includes(post.userId) ? "outline-button" : "orange-button"}
+                      style={{ marginLeft: "auto", minHeight: "32px", padding: "0 12px", fontSize: "0.84rem" }}
+                      onClick={() => onFollow(post.userId)}
+                    >
+                      {following.includes(post.userId) ? <><UserCheck size={14} /> Đang theo dõi</> : <><UserPlus size={14} /> Theo dõi</>}
+                    </button>
+                  )}
+                </div>
+
+                <p className="post-content">{post.content}</p>
+
+                {post.title && post.distanceMeters !== undefined && (
+                  <div className="post-activity-badge">
+                    <div className="post-activity-title">
+                      {post.sportType && <SportPill sport={post.sportType} />}
+                      <strong>{post.title}</strong>
+                    </div>
+                    <div className="post-activity-metrics">
+                      <span>{post.sportType === "RUN" ? `${(post.distanceMeters / 1000).toFixed(1)} km` : `${Math.round(post.distanceMeters)} m`}</span>
+                      {post.durationMinutes && <span>{post.durationMinutes} phút</span>}
+                      {post.calories && <span>{post.calories} kcal</span>}
+                      {post.routeName && <span>{post.routeName}</span>}
+                    </div>
+                  </div>
+                )}
+
+                <div className="post-actions">
+                  <button className={post.liked ? "post-like-btn liked" : "post-like-btn"} onClick={() => void onLike(post.id)}>
+                    <Heart size={16} fill={post.liked ? "currentColor" : "none"} />
+                    {post.likes} Thích
+                  </button>
+                  <button className="post-action-btn" onClick={() => void toggleComments(post.id)}>
+                    <MessageCircle size={16} />
+                    {post.commentCount ?? post.comments.length} Bình luận
+                  </button>
+                  <button className="post-action-btn" onClick={() => void navigator.clipboard?.writeText(`${post.authorName}: ${post.content}`)}>
+                    <Share2 size={16} />
+                    Sao chép
+                  </button>
+                </div>
+
+                {expandedComments.includes(post.id) && (
+                  <div className="comments-section">
+                    {loadingComments[post.id] ? (
+                      <p style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "8px 0" }}>Đang tải bình luận...</p>
+                    ) : post.comments.length === 0 ? (
+                      <p style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "8px 0" }}>Chưa có bình luận.</p>
+                    ) : post.comments.map((c) => (
+                      <div key={c.id} className="comment-item">
+                        <div className="comment-avatar">{initials(c.authorName)}</div>
+                        <div className="comment-body">
+                          <strong>{c.authorName}</strong>
+                          <span>{c.content}</span>
+                          <small>{formatTimeAgo(c.createdAt)}</small>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="comment-form">
+                      <input
+                        placeholder="Viết bình luận..."
+                        value={commentInputs[post.id] ?? ""}
+                        onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") void submitComment(post.id); }}
+                      />
+                      <button className="orange-button icon-only" onClick={() => void submitComment(post.id)} aria-label="Gửi">
+                        <Send size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <aside className="community-side">
+          <div className="community-side-panel">
+            <h2>Tổng quan</h2>
+            <div className="community-stat-grid">
+              <div><strong>{posts.length}</strong><span>Bài viết</span></div>
+              <div><strong>{totalLikes}</strong><span>Lượt thích</span></div>
+              <div><strong>{following.length}</strong><span>Đang theo dõi</span></div>
+              <div><strong>{activities.length}</strong><span>Hoạt động</span></div>
+            </div>
+          </div>
+
+          <div className="community-side-panel">
+            <div className="section-head">
+              <h2>Hoạt động gần đây</h2>
+              <button className="outline-button" onClick={onAddActivity}><CirclePlus size={15} /> Ghi mới</button>
+            </div>
+            <div className="share-activity-list">
+              {recentActivities.length === 0 ? (
+                <p className="muted-note">Chưa có hoạt động để chia sẻ.</p>
+              ) : recentActivities.map((activity) => (
+                <div key={activity.id} className="share-activity-item">
+                  <div>
+                    <SportPill sport={activity.sportType} />
+                    <strong>{activity.title}</strong>
+                    <span>{formatDistance(activity)} · {activity.durationMinutes} phút</span>
+                  </div>
+                  <button className="outline-button" onClick={() => void onShareActivity(activity)}>
+                    <Share2 size={15} /> Đăng
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="community-side-panel">
+            <h2>Đang nổi bật</h2>
+            <div className="community-trend-list">
+              {posts.slice().sort((a, b) => b.likes + b.commentCount - (a.likes + a.commentCount)).slice(0, 3).map((post) => (
+                <button key={post.id} onClick={() => setQuery(post.authorName)}>
+                  <strong>{post.authorName}</strong>
+                  <span>{post.title ?? post.content.slice(0, 42)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -2695,28 +3442,66 @@ function ProfileModal({ token, profile, setProfile, onClose, notify }: {
 
   return (
     <Modal title="Sửa hồ sơ luyện tập" onClose={onClose}>
-      <form className="modal-form" onSubmit={submit}>
-        <label>Tên hiển thị<input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} /></label>
-        <label>Thành phố<input value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} /></label>
-        <label>Giới thiệu<textarea value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} /></label>
-        <div className="input-grid">
-          <label>Giới tính
-            <select value={draft.gender ?? "Nam"} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
-              <option>Nam</option><option>Nữ</option><option>Khác</option>
-            </select>
-          </label>
-          <label>Ngày sinh<input type="date" value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} /></label>
-          <NumberField label="Chiều cao (cm)" value={draft.heightCm ?? 170} onChange={(v) => setDraft({ ...draft, heightCm: v })} />
-          <NumberField label="Cân nặng (kg)" value={draft.weightKg ?? 65} onChange={(v) => setDraft({ ...draft, weightKg: v })} />
-        </div>
-        <label>Mục tiêu<input value={draft.primaryGoal} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })} /></label>
-        <div className="input-grid">
-          <NumberField label="Km chạy/tuần" value={draft.weeklyRunGoalKm} onChange={(v) => setDraft({ ...draft, weeklyRunGoalKm: v })} />
-          <NumberField label="Mét bơi/tuần" value={draft.weeklySwimGoalMeters} onChange={(v) => setDraft({ ...draft, weeklySwimGoalMeters: v })} />
-        </div>
-        <label>Trọng tâm dinh dưỡng<input value={draft.nutritionFocus} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })} /></label>
-        <button className="orange-button">Lưu hồ sơ</button>
-      </form>
+      <div className="profile-edit-shell">
+        <aside className="profile-edit-aside">
+          <div className="profile-edit-kicker">Hồ sơ vận động</div>
+          <h3>{draft.displayName}</h3>
+          <p>{draft.city}</p>
+
+          <div className="profile-edit-summary">
+            <div>
+              <span>Mục tiêu</span>
+              <strong>{draft.primaryGoal}</strong>
+            </div>
+            <div>
+              <span>Tập trung</span>
+              <strong>{draft.nutritionFocus}</strong>
+            </div>
+            <div>
+              <span>Trạng thái</span>
+              <strong>{draft.completedOnboarding ? "Đã hoàn tất onboarding" : "Chưa hoàn tất onboarding"}</strong>
+            </div>
+          </div>
+
+          <div className="profile-edit-note">
+            <strong>Thiết lập hiện tại</strong>
+            <p>Thông tin này dùng cho trang chủ, AI Coach và các gợi ý luyện tập.</p>
+          </div>
+        </aside>
+
+        <form className="modal-form profile-edit-form" onSubmit={submit}>
+          <div className="form-section-title">Thông tin cơ bản</div>
+          <div className="input-grid two-col">
+            <label>Tên hiển thị<input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} /></label>
+            <label>Thành phố<input value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} /></label>
+          </div>
+          <label>Giới thiệu<textarea value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} /></label>
+
+          <div className="form-section-title">Thông tin thể chất</div>
+          <div className="input-grid">
+            <label>Giới tính
+              <select value={draft.gender ?? "Nam"} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
+                <option>Nam</option><option>Nữ</option><option>Khác</option>
+              </select>
+            </label>
+            <label>Ngày sinh<input type="date" value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} /></label>
+            <NumberField label="Chiều cao (cm)" value={draft.heightCm ?? 170} onChange={(v) => setDraft({ ...draft, heightCm: v })} />
+            <NumberField label="Cân nặng (kg)" value={draft.weightKg ?? 65} onChange={(v) => setDraft({ ...draft, weightKg: v })} />
+          </div>
+
+          <div className="form-section-title">Mục tiêu luyện tập</div>
+          <label>Mục tiêu<input value={draft.primaryGoal} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })} /></label>
+          <div className="input-grid">
+            <NumberField label="Km chạy/tuần" value={draft.weeklyRunGoalKm} onChange={(v) => setDraft({ ...draft, weeklyRunGoalKm: v })} />
+            <NumberField label="Mét bơi/tuần" value={draft.weeklySwimGoalMeters} onChange={(v) => setDraft({ ...draft, weeklySwimGoalMeters: v })} />
+          </div>
+          <label>Trọng tâm dinh dưỡng<input value={draft.nutritionFocus} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })} /></label>
+
+          <div className="profile-edit-actions">
+            <button className="orange-button">Lưu hồ sơ</button>
+          </div>
+        </form>
+      </div>
     </Modal>
   );
 }
