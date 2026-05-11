@@ -31,8 +31,15 @@ public class UserAccount {
     @Column(nullable = false)
     private boolean onboardingCompleted;
 
+    @Column(nullable = false)
+    private boolean active = true;
+
+    @Column(nullable = false)
+    private boolean premiumActive;
+
     private String preferredSports = "RUN,SWIM";
     private Instant createdAt;
+    private Instant premiumSince;
 
     @PrePersist
     void onCreate() {
@@ -87,6 +94,22 @@ public class UserAccount {
         this.onboardingCompleted = onboardingCompleted;
     }
 
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public boolean isPremiumActive() {
+        return premiumActive;
+    }
+
+    public void setPremiumActive(boolean premiumActive) {
+        this.premiumActive = premiumActive;
+    }
+
     public String getPreferredSports() {
         return preferredSports;
     }
@@ -97,5 +120,13 @@ public class UserAccount {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getPremiumSince() {
+        return premiumSince;
+    }
+
+    public void setPremiumSince(Instant premiumSince) {
+        this.premiumSince = premiumSince;
     }
 }

@@ -1,17 +1,23 @@
 package com.tuan.athleteservice.service;
 
 import com.tuan.athleteservice.entity.AthleteProfile;
+import com.tuan.athleteservice.entity.Follow;
 import com.tuan.athleteservice.repository.AthleteProfileRepository;
+import com.tuan.athleteservice.repository.FollowRepository;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AthleteService {
     private final AthleteProfileRepository profiles;
+    private final FollowRepository follows;
 
-    public AthleteService(AthleteProfileRepository profiles) {
+    public AthleteService(AthleteProfileRepository profiles, FollowRepository follows) {
         this.profiles = profiles;
+        this.follows = follows;
     }
 
     @Transactional(readOnly = true)
@@ -41,6 +47,46 @@ public class AthleteService {
                 new AthleteSummary(3L, "Minh Pham", "Ha Noi", "SWIM", 18.4, 5400, 391),
                 new AthleteSummary(4L, "Hang Thu", "Nha Trang", "RUN", 28.9, 1200, 276)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<FollowSummary> following(Long userId) {
+        List<Follow> relationships = follows.findByFollowerUserId(userId);
+        List<Long> ids = relationships.stream().map(Follow::getFollowingUserId).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, AthleteProfile> profileMap = profiles.findByUserIdIn(ids).stream()
+                .collect(Collectors.toMap(AthleteProfile::getUserId, profile -> profile));
+        return ids.stream()
+                .map(id -> profileMap.getOrDefault(id, defaultProfile(id)))
+                .map(profile -> new FollowSummary(
+                        profile.getUserId(),
+                        profile.getDisplayName(),
+                        profile.getCity(),
+                        profile.getPrimaryGoal(),
+                        profile.getExperienceLevel()
+                ))
+                .toList();
+    }
+
+    @Transactional
+    public void follow(Long userId, Long targetId) {
+        if (userId.equals(targetId)) {
+            return;
+        }
+        if (follows.existsByFollowerUserIdAndFollowingUserId(userId, targetId)) {
+            return;
+        }
+        Follow follow = new Follow();
+        follow.setFollowerUserId(userId);
+        follow.setFollowingUserId(targetId);
+        follows.save(follow);
+    }
+
+    @Transactional
+    public void unfollow(Long userId, Long targetId) {
+        follows.deleteByFollowerUserIdAndFollowingUserId(userId, targetId);
     }
 
     private void apply(AthleteProfile profile, AthleteProfileRequest request, boolean complete) {
@@ -98,4 +144,13 @@ public class AthleteService {
             int kudos
     ) {
     }
+
+        public record FollowSummary(
+            Long userId,
+            String displayName,
+            String city,
+            String primaryGoal,
+            String experienceLevel
+        ) {
+        }
 }

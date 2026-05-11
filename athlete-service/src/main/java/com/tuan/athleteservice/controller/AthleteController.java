@@ -4,7 +4,9 @@ import com.tuan.athleteservice.entity.AthleteProfile;
 import com.tuan.athleteservice.service.AthleteService;
 import com.tuan.athleteservice.service.AthleteService.AthleteProfileRequest;
 import com.tuan.athleteservice.service.AthleteService.AthleteSummary;
+import com.tuan.athleteservice.service.AthleteService.FollowSummary;
 import java.util.List;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,5 +42,20 @@ public class AthleteController {
     @GetMapping("/leaderboard")
     List<AthleteSummary> leaderboard() {
         return athleteService.leaderboard();
+    }
+
+    @GetMapping("/{userId}/following")
+    List<FollowSummary> following(@PathVariable Long userId) {
+        return athleteService.following(userId);
+    }
+
+    @PostMapping("/{userId}/follow/{targetId}")
+    void follow(@PathVariable Long userId, @PathVariable Long targetId) {
+        athleteService.follow(userId, targetId);
+    }
+
+    @DeleteMapping("/{userId}/follow/{targetId}")
+    void unfollow(@PathVariable Long userId, @PathVariable Long targetId) {
+        athleteService.unfollow(userId, targetId);
     }
 }

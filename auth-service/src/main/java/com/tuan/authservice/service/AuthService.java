@@ -31,6 +31,7 @@ public class AuthService {
         account.setFullName(blankToDefault(request.fullName(), "New athlete"));
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(request.password()));
+        account.setActive(true);
         account.setPreferredSports(request.preferredSports() == null || request.preferredSports().isEmpty()
                 ? "RUN,SWIM"
                 : request.preferredSports().stream().map(String::toUpperCase).collect(Collectors.joining(",")));
@@ -42,6 +43,9 @@ public class AuthService {
     public AuthResponse login(LoginRequest request) {
         UserAccount account = users.findByEmailIgnoreCase(normalizeEmail(request.email()))
                 .orElseThrow(() -> new IllegalArgumentException("Invalid email or password"));
+        if (!account.isActive()) {
+            throw new IllegalArgumentException("Account is locked");
+        }
         if (!passwordEncoder.matches(request.password(), account.getPasswordHash())) {
             throw new IllegalArgumentException("Invalid email or password");
         }
@@ -71,7 +75,9 @@ public class AuthService {
                 account.getFullName(),
                 account.getEmail(),
                 account.getRole(),
-                account.isOnboardingCompleted()
+            account.isOnboardingCompleted(),
+            account.isActive(),
+            account.isPremiumActive()
         );
     }
 
@@ -89,6 +95,15 @@ public class AuthService {
     public record LoginRequest(String email, String password) {
     }
 
-    public record AuthResponse(String token, Long userId, String fullName, String email, String role, boolean onboardingCompleted) {
+    public record AuthResponse(
+            String token,
+            Long userId,
+            String fullName,
+            String email,
+            String role,
+            boolean onboardingCompleted,
+            boolean active,
+            boolean premiumActive
+    ) {
     }
 }

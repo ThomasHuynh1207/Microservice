@@ -21,6 +21,8 @@ public class SampleDataInitializer {
             demo.setPasswordHash(encoder.encode("RunSwim123"));
             demo.setPreferredSports("RUN,SWIM");
             demo.setOnboardingCompleted(true);
+            demo.setActive(true);
+            demo.setPremiumActive(true);
             users.save(demo);
         };
     }

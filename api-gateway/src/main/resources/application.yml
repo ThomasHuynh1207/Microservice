@@ -15,8 +15,6 @@ spring:
           uri: lb://auth-service
           predicates:
             - Path=/api/auth/**
-          filters:
-            - JwtAuthenticationFilter
         - id: athlete-service
           uri: lb://athlete-service
           predicates:

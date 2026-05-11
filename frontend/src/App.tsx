@@ -28,6 +28,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Page = "dashboard" | "training" | "maps" | "challenges" | "nutrition" | "ai";
 type Sport = "RUN" | "SWIM";
+type ChallengeSport = Sport | "MIXED";
 
 type Session = {
   token: string;
@@ -109,21 +110,22 @@ type TrainingDay = {
 };
 
 type RouteItem = {
-  id: string;
+  id: number;
   name: string;
-  type: Sport;
+  sportType: Sport;
   place: string;
-  distance: string;
+  distanceMeters: number;
   note: string;
 };
 
 type Challenge = {
   id: string;
   title: string;
-  sport: Sport | "MIXED";
+  sportType: ChallengeSport;
   target: string;
   progress: number;
   note: string;
+  joined: boolean;
 };
 
 const API = "/api";
@@ -180,19 +182,6 @@ const initialTrainingPlan: TrainingDay[] = [
   { id: "sun", day: "Chủ nhật", sport: "REST", title: "Đánh giá tuần", detail: "Ghi cảm nhận, chuẩn bị dinh dưỡng tuần mới.", duration: "15 phút", done: false },
 ];
 
-const routeLibrary: RouteItem[] = [
-  { id: "river-loop", name: "Saigon River Loop", type: "RUN", place: "Quận 1 - Thủ Thiêm", distance: "7.2 km", note: "Đường phẳng, phù hợp tempo nhẹ." },
-  { id: "park-5k", name: "Công viên 5K", type: "RUN", place: "Công viên Gia Định", distance: "5.0 km", note: "Dễ kiểm soát pace và nhịp tim." },
-  { id: "pool-50", name: "Hồ bơi 50m", type: "SWIM", place: "Trung tâm TDTT Quận", distance: "1.500 - 3.000 m", note: "Tốt cho bài interval và drill." },
-  { id: "pool-recovery", name: "Recovery Swim Lane", type: "SWIM", place: "Hồ bơi Phú Nhuận", distance: "1.000 m", note: "Buổi nhẹ sau long run." },
-];
-
-const challengeLibrary: Challenge[] = [
-  { id: "run-30", title: "Chạy 30K trong tuần", sport: "RUN", target: "30 km", progress: 0, note: "Tập trung đều đặn, không cần chạy nhanh." },
-  { id: "swim-5k", title: "Bơi 5K trong tuần", sport: "SWIM", target: "5.000 m", progress: 0, note: "Chia thành 2-3 buổi để giữ kỹ thuật." },
-  { id: "balanced", title: "Cân bằng chạy + bơi", sport: "MIXED", target: "4 buổi", progress: 0, note: "Ít nhất 2 buổi chạy và 2 buổi bơi." },
-];
-
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => {
     const stored = readStorage<Session | null>("runswim-session", null);
@@ -204,6 +193,9 @@ export default function App() {
   const [activities, setActivities] = useState<FitnessActivity[]>(fallbackActivities);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan>(fallbackPlan);
   const [meals, setMeals] = useState<MealEntry[]>([]);
+  const [routes, setRoutes] = useState<RouteItem[]>([]);
+  const [savedRoutes, setSavedRoutes] = useState<number[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -212,8 +204,6 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [connectedDevices, setConnectedDevices] = useState<string[]>(() => readStorage("runswim-devices", []));
-  const [savedRoutes, setSavedRoutes] = useState<string[]>(() => readStorage("runswim-routes", []));
-  const [joinedChallenges, setJoinedChallenges] = useState<string[]>(() => readStorage("runswim-challenges", []));
   const [trainingPlan, setTrainingPlan] = useState<TrainingDay[]>(() => readStorage("runswim-plan", initialTrainingPlan));
 
   useEffect(() => {
@@ -223,8 +213,6 @@ export default function App() {
   }, [session]);
 
   useEffect(() => localStorage.setItem("runswim-devices", JSON.stringify(connectedDevices)), [connectedDevices]);
-  useEffect(() => localStorage.setItem("runswim-routes", JSON.stringify(savedRoutes)), [savedRoutes]);
-  useEffect(() => localStorage.setItem("runswim-challenges", JSON.stringify(joinedChallenges)), [joinedChallenges]);
   useEffect(() => localStorage.setItem("runswim-plan", JSON.stringify(trainingPlan)), [trainingPlan]);
 
   function notify(message: string) {
@@ -233,18 +221,24 @@ export default function App() {
   }
 
   async function loadDashboard(current: Session) {
-    const [profileData, statsData, activityData, planData, mealsData] = await Promise.all([
+    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData] = await Promise.all([
       api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
       api<NutritionPlan>(`/nutrition/${current.userId}/plan`, current.token, fallbackPlan),
       api<MealEntry[]>(`/nutrition/${current.userId}/meals`, current.token, []),
+      api<RouteItem[]>("/activities/routes", current.token, []),
+      api<number[]>(`/activities/routes/saved/${current.userId}`, current.token, []),
+      api<Challenge[]>(`/activities/challenges/user/${current.userId}`, current.token, []),
     ]);
     setProfile({ ...fallbackProfile, ...profileData });
     setStats(recalculateStats(activityData, statsData));
     setActivities(activityData);
     setNutritionPlan({ ...fallbackPlan, ...planData });
     setMeals(mealsData);
+    setRoutes(routesData);
+    setSavedRoutes(savedRouteData);
+    setChallenges(challengeData);
   }
 
   async function createActivity(payload: Omit<FitnessActivity, "id" | "startedAt">) {
@@ -260,8 +254,42 @@ export default function App() {
     const nextActivities = [created, ...activities.filter((activity) => activity.id !== created.id)];
     setActivities(nextActivities);
     setStats(recalculateStats(nextActivities, stats));
+    if (session) {
+      const refreshed = await api<Challenge[]>(`/activities/challenges/user/${session.userId}`, session.token, challenges);
+      setChallenges(refreshed);
+    }
     setShowActivityModal(false);
     notify("Đã ghi hoạt động vào nhật ký luyện tập.");
+  }
+
+  async function toggleSavedRoute(routeId: number) {
+    if (!session) return;
+    const saved = savedRoutes.includes(routeId);
+    const path = `/activities/routes/saved/${session.userId}/${routeId}`;
+    if (saved) {
+      await apiStrict(path, session.token, { method: "DELETE" });
+      setSavedRoutes(savedRoutes.filter((id) => id !== routeId));
+      notify("Đã bỏ lưu tuyến.");
+    } else {
+      await apiStrict(path, session.token, { method: "POST" });
+      setSavedRoutes([...savedRoutes, routeId]);
+      notify("Đã lưu tuyến vào danh sách của bạn.");
+    }
+  }
+
+  async function toggleChallenge(challengeId: string, joined: boolean) {
+    if (!session) return;
+    const path = `/activities/challenges/${challengeId}/join/${session.userId}`;
+    if (joined) {
+      await apiStrict(path, session.token, { method: "DELETE" });
+      notify("Đã rời thử thách.");
+    } else {
+      await apiStrict(path, session.token, { method: "POST" });
+      notify("Đã tham gia thử thách cá nhân.");
+    }
+
+    const refreshed = await api<Challenge[]>(`/activities/challenges/user/${session.userId}`, session.token, challenges);
+    setChallenges(refreshed);
   }
 
   function logout() {
@@ -279,6 +307,8 @@ export default function App() {
         page={page}
         setPage={setPage}
         profile={profile}
+        routes={routes}
+        challenges={challenges}
         profileMenuOpen={profileMenuOpen}
         notificationsOpen={notificationsOpen}
         onAdd={() => setShowActivityModal(true)}
@@ -320,10 +350,15 @@ export default function App() {
           />
         )}
         {page === "maps" && (
-          <MapsPage savedRoutes={savedRoutes} setSavedRoutes={setSavedRoutes} notify={notify} onAddActivity={() => setShowActivityModal(true)} />
+          <MapsPage
+            routes={routes}
+            savedRoutes={savedRoutes}
+            onToggleRoute={toggleSavedRoute}
+            onAddActivity={() => setShowActivityModal(true)}
+          />
         )}
         {page === "challenges" && (
-          <ChallengesPage stats={stats} joined={joinedChallenges} setJoined={setJoinedChallenges} notify={notify} />
+          <ChallengesPage challenges={challenges} onToggle={toggleChallenge} />
         )}
         {page === "nutrition" && (
           <NutritionPage
@@ -374,6 +409,8 @@ function AppHeader({
   page,
   setPage,
   profile,
+  routes,
+  challenges,
   profileMenuOpen,
   notificationsOpen,
   onAdd,
@@ -386,6 +423,8 @@ function AppHeader({
   page: Page;
   setPage: (page: Page) => void;
   profile: AthleteProfile;
+  routes: RouteItem[];
+  challenges: Challenge[];
   profileMenuOpen: boolean;
   notificationsOpen: boolean;
   onAdd: () => void;
@@ -398,8 +437,8 @@ function AppHeader({
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchResults = [
-    ...routeLibrary.map((item) => ({ label: item.name, hint: `${item.place} - ${item.distance}`, page: "maps" as Page })),
-    ...challengeLibrary.map((item) => ({ label: item.title, hint: item.target, page: "challenges" as Page })),
+    ...routes.map((item) => ({ label: item.name, hint: `${item.place} - ${formatRouteDistance(item)}`, page: "maps" as Page })),
+    ...challenges.map((item) => ({ label: item.title, hint: item.target, page: "challenges" as Page })),
     { label: "Kế hoạch dinh dưỡng", hint: "Calories, macro, nước", page: "nutrition" as Page },
     { label: "AI Coach", hint: "Hỏi về lịch tập và phục hồi", page: "ai" as Page },
   ].filter((item) => `${item.label} ${item.hint}`.toLowerCase().includes(query.toLowerCase())).slice(0, 5);
@@ -785,20 +824,14 @@ function TrainingPage({
   );
 }
 
-function MapsPage({ savedRoutes, setSavedRoutes, notify, onAddActivity }: {
-  savedRoutes: string[];
-  setSavedRoutes: (routes: string[]) => void;
-  notify: (message: string) => void;
+function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
+  routes: RouteItem[];
+  savedRoutes: number[];
+  onToggleRoute: (routeId: number) => void;
   onAddActivity: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const filtered = routeLibrary.filter((route) => `${route.name} ${route.place} ${route.type}`.toLowerCase().includes(query.toLowerCase()));
-
-  function toggleRoute(id: string) {
-    const saved = savedRoutes.includes(id);
-    setSavedRoutes(saved ? savedRoutes.filter((routeId) => routeId !== id) : [...savedRoutes, id]);
-    notify(saved ? "Đã bỏ lưu tuyến." : "Đã lưu tuyến vào danh sách của bạn.");
-  }
+  const filtered = routes.filter((route) => `${route.name} ${route.place} ${route.sportType}`.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <div className="single-page">
@@ -815,13 +848,13 @@ function MapsPage({ savedRoutes, setSavedRoutes, notify, onAddActivity }: {
         {filtered.map((route) => (
           <article key={route.id} className="route-card">
             <div className="route-map"><Route size={34} /></div>
-            <SportPill sport={route.type} />
+            <SportPill sport={route.sportType} />
             <h3>{route.name}</h3>
             <span>{route.place}</span>
             <p>{route.note}</p>
-            <strong>{route.distance}</strong>
+            <strong>{formatRouteDistance(route)}</strong>
             <div className="route-actions">
-              <button className={savedRoutes.includes(route.id) ? "outline-button" : "orange-button"} onClick={() => toggleRoute(route.id)}>
+              <button className={savedRoutes.includes(route.id) ? "outline-button" : "orange-button"} onClick={() => onToggleRoute(route.id)}>
                 {savedRoutes.includes(route.id) ? "Đã lưu" : "Lưu tuyến"}
               </button>
               <button className="outline-button" onClick={onAddActivity}>Ghi hoạt động</button>
@@ -833,26 +866,10 @@ function MapsPage({ savedRoutes, setSavedRoutes, notify, onAddActivity }: {
   );
 }
 
-function ChallengesPage({ stats, joined, setJoined, notify }: {
-  stats: Stats;
-  joined: string[];
-  setJoined: (ids: string[]) => void;
-  notify: (message: string) => void;
+function ChallengesPage({ challenges, onToggle }: {
+  challenges: Challenge[];
+  onToggle: (id: string, joined: boolean) => void;
 }) {
-  const challenges = challengeLibrary.map((challenge) => ({
-    ...challenge,
-    progress: challenge.id === "run-30"
-      ? Math.min(100, (stats.weeklyRunKm / 30) * 100)
-      : challenge.id === "swim-5k"
-        ? Math.min(100, (stats.weeklySwimMeters / 5000) * 100)
-        : Math.min(100, ((stats.weeklyRunKm > 0 ? 2 : 0) + (stats.weeklySwimMeters > 0 ? 2 : 0)) / 4 * 100),
-  }));
-
-  function toggle(id: string) {
-    const active = joined.includes(id);
-    setJoined(active ? joined.filter((challengeId) => challengeId !== id) : [...joined, id]);
-    notify(active ? "Đã rời thử thách." : "Đã tham gia thử thách cá nhân.");
-  }
 
   return (
     <div className="single-page">
@@ -865,12 +882,12 @@ function ChallengesPage({ stats, joined, setJoined, notify }: {
         {challenges.map((challenge) => (
           <article key={challenge.id} className="challenge-card">
             <Medal size={32} />
-            <SportPill sport={challenge.sport} />
+            <SportPill sport={challenge.sportType} />
             <h3>{challenge.title}</h3>
             <p>{challenge.note}</p>
             <ProgressRow label={challenge.target} value={`${Math.round(challenge.progress)}%`} progress={challenge.progress} />
-            <button className={joined.includes(challenge.id) ? "outline-button" : "orange-button"} onClick={() => toggle(challenge.id)}>
-              {joined.includes(challenge.id) ? "Đang tham gia" : "Tham gia"}
+            <button className={challenge.joined ? "outline-button" : "orange-button"} onClick={() => onToggle(challenge.id, challenge.joined)}>
+              {challenge.joined ? "Đang tham gia" : "Tham gia"}
             </button>
           </article>
         ))}
@@ -913,11 +930,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }
     notify("Đã thêm bữa ăn vào nhật ký.");
   }
 
-  const displayMeals = meals.length ? meals : [
-    { id: 1, mealType: "BREAKFAST", name: "Yến mạch chuối", calories: 520, proteinGrams: 28, carbsGrams: 78, fatGrams: 14 },
-    { id: 2, mealType: "LUNCH", name: "Cơm gà phục hồi", calories: 720, proteinGrams: 42, carbsGrams: 92, fatGrams: 21 },
-  ];
-  const totals = displayMeals.reduce((sum, item) => ({
+  const totals = meals.reduce((sum, item) => ({
     calories: sum.calories + item.calories,
     protein: sum.protein + item.proteinGrams,
     carbs: sum.carbs + item.carbsGrams,
@@ -969,13 +982,21 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }
             <button className="orange-button">Thêm bữa</button>
           </form>
           <div className="meal-list">
-            {displayMeals.map((item) => (
-              <div key={item.id} className="meal-row">
-                <span>{item.mealType}</span>
-                <strong>{item.name}</strong>
-                <small>{item.calories} kcal</small>
+            {meals.length === 0 ? (
+              <div className="empty-log">
+                <Utensils size={44} />
+                <h3>Chưa có bữa ăn</h3>
+                <p>Thêm bữa ăn đầu tiên để bắt đầu theo dõi calories và macro.</p>
               </div>
-            ))}
+            ) : (
+              meals.map((item) => (
+                <div key={item.id} className="meal-row">
+                  <span>{item.mealType}</span>
+                  <strong>{item.name}</strong>
+                  <small>{item.calories} kcal</small>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -985,10 +1006,23 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }
 
 function AiCoachPage({ token, userId, stats }: { token: string; userId: number; stats: Stats }) {
   const [input, setInput] = useState("Tạo lịch 7 ngày cho chạy và bơi");
-  const [messages, setMessages] = useState([
+  const defaultMessages = [
     { role: "assistant", content: "Mình là AI coach cho chạy, bơi và dinh dưỡng. Hãy hỏi về lịch tập, phục hồi hoặc bữa ăn trước/sau buổi tập." },
-  ]);
+  ];
+  const [messages, setMessages] = useState(defaultMessages);
   const context = useMemo(() => `Weekly run ${stats.weeklyRunKm} km, swim ${stats.weeklySwimMeters} m, training ${stats.weeklyMinutes} minutes.`, [stats]);
+
+  useEffect(() => {
+    if (!token || token === "demo") return;
+    let active = true;
+    api<{ role: string; content: string }[]>(`/ai/chat/${userId}`, token, []).then((history) => {
+      if (!active) return;
+      setMessages(history.length ? history : defaultMessages);
+    });
+    return () => {
+      active = false;
+    };
+  }, [token, userId]);
 
   async function send(event?: FormEvent, quickPrompt?: string) {
     event?.preventDefault();
@@ -1207,6 +1241,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [demoError, setDemoError] = useState("");
+  const [onboardingSession, setOnboardingSession] = useState<Session | null>(null);
   const [form, setForm] = useState({
     fullName: "Mèo Mũ Vận Học",
     email: "runner@example.com",
@@ -1219,10 +1254,32 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
     weeklySwimGoalMeters: 3200,
   });
 
-  const steps = ["Tài khoản", "Môn tập", "Mục tiêu"];
+  const isOnboardingOnly = onboardingSession !== null;
+  const steps = isOnboardingOnly ? ["Môn tập", "Mục tiêu"] : ["Tài khoản", "Môn tập", "Mục tiêu"];
+  const currentStep = isOnboardingOnly ? step + 1 : step;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (isOnboardingOnly) {
+      if (step < steps.length - 1) {
+        setStep(step + 1);
+        return;
+      }
+
+      if (!onboardingSession) return;
+      setLoading(true);
+      setAuthError("");
+      try {
+        await completeOnboarding(onboardingSession);
+        onDone({ ...onboardingSession, onboardingCompleted: true });
+      } catch {
+        setAuthError("Không thể hoàn tất onboarding. Hãy thử lại.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (step < steps.length - 1 && mode === "signup") {
       setStep(step + 1);
       return;
@@ -1241,23 +1298,14 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       });
 
       if (mode === "signup") {
-        await api(`/athletes/${auth.userId}/onboarding`, auth.token, fallbackProfile, {
-          method: "POST",
-          body: JSON.stringify({
-            displayName: form.fullName,
-            city: form.city,
-            primaryGoal: form.primaryGoal,
-            experienceLevel: form.experienceLevel,
-            preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
-            nutritionFocus: form.nutritionFocus,
-            weeklyRunGoalKm: form.weeklyRunGoalKm,
-            weeklySwimGoalMeters: form.weeklySwimGoalMeters,
-            visibility: "PRIVATE",
-          }),
-        });
+        await completeOnboarding(auth);
+        onDone({ ...auth, onboardingCompleted: true });
+      } else if (auth.onboardingCompleted) {
+        onDone(auth);
+      } else {
+        setOnboardingSession(auth);
+        setStep(0);
       }
-
-      onDone({ ...auth, onboardingCompleted: true });
     } catch {
       setAuthError(mode === "login"
         ? "Email hoặc mật khẩu chưa đúng. Hãy thử lại."
@@ -1265,6 +1313,26 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function completeOnboarding(auth: Session) {
+    await apiStrict(`/athletes/${auth.userId}/onboarding`, auth.token, {
+      method: "POST",
+      body: JSON.stringify({
+        displayName: form.fullName,
+        city: form.city,
+        primaryGoal: form.primaryGoal,
+        experienceLevel: form.experienceLevel,
+        preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
+        nutritionFocus: form.nutritionFocus,
+        weeklyRunGoalKm: form.weeklyRunGoalKm,
+        weeklySwimGoalMeters: form.weeklySwimGoalMeters,
+        visibility: "PRIVATE",
+      }),
+    });
+    await apiStrict(`/auth/users/${auth.userId}/onboarding-complete`, auth.token, {
+      method: "PATCH",
+    });
   }
 
   async function startDemo() {
@@ -1288,7 +1356,12 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       }
 
       const auth = await response.json() as Session;
-      onDone({ ...auth, onboardingCompleted: true });
+      if (auth.onboardingCompleted) {
+        onDone(auth);
+      } else {
+        setOnboardingSession(auth);
+        setStep(0);
+      }
     } catch {
       setDemoError("Không thể mở bản demo ngay lúc này. Hãy thử đăng nhập lại.");
     } finally {
@@ -1306,24 +1379,26 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
         </div>
       </section>
       <section className="onboarding-panel">
-        <div className="mode-switch" role="tablist">
-          <button type="button" className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>Tham gia</button>
-          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Đăng nhập</button>
-        </div>
-        {mode === "signup" && (
+        {!isOnboardingOnly && (
+          <div className="mode-switch" role="tablist">
+            <button type="button" className={mode === "signup" ? "active" : ""} onClick={() => setMode("signup")}>Tham gia</button>
+            <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Đăng nhập</button>
+          </div>
+        )}
+        {(mode === "signup" || isOnboardingOnly) && (
           <div className="stepper">
             {steps.map((label, index) => <span key={label} className={index <= step ? "active" : ""}>{label}</span>)}
           </div>
         )}
         <form onSubmit={submit} className="onboarding-form">
-          {mode === "login" || step === 0 ? (
+          {!isOnboardingOnly && (mode === "login" || currentStep === 0) ? (
             <>
               {mode === "signup" && <label>Tên<input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label>}
               <label>Email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
               <label>Mật khẩu<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
             </>
           ) : null}
-          {mode === "signup" && step === 1 && (
+          {currentStep === 1 && (
             <>
               <div className="sport-choice selected"><Flame size={20} /> Chạy bộ</div>
               <div className="sport-choice selected"><Waves size={20} /> Bơi</div>
@@ -1337,7 +1412,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
               </label>
             </>
           )}
-          {mode === "signup" && step === 2 && (
+          {currentStep === 2 && (
             <>
               <label>Mục tiêu chính<input value={form.primaryGoal} onChange={(event) => setForm({ ...form, primaryGoal: event.target.value })} /></label>
               <div className="input-grid">
@@ -1348,11 +1423,13 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
             </>
           )}
           <button className="orange-button wide" disabled={loading}>
-            {loading ? "Đang xử lý..." : mode === "signup" && step < 2 ? "Tiếp tục" : "Bắt đầu luyện tập"}
+            {loading ? "Đang xử lý..." : (mode === "signup" || isOnboardingOnly) && step < steps.length - 1 ? "Tiếp tục" : "Bắt đầu luyện tập"}
           </button>
-          <button type="button" className="outline-button centered" disabled={loading} onClick={() => void startDemo()}>
-            {loading ? "Đang mở demo..." : "Vào bản demo"}
-          </button>
+          {!isOnboardingOnly && (
+            <button type="button" className="outline-button centered" disabled={loading} onClick={() => void startDemo()}>
+              {loading ? "Đang mở demo..." : "Vào bản demo"}
+            </button>
+          )}
           {authError && <p className="form-error">{authError}</p>}
           {demoError && <p className="form-error">{demoError}</p>}
         </form>
@@ -1417,6 +1494,13 @@ function initials(name: string) {
 
 function formatDistance(activity: FitnessActivity) {
   return activity.sportType === "RUN" ? `${(activity.distanceMeters / 1000).toFixed(2)} km` : `${Math.round(activity.distanceMeters)} m`;
+}
+
+function formatRouteDistance(route: RouteItem) {
+  if (route.sportType === "RUN") {
+    return `${(route.distanceMeters / 1000).toFixed(1)} km`;
+  }
+  return `${Math.round(route.distanceMeters)} m`;
 }
 
 function recalculateStats(activities: FitnessActivity[], fallback: Stats): Stats {
