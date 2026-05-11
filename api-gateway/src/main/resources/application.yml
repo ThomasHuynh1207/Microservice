@@ -11,6 +11,12 @@ spring:
           enabled: true
           lower-case-service-id: true
       routes:
+        - id: auth-service-admin
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/admin/**
+          filters:
+            - JwtAuthenticationFilter
         - id: auth-service
           uri: lb://auth-service
           predicates:
@@ -43,6 +49,12 @@ spring:
           uri: lb://community-service
           predicates:
             - Path=/api/community/**
+          filters:
+            - JwtAuthenticationFilter
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/payments/**
           filters:
             - JwtAuthenticationFilter
       globalcors:

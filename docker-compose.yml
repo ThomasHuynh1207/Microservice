@@ -244,6 +244,30 @@ services:
       - runswim-network
     restart: unless-stopped
 
+  payment-service:
+    build: ./payment-service
+    ports:
+      - "8088:8088"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_NAME: paymentdb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-Af84JEJZj_Q5Mwm9ieYCdTWevRUlheQq5vz6actbXVduCP8UnDgVhwOuVeH7PaAvGptpDCVOx1nrqrqC}
+      PAYPAL_SECRET: ${PAYPAL_SECRET:-EH0VGwuej4ilTph909gNOQViKoVUZ_ncg1aqnkjzLQBgialC8O38e0vOo09YCTF0G7e7UpOhtLKzJF0Z}
+      AUTH_SERVICE_URL: http://auth-service:8081
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
+
   api-gateway:
     build: ./api-gateway
     ports:
@@ -263,6 +287,8 @@ services:
         condition: service_started
       community-service:
         condition: service_started
+      payment-service:
+        condition: service_started
     environment:
       JWT_SECRET: ${JWT_SECRET:-UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
@@ -274,6 +300,16 @@ services:
     build: ./frontend
     ports:
       - "3000:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - runswim-network
+    restart: unless-stopped
+
+  admin-frontend:
+    build: ./admin-frontend
+    ports:
+      - "3001:80"
     depends_on:
       - api-gateway
     networks:

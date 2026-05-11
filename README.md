@@ -16,6 +16,7 @@ Reference used for product direction: Strava onboarding/login page at https://ww
 | ai-service | 8085 | Local AI endurance coach and chat history |
 | nutrition-service | 8086 | Nutrition plan, meal log, macro summary |
 | community-service | 8087 | Posts, likes, comments feed |
+| payment-service | 8088 | PayPal payment processing, transaction history |
 | eureka-server | 8761 | Service registry |
 | postgres | 5432 | PostgreSQL databases per service |
 | pgAdmin | 5050 | Database UI |
@@ -53,9 +54,14 @@ Auth:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
-- `POST /api/auth/payments/paypal/create-order`
-- `POST /api/auth/payments/paypal/capture/{orderId}`
 - `GET /api/auth/users/{userId}/premium-status`
+
+Payment:
+
+- `POST /api/payments/paypal/create-order`
+- `POST /api/payments/paypal/capture/{orderId}`
+- `GET /api/payments/users/{userId}/history`
+- `GET /api/payments/users/{userId}/premium-status`
 
 Athlete:
 
@@ -114,6 +120,7 @@ Community:
 - `nutritiondb`
 - `aidb`
 - `communitydb`
+- `paymentdb`
 
 Each service uses Hibernate `ddl-auto: update` for development schema creation.
 

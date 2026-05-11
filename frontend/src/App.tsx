@@ -53,7 +53,7 @@ import {
 import type { ReactNode } from "react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type Page = "dashboard" | "training" | "maps" | "nutrition" | "community" | "ai";
+type Page = "dashboard" | "training" | "maps" | "nutrition" | "community" | "ai" | "admin";
 type Sport = "RUN" | "SWIM";
 type ActivityMode = "RUN" | "TRAIL" | "WALK" | "HIKE" | "BIKE" | "MTB" | "SWIM" | "GYM" | "YOGA" | "OTHER";
 type ChallengeSport = Sport | "MIXED";
@@ -63,6 +63,7 @@ type Session = {
   userId: number;
   fullName: string;
   email: string;
+  role?: string;
   onboardingCompleted: boolean;
   premiumActive?: boolean;
 };
@@ -544,6 +545,7 @@ export default function App() {
       <AppHeader
         page={page}
         setPage={setPage}
+        session={session}
         profile={profile}
         routes={routes}
         profileMenuOpen={profileMenuOpen}
@@ -605,6 +607,9 @@ export default function App() {
           />
         )}
         {page === "ai" && <AiCoachPage token={session.token} userId={session.userId} stats={stats} />}
+        {page === "admin" && session.role === "ADMIN" && (
+          <AdminPage token={session.token} userId={session.userId} notify={notify} />
+        )}
         {page === "community" && (
           <CommunityPage
             posts={posts}
@@ -661,11 +666,12 @@ export default function App() {
 }
 
 function AppHeader({
-  page, setPage, profile, routes, profileMenuOpen, notificationsOpen,
+  page, setPage, session, profile, routes, profileMenuOpen, notificationsOpen,
   onAdd, onTrial, onProfileMenu, onNotifications, onEditProfile, onLogout,
 }: {
   page: Page;
   setPage: (page: Page) => void;
+  session: Session;
   profile: AthleteProfile;
   routes: RouteItem[];
   profileMenuOpen: boolean;
@@ -689,6 +695,7 @@ function AppHeader({
     .filter((r) => `${r.label} ${r.hint}`.toLowerCase().includes(query.toLowerCase()))
     .slice(0, 5);
 
+  const isAdmin = session.role === "ADMIN";
   const nav: Array<{ id: Page; label: string; icon: ReactNode }> = [
     { id: "dashboard", label: "Trang chủ", icon: <Activity size={17} /> },
     { id: "training", label: "Tập luyện", icon: <CalendarDays size={17} /> },
@@ -696,6 +703,7 @@ function AppHeader({
     { id: "nutrition", label: "Dinh dưỡng", icon: <Salad size={17} /> },
     { id: "community", label: "Cộng đồng", icon: <Users size={17} /> },
     { id: "ai", label: "AI Coach", icon: <Bot size={17} /> },
+    ...(isAdmin ? [{ id: "admin" as Page, label: "Admin", icon: <Settings size={17} /> }] : []),
   ];
 
   return (
@@ -2510,7 +2518,7 @@ function PremiumModal({ isPremium, onClose, onUpgrade, notify, userId, token }: 
     setPaypalStep("processing");
     try {
       const orderRes = await apiStrict<{ orderId: string; amount: number; currency: string }>(
-        "/auth/payments/paypal/create-order",
+        "/payments/paypal/create-order",
         token,
         { method: "POST", body: JSON.stringify({ userId, plan: "PREMIUM" }) }
       );
@@ -2522,7 +2530,7 @@ function PremiumModal({ isPremium, onClose, onUpgrade, notify, userId, token }: 
           onApprove: async () => {
             setPaypalStep("processing");
             const captureRes = await apiStrict<{ status: string; premiumActive: boolean }>(
-              `/auth/payments/paypal/capture/${orderRes.orderId}`,
+              `/payments/paypal/capture/${orderRes.orderId}`,
               token,
               { method: "POST" }
             );
@@ -2543,7 +2551,7 @@ function PremiumModal({ isPremium, onClose, onUpgrade, notify, userId, token }: 
         setPaypalStep("select");
       } else {
         const captureRes = await apiStrict<{ status: string; premiumActive: boolean }>(
-          `/auth/payments/paypal/capture/${orderRes.orderId}`,
+          `/payments/paypal/capture/${orderRes.orderId}`,
           token,
           { method: "POST" }
         );
@@ -2945,6 +2953,175 @@ function ProgressRow({ label, value, progress }: { label: string; value: string;
     <div className="progress-row">
       <div><span>{label}</span><strong>{value}</strong></div>
       <div className="progress-line"><span style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div>
+    </div>
+  );
+}
+
+// ─── Admin Page ────────────────────────────────────────────────────────────────
+
+type AdminUser = {
+  id: number; fullName: string; email: string; role: string;
+  active: boolean; premiumActive: boolean; createdAt: string;
+};
+type AdminStats = { totalUsers: number; activeUsers: number; premiumUsers: number };
+
+function AdminPage({ token, userId, notify }: { token: string; userId: number; notify: (m: string) => void }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filterRole, setFilterRole] = useState<"ALL" | "ADMIN" | "USER">("ALL");
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api<AdminStats>("/auth/admin/stats", token),
+      api<AdminUser[]>("/auth/admin/users", token),
+    ]).then(([s, u]) => {
+      setStats(s);
+      setUsers(u);
+    }).catch(() => notify("Không thể tải dữ liệu admin."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function updateUser(uid: number, patch: { role?: string; active?: boolean; premiumActive?: boolean }) {
+    const updated = await api<AdminUser>(`/auth/admin/users/${uid}`, token, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    setUsers((prev) => prev.map((u) => (u.id === uid ? { ...u, ...updated } : u)));
+    notify("Đã cập nhật.");
+  }
+
+  const filtered = users.filter((u) => {
+    const matchSearch = `${u.fullName} ${u.email}`.toLowerCase().includes(search.toLowerCase());
+    const matchRole = filterRole === "ALL" || u.role === filterRole;
+    return matchSearch && matchRole;
+  });
+
+  return (
+    <div className="admin-page">
+      <div className="admin-header">
+        <div>
+          <h1 className="admin-title">Quản trị hệ thống</h1>
+          <p className="admin-subtitle">Quản lý người dùng và dữ liệu RunSwim Club</p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      {stats && (
+        <div className="admin-stats-row">
+          {[
+            { label: "Tổng người dùng", value: stats.totalUsers, color: "var(--orange)" },
+            { label: "Đang hoạt động", value: stats.activeUsers, color: "var(--green)" },
+            { label: "Tài khoản Premium", value: stats.premiumUsers, color: "#f59e0b" },
+            { label: "Tài khoản thường", value: stats.totalUsers - stats.premiumUsers, color: "var(--muted)" },
+          ].map((s) => (
+            <div key={s.label} className="admin-stat-card">
+              <span className="admin-stat-value" style={{ color: s.color }}>{s.value}</span>
+              <span className="admin-stat-label">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="admin-controls">
+        <div className="admin-search">
+          <Search size={16} />
+          <input
+            placeholder="Tìm theo tên hoặc email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="admin-filter-tabs">
+          {(["ALL", "USER", "ADMIN"] as const).map((r) => (
+            <button key={r} className={`admin-tab${filterRole === r ? " active" : ""}`} onClick={() => setFilterRole(r)}>
+              {r === "ALL" ? "Tất cả" : r === "USER" ? "Người dùng" : "Admin"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="admin-table-wrap">
+        {loading ? (
+          <div className="empty-log" style={{ padding: 48 }}><p>Đang tải...</p></div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-log" style={{ padding: 48 }}><p>Không có kết quả.</p></div>
+        ) : (
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Người dùng</th>
+                <th>Vai trò</th>
+                <th>Premium</th>
+                <th>Trạng thái</th>
+                <th>Ngày đăng ký</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((u) => (
+                <tr key={u.id}>
+                  <td>
+                    <div className="admin-user-cell">
+                      <div className="admin-avatar">{u.fullName.charAt(0).toUpperCase()}</div>
+                      <div>
+                        <strong>{u.fullName}</strong>
+                        <span>{u.email}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`admin-badge role-${u.role.toLowerCase()}`}>{u.role}</span>
+                  </td>
+                  <td>
+                    <span className={`admin-badge ${u.premiumActive ? "premium-yes" : "premium-no"}`}>
+                      {u.premiumActive ? "Premium" : "Free"}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`admin-badge ${u.active ? "status-active" : "status-inactive"}`}>
+                      {u.active ? "Hoạt động" : "Bị khoá"}
+                    </span>
+                  </td>
+                  <td className="admin-date">
+                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN") : "—"}
+                  </td>
+                  <td>
+                    <div className="admin-actions">
+                      <button
+                        className="admin-action-btn"
+                        title={u.premiumActive ? "Huỷ Premium" : "Cấp Premium"}
+                        onClick={() => updateUser(u.id, { premiumActive: !u.premiumActive })}
+                      >
+                        {u.premiumActive ? "Huỷ Premium" : "Cấp Premium"}
+                      </button>
+                      <button
+                        className="admin-action-btn danger"
+                        title={u.active ? "Khoá tài khoản" : "Mở khoá"}
+                        onClick={() => updateUser(u.id, { active: !u.active })}
+                      >
+                        {u.active ? "Khoá" : "Mở khoá"}
+                      </button>
+                      <button
+                        className={`admin-action-btn${u.role === "ADMIN" ? " warning" : ""}`}
+                        title={u.role === "ADMIN" ? "Hạ xuống User" : "Cấp quyền Admin"}
+                        onClick={() => updateUser(u.id, { role: u.role === "ADMIN" ? "USER" : "ADMIN" })}
+                      >
+                        {u.role === "ADMIN" ? "Hạ Admin" : "Cấp Admin"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <p className="admin-footer">Hiển thị {filtered.length} / {users.length} người dùng</p>
     </div>
   );
 }

@@ -1,0 +1,351 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sidebar-bg: #0f172a;
+  --sidebar-active: #f97316;
+  --sidebar-text: #94a3b8;
+  --sidebar-hover: rgba(255, 255, 255, 0.07);
+  --content-bg: #f1f5f9;
+  --card-bg: #ffffff;
+  --text-primary: #0f172a;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --orange: #f97316;
+  --green: #22c55e;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --yellow: #eab308;
+  --radius: 10px;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+body { background: var(--content-bg); color: var(--text-primary); }
+
+/* ── Layout ─────────────────────────────────────────────────── */
+.al-root { display: flex; height: 100vh; overflow: hidden; }
+.al-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+.al-main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-width: 0; }
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+.al-logo {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.al-logo-brand { font-size: 1.1rem; font-weight: 800; color: #fff; letter-spacing: -0.3px; }
+.al-logo-sub { font-size: 0.7rem; color: var(--sidebar-text); margin-top: 3px; letter-spacing: 0.04em; text-transform: uppercase; }
+
+.al-nav { flex: 1; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.al-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  border: none;
+  background: none;
+  width: 100%;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+}
+.al-nav-item:hover { background: var(--sidebar-hover); color: #fff; }
+.al-nav-item.active { background: rgba(249, 115, 22, 0.14); color: var(--sidebar-active); }
+
+.al-sidebar-footer { padding: 14px 10px; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.al-user-info { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; }
+.al-user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.al-user-name { font-size: 0.8rem; font-weight: 600; color: #fff; }
+.al-user-role { font-size: 0.68rem; color: var(--sidebar-text); margin-top: 1px; }
+
+.al-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: #f87171;
+  cursor: pointer;
+  border: none;
+  background: none;
+  width: 100%;
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-top: 2px;
+  transition: background 0.12s;
+}
+.al-logout-btn:hover { background: rgba(239, 68, 68, 0.1); }
+
+/* ── Page header ─────────────────────────────────────────────── */
+.al-header {
+  padding: 24px 28px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--card-bg);
+}
+.al-header-inner { padding-bottom: 18px; }
+.al-page-title { font-size: 1.35rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.4px; }
+.al-page-sub { font-size: 0.83rem; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Content ─────────────────────────────────────────────────── */
+.al-content { padding: 24px 28px 32px; flex: 1; }
+
+/* ── Stats row ───────────────────────────────────────────────── */
+.al-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.al-stat-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.al-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.al-stat-value { font-size: 1.8rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; }
+.al-stat-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; font-weight: 500; }
+
+/* ── Cards ───────────────────────────────────────────────────── */
+.al-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.al-card-title { font-size: 0.88rem; font-weight: 700; color: var(--text-primary); margin-bottom: 16px; }
+
+.al-dash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ── Recent list ─────────────────────────────────────────────── */
+.al-recent-list { display: flex; flex-direction: column; gap: 8px; }
+.al-recent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  gap: 12px;
+}
+.al-recent-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.al-recent-name { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.al-recent-email { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.al-recent-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* ── Login ───────────────────────────────────────────────────── */
+.al-login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+.al-login-card {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 40px;
+  width: 380px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+.al-login-logo { text-align: center; margin-bottom: 28px; }
+.al-login-icon { color: var(--orange); margin-bottom: 12px; }
+.al-login-title { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.4px; }
+.al-login-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 5px; }
+
+.al-form-group { margin-bottom: 16px; }
+.al-form-label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.04em; }
+.al-form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s;
+  background: #fff;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+.al-form-input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12); }
+
+.al-login-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--orange);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+.al-login-btn:hover { opacity: 0.9; }
+.al-login-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.al-error { color: #ef4444; font-size: 0.8rem; margin-top: 12px; text-align: center; background: rgba(239, 68, 68, 0.07); padding: 8px 12px; border-radius: 6px; }
+
+/* ── Table controls ──────────────────────────────────────────── */
+.al-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.al-search-wrap { position: relative; }
+.al-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+.al-search {
+  padding: 9px 14px 9px 34px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.86rem;
+  outline: none;
+  width: 260px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+.al-search:focus { border-color: var(--orange); }
+
+.al-tabs { display: flex; gap: 6px; }
+.al-tab {
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1.5px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s;
+}
+.al-tab:hover { border-color: var(--orange); color: var(--orange); }
+.al-tab.active { background: var(--orange); border-color: var(--orange); color: #fff; }
+
+.al-refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  margin-left: auto;
+  transition: all 0.12s;
+}
+.al-refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Table ───────────────────────────────────────────────────── */
+.al-table-wrap {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+.al-table { width: 100%; border-collapse: collapse; }
+.al-table th {
+  padding: 11px 16px;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1.5px solid var(--border);
+  background: #f8fafc;
+  white-space: nowrap;
+}
+.al-table td { padding: 13px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.al-table tr:last-child td { border-bottom: none; }
+.al-table tbody tr:hover td { background: #fafafa; }
+
+.al-user-cell { display: flex; align-items: center; gap: 10px; }
+.al-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.al-uname { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.al-uemail { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; }
+.al-self-tag { margin-left: 6px; font-size: 0.67rem; color: #94a3b8; font-weight: 400; }
+.al-date { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+
+/* ── Badges ──────────────────────────────────────────────────── */
+.al-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.badge-admin { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+.badge-user { background: rgba(100, 116, 139, 0.1); color: #475569; }
+.badge-premium { background: rgba(234, 179, 8, 0.13); color: #b45309; }
+.badge-free { background: rgba(100, 116, 139, 0.08); color: #94a3b8; }
+.badge-active { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.badge-inactive { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
+
+/* ── Action buttons ──────────────────────────────────────────── */
+.al-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+.al-action-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1.5px solid;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.al-action-btn.green { border-color: #22c55e; color: #16a34a; }
+.al-action-btn.green:hover { background: rgba(34, 197, 94, 0.1); }
+.al-action-btn.red { border-color: #ef4444; color: #dc2626; }
+.al-action-btn.red:hover { background: rgba(239, 68, 68, 0.1); }
+.al-action-btn.blue { border-color: #3b82f6; color: #2563eb; }
+.al-action-btn.blue:hover { background: rgba(59, 130, 246, 0.1); }
+.al-action-btn.yellow { border-color: #eab308; color: #b45309; }
+.al-action-btn.yellow:hover { background: rgba(234, 179, 8, 0.1); }
+.al-action-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+
+/* ── States ──────────────────────────────────────────────────── */
+.al-loading { text-align: center; padding: 56px 0; color: var(--text-muted); font-size: 0.9rem; }
+.al-empty { text-align: center; padding: 56px 0; color: var(--text-muted); font-size: 0.9rem; }

@@ -1,0 +1,42 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/${DB_NAME:paymentdb}
+    username: ${POSTGRES_USER:runswim}
+    password: ${POSTGRES_PASSWORD:runswim123}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    instance-id: ${spring.application.name}:${server.port}
+
+paypal:
+  client-id: ${PAYPAL_CLIENT_ID:}
+  secret: ${PAYPAL_SECRET:}
+  base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
+  currency: ${PAYPAL_CURRENCY:USD}
+
+auth:
+  service:
+    url: ${AUTH_SERVICE_URL:http://auth-service:8081}
+
+logging:
+  level:
+    com.tuan.paymentservice: INFO

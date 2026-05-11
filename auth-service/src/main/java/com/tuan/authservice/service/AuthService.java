@@ -57,6 +57,14 @@ public class AuthService {
         users.findById(userId).ifPresent(account -> account.setOnboardingCompleted(true));
     }
 
+    @Transactional
+    public void activatePremium(Long userId) {
+        UserAccount account = users.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
+        account.setPremiumActive(true);
+        account.setPremiumSince(java.time.Instant.now());
+    }
+
     @Transactional(readOnly = true)
     public AuthResponse me(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {

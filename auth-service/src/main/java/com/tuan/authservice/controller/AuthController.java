@@ -6,11 +6,6 @@ import com.tuan.authservice.service.AuthService;
 import com.tuan.authservice.service.AuthService.AuthResponse;
 import com.tuan.authservice.service.AuthService.LoginRequest;
 import com.tuan.authservice.service.AuthService.RegisterRequest;
-import com.tuan.authservice.service.PaymentService;
-import com.tuan.authservice.service.PaymentService.CaptureOrderRequest;
-import com.tuan.authservice.service.PaymentService.CaptureOrderResponse;
-import com.tuan.authservice.service.PaymentService.CreateOrderRequest;
-import com.tuan.authservice.service.PaymentService.CreateOrderResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,13 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
+
     private final AuthService authService;
-    private final PaymentService paymentService;
     private final UserAccountRepository users;
 
-    public AuthController(AuthService authService, PaymentService paymentService, UserAccountRepository users) {
+    public AuthController(AuthService authService, UserAccountRepository users) {
         this.authService = authService;
-        this.paymentService = paymentService;
         this.users = users;
     }
 
@@ -57,16 +51,6 @@ public class AuthController {
         authService.markOnboardingCompleted(userId);
     }
 
-    @PostMapping("/payments/paypal/create-order")
-    CreateOrderResponse createPaypalOrder(@RequestBody CreateOrderRequest request) {
-        return paymentService.createOrder(request);
-    }
-
-    @PostMapping("/payments/paypal/capture/{orderId}")
-    CaptureOrderResponse capturePaypalOrder(@PathVariable String orderId) {
-        return paymentService.captureOrder(new CaptureOrderRequest(orderId));
-    }
-
     @GetMapping("/users/{userId}/premium-status")
     PremiumStatusResponse premiumStatus(@PathVariable Long userId) {
         UserAccount account = users.findById(userId)
@@ -74,14 +58,18 @@ public class AuthController {
         return new PremiumStatusResponse(account.getId(), account.isPremiumActive(), account.getPremiumSince());
     }
 
+    /** Called internally by payment-service after a successful PayPal capture. */
+    @PatchMapping("/internal/users/{userId}/premium")
+    ResponseEntity<Void> activatePremium(@PathVariable Long userId) {
+        authService.activatePremium(userId);
+        return ResponseEntity.noContent().build();
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     ResponseEntity<ErrorResponse> handleBadRequest(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(ex.getMessage()));
     }
 
-    record ErrorResponse(String message) {
-    }
-
-    record PremiumStatusResponse(Long userId, boolean premiumActive, java.time.Instant premiumSince) {
-    }
+    record ErrorResponse(String message) {}
+    record PremiumStatusResponse(Long userId, boolean premiumActive, java.time.Instant premiumSince) {}
 }

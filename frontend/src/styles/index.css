@@ -19,8 +19,8 @@
   --radius-lg: 18px;
   --radius-md: 12px;
   --radius-sm: 9px;
-  --font-sans: "Manrope", "Segoe UI", "Helvetica Neue", sans-serif;
-  --font-display: "Playfair Display", "Times New Roman", serif;
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-sans);
 }
 
 html {
@@ -123,7 +123,7 @@ label {
   border: 0;
   background: transparent;
   color: var(--ink);
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-size: 1.9rem;
   font-weight: 700;
   letter-spacing: -0.6px;
@@ -480,7 +480,7 @@ label {
 .profile-card h2 {
   margin: 0;
   font-size: 1.65rem;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-weight: 600;
 }
 
@@ -625,7 +625,7 @@ label {
   margin: 0;
   font-size: 2.2rem;
   font-weight: 600;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   letter-spacing: -0.4px;
 }
 
@@ -1182,7 +1182,7 @@ label {
   font-size: clamp(3rem, 6vw, 6.2rem);
   line-height: 0.96;
   letter-spacing: -0.5px;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
 }
 
 .hero-copy p {
@@ -1644,7 +1644,7 @@ label {
 
 .analytics-stat-card strong {
   font-size: 1.8rem;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-weight: 700;
 }
 
@@ -1762,7 +1762,7 @@ label {
 
 .pr-card strong {
   font-size: 1.45rem;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   font-weight: 700;
 }
 
@@ -1828,7 +1828,7 @@ label {
 .profile-page-name h1 {
   margin: 12px 0 2px;
   font-size: 1.7rem;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
 }
 
 .profile-page-name > span {
@@ -1868,7 +1868,7 @@ label {
 
 .profile-stat-item strong {
   font-size: 1.5rem;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
 }
 
 .profile-stat-item span {
@@ -2043,7 +2043,7 @@ label {
   margin: 4px 0 0;
   font-size: 1.5rem;
   font-weight: 900;
-  font-family: var(--font-display);
+  font-family: var(--font-sans);
   color: var(--orange);
 }
 
