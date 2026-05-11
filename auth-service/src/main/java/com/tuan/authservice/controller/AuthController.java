@@ -2,6 +2,7 @@ package com.tuan.authservice.controller;
 
 import com.tuan.authservice.entity.UserAccount;
 import com.tuan.authservice.repository.UserAccountRepository;
+import com.tuan.authservice.service.AdminService;
 import com.tuan.authservice.service.AuthService;
 import com.tuan.authservice.service.AuthService.AuthResponse;
 import com.tuan.authservice.service.AuthService.LoginRequest;
@@ -25,10 +26,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserAccountRepository users;
+    private final AdminService adminService;
 
-    public AuthController(AuthService authService, UserAccountRepository users) {
+    public AuthController(AuthService authService, UserAccountRepository users, AdminService adminService) {
         this.authService = authService;
         this.users = users;
+        this.adminService = adminService;
     }
 
     @PostMapping("/register")
@@ -63,6 +66,12 @@ public class AuthController {
     ResponseEntity<Void> activatePremium(@PathVariable Long userId) {
         authService.activatePremium(userId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Called internally by other services to check admin role. Not exposed through gateway. */
+    @GetMapping("/internal/users/{userId}/is-admin")
+    ResponseEntity<Boolean> isAdminInternal(@PathVariable Long userId) {
+        return ResponseEntity.ok(adminService.isAdmin(userId));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

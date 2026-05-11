@@ -349,3 +349,97 @@ body { background: var(--content-bg); color: var(--text-primary); }
 /* ── States ──────────────────────────────────────────────────── */
 .al-loading { text-align: center; padding: 56px 0; color: var(--text-muted); font-size: 0.9rem; }
 .al-empty { text-align: center; padding: 56px 0; color: var(--text-muted); font-size: 0.9rem; }
+
+/* ── Nav groups ──────────────────────────────────────────────── */
+.al-nav-group { margin-bottom: 6px; }
+.al-nav-group-label {
+  padding: 8px 12px 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Sport badges ────────────────────────────────────────────── */
+.badge-run { background: rgba(249, 115, 22, 0.12); color: #c2410c; }
+.badge-swim { background: rgba(6, 182, 212, 0.12); color: #0e7490; }
+
+/* ── Add button ──────────────────────────────────────────────── */
+.al-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--orange);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.12s;
+}
+.al-add-btn:hover { opacity: 0.88; }
+.al-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Form card ───────────────────────────────────────────────── */
+.al-form-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+  border: 1.5px solid rgba(249, 115, 22, 0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.al-form-card-title { font-size: 0.88rem; font-weight: 700; color: var(--text-primary); margin-bottom: 14px; }
+.al-inline-form { display: flex; flex-direction: column; gap: 10px; }
+.al-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.al-inline-form .al-form-group { margin-bottom: 0; }
+
+/* ── Select wrap ─────────────────────────────────────────────── */
+.al-select-wrap { position: relative; }
+.al-select-icon { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #94a3b8; }
+.al-select-wrap select { appearance: none; padding-right: 30px; cursor: pointer; }
+
+/* ── Card grid (routes / challenges) ────────────────────────── */
+.al-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.al-item-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  transition: box-shadow 0.15s;
+}
+.al-item-card:hover { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1); }
+.al-item-card-head { display: flex; align-items: center; justify-content: space-between; }
+.al-item-card-title { font-size: 0.92rem; font-weight: 700; color: var(--text-primary); }
+.al-item-card-meta { font-size: 0.78rem; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.al-item-card-note { font-size: 0.78rem; color: var(--text-muted); font-style: italic; line-height: 1.4; }
+
+/* ── Icon delete button ──────────────────────────────────────── */
+.al-icon-del {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1.5px solid #fca5a5;
+  background: transparent;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.al-icon-del:hover { background: rgba(239, 68, 68, 0.08); }
+.al-icon-del:disabled { opacity: 0.38; cursor: not-allowed; }

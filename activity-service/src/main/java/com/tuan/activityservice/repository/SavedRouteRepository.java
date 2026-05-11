@@ -10,4 +10,6 @@ public interface SavedRouteRepository extends JpaRepository<SavedRoute, Long> {
     boolean existsByUserIdAndRoute_Id(Long userId, Long routeId);
 
     void deleteByUserIdAndRoute_Id(Long userId, Long routeId);
+
+    void deleteByRoute_Id(Long routeId);
 }

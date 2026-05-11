@@ -12,4 +12,6 @@ public interface ChallengeParticipantRepository extends JpaRepository<ChallengeP
     boolean existsByUserIdAndChallenge_Code(Long userId, String code);
 
     void deleteByUserIdAndChallenge_Code(Long userId, String code);
+
+    void deleteByChallenge_Id(Long challengeId);
 }

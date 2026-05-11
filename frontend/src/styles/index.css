@@ -813,15 +813,29 @@ label {
 }
 
 .training-grid {
-  grid-template-columns: repeat(7, minmax(130px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
 }
 
 .training-day {
-  min-height: 200px;
-  padding: 16px;
+  min-height: 220px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.training-day h3,
+.training-day p,
+.task-row h3,
+.task-row p,
+.training-today h2,
+.training-today p {
+  overflow-wrap: anywhere;
+}
+
+.training-day p {
+  margin: 0;
 }
 
 .training-day.done {
@@ -848,7 +862,7 @@ label {
 
 .training-done-btn {
   flex-shrink: 0;
-  width: 88px;
+  min-width: 88px;
   padding: 5px 0;
   border-radius: 20px;
   font-size: 0.76rem;
@@ -1326,7 +1340,7 @@ label {
   }
 
   .training-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1421,11 +1435,26 @@ label {
     grid-template-columns: 1fr;
   }
 
+  .training-day-foot,
+  .today-actions {
+    width: 100%;
+  }
+
   .training-today,
   .section-head,
   .route-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .training-day-foot {
+    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .training-done-btn {
+    width: 100%;
   }
 
   .task-row {
