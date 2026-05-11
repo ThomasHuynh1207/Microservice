@@ -15,6 +15,7 @@ Reference used for product direction: Strava onboarding/login page at https://ww
 | activity-service | 8083 | Run/swim activity journal, stats, challenges |
 | ai-service | 8085 | Local AI endurance coach and chat history |
 | nutrition-service | 8086 | Nutrition plan, meal log, macro summary |
+| community-service | 8087 | Posts, likes, comments feed |
 | eureka-server | 8761 | Service registry |
 | postgres | 5432 | PostgreSQL databases per service |
 | pgAdmin | 5050 | Database UI |
@@ -22,9 +23,10 @@ Reference used for product direction: Strava onboarding/login page at https://ww
 ## Run
 
 ```powershell
+docker compose down -v
 docker compose up -d --build
 ```
-
+tài khoản paypal: microservice123@gmail.com, mk:Nam12345 
 Open:
 
 - Web app: http://localhost:3000
@@ -51,6 +53,9 @@ Auth:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `POST /api/auth/payments/paypal/create-order`
+- `POST /api/auth/payments/paypal/capture/{orderId}`
+- `GET /api/auth/users/{userId}/premium-status`
 
 Athlete:
 
@@ -58,13 +63,20 @@ Athlete:
 - `PUT /api/athletes/{userId}`
 - `POST /api/athletes/{userId}/onboarding`
 - `GET /api/athletes/leaderboard`
+- `GET /api/athletes/{userId}/following`
+- `POST /api/athletes/{userId}/follow/{targetId}`
+- `DELETE /api/athletes/{userId}/follow/{targetId}`
 
 Activity:
 
 - `GET /api/activities/user/{userId}`
+- `GET /api/activities/{id}`
 - `POST /api/activities`
+- `PUT /api/activities/{id}?userId={userId}`
+- `DELETE /api/activities/{id}?userId={userId}`
 - `GET /api/activities/stats/{userId}`
 - `GET /api/activities/challenges`
+- `GET /api/activities/challenges/{challengeId}/leaderboard`
 
 Nutrition:
 
@@ -74,12 +86,23 @@ Nutrition:
 - `POST /api/nutrition/meals`
 - `GET /api/nutrition/{userId}/summary`
 - `GET /api/nutrition/library`
+- `POST /api/nutrition/{userId}/water`
+- `GET /api/nutrition/{userId}/water/today`
 
 AI:
 
 - `POST /api/ai/chat`
 - `GET /api/ai/chat/{userId}`
 - `POST /api/ai/insights`
+
+Community:
+
+- `GET /api/community/posts?userId={userId}`
+- `POST /api/community/posts`
+- `POST /api/community/posts/{postId}/likes/{userId}`
+- `POST /api/community/posts/{postId}/comments`
+- `GET /api/community/posts/{postId}/comments`
+- `GET /api/community/users/{userId}/posts`
 
 ## PostgreSQL
 
@@ -90,5 +113,27 @@ AI:
 - `activitydb`
 - `nutritiondb`
 - `aidb`
+- `communitydb`
 
 Each service uses Hibernate `ddl-auto: update` for development schema creation.
+
+## PayPal Integration
+
+PayPal Sandbox credentials are pre-configured in docker-compose.yml.
+
+Test buyer account (to use in PayPal sandbox checkout):
+
+- Email: `microservice123@gmail.com`
+- Password: `Nam12345`
+
+The payment flow: frontend calls `/api/auth/payments/paypal/create-order` → PayPal JS SDK (or button) collects buyer payment → frontend calls `/api/auth/payments/paypal/capture/{orderId}` → backend marks `premiumActive = true` on the user account.
+
+## New Features
+
+- **MapLibre GL JS** — interactive map on the Maps page using OpenFreeMap tiles (no API key required)
+- **GPS Tracking** — live Geolocation API tracking during run activity logging; distance and duration auto-filled on stop
+- **Water Tracking** — daily water intake log with progress bar on Nutrition page
+- **Community Feed** — posts, likes, comments, follow/unfollow
+- **Analytics Charts** — recharts BarChart/LineChart for weekly distance and calories (premium)
+- **Profile Page** — badges, personal records, history
+- **Premium with PayPal** — real PayPal sandbox integration

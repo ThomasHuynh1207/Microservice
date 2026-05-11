@@ -7,6 +7,9 @@ import com.tuan.nutritionservice.service.NutritionService.FoodSuggestion;
 import com.tuan.nutritionservice.service.NutritionService.MealEntryRequest;
 import com.tuan.nutritionservice.service.NutritionService.NutritionPlanRequest;
 import com.tuan.nutritionservice.service.NutritionService.NutritionSummary;
+import com.tuan.nutritionservice.service.NutritionService.WaterRequest;
+import com.tuan.nutritionservice.service.NutritionService.WaterSummary;
+import com.tuan.nutritionservice.entity.WaterEntry;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,5 +56,15 @@ public class NutritionController {
     @GetMapping("/library")
     List<FoodSuggestion> library() {
         return nutritionService.library();
+    }
+
+    @PostMapping("/{userId}/water")
+    WaterEntry logWater(@PathVariable Long userId, @RequestBody WaterRequest request) {
+        return nutritionService.logWater(userId, request);
+    }
+
+    @GetMapping("/{userId}/water/today")
+    WaterSummary waterToday(@PathVariable Long userId) {
+        return nutritionService.waterToday(userId);
     }
 }

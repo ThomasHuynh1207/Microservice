@@ -1,11 +1,11 @@
 server:
-  port: 8081
+  port: 8087
 
 spring:
   application:
-    name: auth-service
+    name: community-service
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:authdb}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:communitydb}
     username: ${POSTGRES_USER:runswim}
     password: ${POSTGRES_PASSWORD:runswim123}
   jpa:
@@ -23,13 +23,3 @@ eureka:
   instance:
     prefer-ip-address: true
     instance-id: ${spring.application.name}:${server.port}
-
-jwt:
-  secret: ${JWT_SECRET:UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}
-  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
-
-paypal:
-  client-id: ${PAYPAL_CLIENT_ID:}
-  secret: ${PAYPAL_SECRET:}
-  base-url: ${PAYPAL_BASE_URL:https://api-m.sandbox.paypal.com}
-  currency: ${PAYPAL_CURRENCY:USD}

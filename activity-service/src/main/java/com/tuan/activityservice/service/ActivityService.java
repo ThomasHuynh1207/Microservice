@@ -48,6 +48,66 @@ public class ActivityService {
         return activities.findByUserIdOrderByStartedAtDesc(userId);
     }
 
+    @Transactional(readOnly = true)
+    public Activity getById(Long id) {
+        return activities.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
+    }
+
+    @Transactional
+    public Activity update(Long id, Long userId, ActivityRequest request) {
+        Activity activity = activities.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
+        if (!activity.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("Not authorized");
+        }
+        if (request.title() != null && !request.title().isBlank()) activity.setTitle(request.title().trim());
+        if (request.description() != null) activity.setDescription(request.description());
+        if (request.durationMinutes() > 0) activity.setDurationMinutes(request.durationMinutes());
+        if (request.distanceMeters() > 0) activity.setDistanceMeters(request.distanceMeters());
+        if (request.averageHeartRate() != null) activity.setAverageHeartRate(request.averageHeartRate());
+        if (request.calories() != null) activity.setCalories(request.calories());
+        if (request.elevationGainMeters() != null) activity.setElevationGainMeters(request.elevationGainMeters());
+        if (request.poolLengthMeters() != null) activity.setPoolLengthMeters(request.poolLengthMeters());
+        if (request.strokes() != null) activity.setStrokes(request.strokes());
+        if (request.routeName() != null) activity.setRouteName(request.routeName());
+        if (request.visibility() != null) activity.setVisibility(request.visibility());
+        if (request.gpsRouteJson() != null) activity.setGpsRouteJson(request.gpsRouteJson());
+        if (request.averagePaceSecondsPerKm() != null) activity.setAveragePaceSecondsPerKm(request.averagePaceSecondsPerKm());
+        return activities.save(activity);
+    }
+
+    @Transactional
+    public void delete(Long id, Long userId) {
+        Activity activity = activities.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
+        if (!activity.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("Not authorized");
+        }
+        activities.deleteById(id);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LeaderboardEntry> challengeLeaderboard(String challengeId) {
+        List<ChallengeParticipant> joined = participants.findByChallenge_Code(challengeId);
+        ChallengeDefinition challenge = challenges.findByCode(challengeId)
+                .orElseThrow(() -> new IllegalArgumentException("Challenge not found"));
+        String sportType = normalize(challenge.getSportType());
+        return joined.stream().map(participant -> {
+            Long uid = participant.getUserId();
+            List<Activity> week = activities.findByUserIdAndStartedAtAfter(uid, LocalDateTime.now().minusDays(7));
+            double value;
+            if ("RUN".equals(sportType)) {
+                value = metersFor(week, SportType.RUN);
+            } else if ("SWIM".equals(sportType)) {
+                value = metersFor(week, SportType.SWIM);
+            } else {
+                value = week.size();
+            }
+            return new LeaderboardEntry(uid, "Athlete #" + uid, value);
+        }).sorted((a, b) -> Double.compare(b.value(), a.value())).toList();
+    }
+
     @Transactional
     public Activity create(ActivityRequest request) {
         Activity activity = new Activity();
@@ -66,6 +126,8 @@ public class ActivityService {
         activity.setStrokes(request.strokes());
         activity.setRouteName(request.routeName());
         activity.setVisibility(defaultText(request.visibility(), "PUBLIC"));
+        activity.setGpsRouteJson(request.gpsRouteJson());
+        activity.setAveragePaceSecondsPerKm(request.averagePaceSecondsPerKm());
         Activity saved = activities.save(activity);
         notifications.create(
             request.userId(),
@@ -262,7 +324,9 @@ public class ActivityService {
             Integer poolLengthMeters,
             Integer strokes,
             String routeName,
-            String visibility
+            String visibility,
+            String gpsRouteJson,
+            Integer averagePaceSecondsPerKm
     ) {
     }
 
@@ -288,5 +352,8 @@ public class ActivityService {
         }
 
         public record ChallengeRequest(String code, String title, String sportType, int targetValue, String unit, String note) {
+        }
+
+        public record LeaderboardEntry(Long userId, String athleteName, double value) {
         }
 }

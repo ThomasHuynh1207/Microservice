@@ -7,10 +7,10 @@ WORKDIR /app
 RUN apk update && apk upgrade && apk add --no-cache dumb-init
 
 # Copy package files
-COPY package.json package-lock.json ./
+COPY package.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .

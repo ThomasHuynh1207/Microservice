@@ -33,6 +33,10 @@ public class AthleteProfile {
     private boolean completedOnboarding;
     private double weeklyRunGoalKm = 25;
     private int weeklySwimGoalMeters = 3000;
+    private String gender;
+    private String dateOfBirth;
+    private Integer heightCm;
+    private Double weightKg;
     private Instant createdAt;
 
     @PrePersist
@@ -146,6 +150,38 @@ public class AthleteProfile {
 
     public void setWeeklySwimGoalMeters(int weeklySwimGoalMeters) {
         this.weeklySwimGoalMeters = weeklySwimGoalMeters;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
+    public String getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public void setDateOfBirth(String dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
+    }
+
+    public Integer getHeightCm() {
+        return heightCm;
+    }
+
+    public void setHeightCm(Integer heightCm) {
+        this.heightCm = heightCm;
+    }
+
+    public Double getWeightKg() {
+        return weightKg;
+    }
+
+    public void setWeightKg(Double weightKg) {
+        this.weightKg = weightKg;
     }
 
     public Instant getCreatedAt() {

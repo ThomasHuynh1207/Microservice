@@ -2,8 +2,10 @@ package com.tuan.nutritionservice.service;
 
 import com.tuan.nutritionservice.entity.MealEntry;
 import com.tuan.nutritionservice.entity.NutritionPlan;
+import com.tuan.nutritionservice.entity.WaterEntry;
 import com.tuan.nutritionservice.repository.MealEntryRepository;
 import com.tuan.nutritionservice.repository.NutritionPlanRepository;
+import com.tuan.nutritionservice.repository.WaterEntryRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -14,10 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class NutritionService {
     private final NutritionPlanRepository plans;
     private final MealEntryRepository meals;
+    private final WaterEntryRepository waterEntries;
 
-    public NutritionService(NutritionPlanRepository plans, MealEntryRepository meals) {
+    public NutritionService(NutritionPlanRepository plans, MealEntryRepository meals, WaterEntryRepository waterEntries) {
         this.plans = plans;
         this.meals = meals;
+        this.waterEntries = waterEntries;
     }
 
     @Transactional
@@ -122,5 +126,28 @@ public class NutritionService {
     }
 
     public record FoodSuggestion(String name, String timing, int calories, String note) {
+    }
+
+    @Transactional
+    public WaterEntry logWater(Long userId, WaterRequest request) {
+        WaterEntry entry = new WaterEntry();
+        entry.setUserId(userId);
+        entry.setAmountMl(request.amountMl());
+        return waterEntries.save(entry);
+    }
+
+    @Transactional(readOnly = true)
+    public WaterSummary waterToday(Long userId) {
+        LocalDate today = LocalDate.now();
+        List<WaterEntry> entries = waterEntries.findByUserIdAndLoggedAtBetween(
+                userId, today.atStartOfDay(), today.plusDays(1).atStartOfDay());
+        int totalMl = entries.stream().mapToInt(WaterEntry::getAmountMl).sum();
+        return new WaterSummary(totalMl, entries);
+    }
+
+    public record WaterRequest(int amountMl) {
+    }
+
+    public record WaterSummary(int totalMl, List<WaterEntry> entries) {
     }
 }

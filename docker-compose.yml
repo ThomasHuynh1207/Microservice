@@ -136,6 +136,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-runswim}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
       JWT_SECRET: ${JWT_SECRET:-UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-Af84JEJZj_Q5Mwm9ieYCdTWevRUlheQq5vz6actbXVduCP8UnDgVhwOuVeH7PaAvGptpDCVOx1nrqrqC}
+      PAYPAL_SECRET: ${PAYPAL_SECRET:-EH0VGwuej4ilTph909gNOQViKoVUZ_ncg1aqnkjzLQBgialC8O38e0vOo09YCTF0G7e7UpOhtLKzJF0Z}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     networks:
       - runswim-network
@@ -223,6 +225,25 @@ services:
       - runswim-network
     restart: unless-stopped
 
+  community-service:
+    build: ./community-service
+    ports:
+      - "8087:8087"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_NAME: communitydb
+      POSTGRES_USER: ${POSTGRES_USER:-runswim}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runswim123}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks:
+      - runswim-network
+    restart: unless-stopped
+
   api-gateway:
     build: ./api-gateway
     ports:
@@ -239,6 +260,8 @@ services:
       nutrition-service:
         condition: service_started
       ai-service:
+        condition: service_started
+      community-service:
         condition: service_started
     environment:
       JWT_SECRET: ${JWT_SECRET:-UnVuU3dpbUNsdWJTZWNyZXRKSVdUS2V5Rm9yRGV2}

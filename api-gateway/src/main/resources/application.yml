@@ -39,6 +39,12 @@ spring:
             - Path=/api/ai/**
           filters:
             - JwtAuthenticationFilter
+        - id: community-service
+          uri: lb://community-service
+          predicates:
+            - Path=/api/community/**
+          filters:
+            - JwtAuthenticationFilter
       globalcors:
         cors-configurations:
           '[/**]':

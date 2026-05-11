@@ -51,6 +51,11 @@ public class Activity {
     private Integer strokes;
     private String routeName;
     private String visibility = "PUBLIC";
+
+    @Column(columnDefinition = "TEXT")
+    private String gpsRouteJson;
+
+    private Integer averagePaceSecondsPerKm;
     private Instant createdAt;
 
     @PrePersist
@@ -183,6 +188,22 @@ public class Activity {
 
     public void setVisibility(String visibility) {
         this.visibility = visibility;
+    }
+
+    public String getGpsRouteJson() {
+        return gpsRouteJson;
+    }
+
+    public void setGpsRouteJson(String gpsRouteJson) {
+        this.gpsRouteJson = gpsRouteJson;
+    }
+
+    public Integer getAveragePaceSecondsPerKm() {
+        return averagePaceSecondsPerKm;
+    }
+
+    public void setAveragePaceSecondsPerKm(Integer averagePaceSecondsPerKm) {
+        this.averagePaceSecondsPerKm = averagePaceSecondsPerKm;
     }
 
     public Instant getCreatedAt() {

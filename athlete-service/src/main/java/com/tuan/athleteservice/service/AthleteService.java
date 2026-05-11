@@ -102,6 +102,10 @@ public class AthleteService {
         profile.setVisibility(request.visibility() == null ? "PUBLIC" : request.visibility());
         profile.setWeeklyRunGoalKm(request.weeklyRunGoalKm() == null ? profile.getWeeklyRunGoalKm() : request.weeklyRunGoalKm());
         profile.setWeeklySwimGoalMeters(request.weeklySwimGoalMeters() == null ? profile.getWeeklySwimGoalMeters() : request.weeklySwimGoalMeters());
+        if (request.gender() != null) profile.setGender(request.gender());
+        if (request.dateOfBirth() != null) profile.setDateOfBirth(request.dateOfBirth());
+        if (request.heightCm() != null) profile.setHeightCm(request.heightCm());
+        if (request.weightKg() != null) profile.setWeightKg(request.weightKg());
         if (complete) {
             profile.setCompletedOnboarding(true);
         }
@@ -130,7 +134,11 @@ public class AthleteService {
             String nutritionFocus,
             String visibility,
             Double weeklyRunGoalKm,
-            Integer weeklySwimGoalMeters
+            Integer weeklySwimGoalMeters,
+            String gender,
+            String dateOfBirth,
+            Integer heightCm,
+            Double weightKg
     ) {
     }
 

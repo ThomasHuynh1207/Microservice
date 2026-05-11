@@ -8,13 +8,16 @@ import com.tuan.activityservice.service.ActivityService.ActivityRequest;
 import com.tuan.activityservice.service.ActivityService.ActivityStats;
 import com.tuan.activityservice.service.ActivityService.ChallengeRequest;
 import com.tuan.activityservice.service.ActivityService.ChallengeView;
+import com.tuan.activityservice.service.ActivityService.LeaderboardEntry;
 import java.util.List;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -31,9 +34,24 @@ public class ActivityController {
         return activityService.userActivities(userId);
     }
 
+    @GetMapping("/{id}")
+    Activity getById(@PathVariable Long id) {
+        return activityService.getById(id);
+    }
+
     @PostMapping
     Activity create(@RequestBody ActivityRequest request) {
         return activityService.create(request);
+    }
+
+    @PutMapping("/{id}")
+    Activity update(@PathVariable Long id, @RequestParam Long userId, @RequestBody ActivityRequest request) {
+        return activityService.update(id, userId, request);
+    }
+
+    @DeleteMapping("/{id}")
+    void delete(@PathVariable Long id, @RequestParam Long userId) {
+        activityService.delete(id, userId);
     }
 
     @GetMapping("/stats/{userId}")
@@ -84,5 +102,10 @@ public class ActivityController {
     @DeleteMapping("/challenges/{challengeId}/join/{userId}")
     void leaveChallenge(@PathVariable String challengeId, @PathVariable Long userId) {
         activityService.leaveChallenge(userId, challengeId);
+    }
+
+    @GetMapping("/challenges/{challengeId}/leaderboard")
+    List<LeaderboardEntry> challengeLeaderboard(@PathVariable String challengeId) {
+        return activityService.challengeLeaderboard(challengeId);
     }
 }
