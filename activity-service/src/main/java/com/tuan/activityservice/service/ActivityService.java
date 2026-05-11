@@ -5,12 +5,14 @@ import com.tuan.activityservice.entity.ChallengeDefinition;
 import com.tuan.activityservice.entity.ChallengeParticipant;
 import com.tuan.activityservice.entity.Route;
 import com.tuan.activityservice.entity.SavedRoute;
+import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
 import com.tuan.activityservice.repository.ChallengeParticipantRepository;
 import com.tuan.activityservice.repository.ChallengeRepository;
 import com.tuan.activityservice.repository.RouteRepository;
 import com.tuan.activityservice.repository.SavedRouteRepository;
+import com.tuan.activityservice.repository.SportDefinitionRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -27,6 +29,7 @@ public class ActivityService {
     private final ChallengeRepository challenges;
     private final ChallengeParticipantRepository participants;
     private final NotificationService notifications;
+    private final SportDefinitionRepository sportDefs;
 
     public ActivityService(
             ActivityRepository activities,
@@ -34,13 +37,57 @@ public class ActivityService {
             SavedRouteRepository savedRoutes,
             ChallengeRepository challenges,
             ChallengeParticipantRepository participants,
-            NotificationService notifications) {
+            NotificationService notifications,
+            SportDefinitionRepository sportDefs) {
         this.activities = activities;
         this.routes = routes;
         this.savedRoutes = savedRoutes;
         this.challenges = challenges;
         this.participants = participants;
         this.notifications = notifications;
+        this.sportDefs = sportDefs;
+    }
+
+    // ── Sport definitions ────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<SportDefinition> activeSportDefs() {
+        return sportDefs.findByActiveTrueOrderBySortOrderAsc();
+    }
+
+    @Transactional
+    public SportDefinition createSportDef(SportDefRequest req) {
+        if (sportDefs.existsByCode(req.code().trim().toUpperCase(Locale.ROOT))) {
+            throw new IllegalArgumentException("Code already exists");
+        }
+        SportDefinition def = new SportDefinition();
+        def.setCode(req.code().trim().toUpperCase(Locale.ROOT));
+        def.setLabel(req.label());
+        def.setIcon(req.icon() != null ? req.icon() : "⚡");
+        def.setCategory(req.category() != null ? req.category() : "Khác");
+        def.setBackendSport("SWIM".equalsIgnoreCase(req.backendSport()) ? "SWIM" : "RUN");
+        def.setSortOrder(req.sortOrder());
+        def.setActive(true);
+        return sportDefs.save(def);
+    }
+
+    @Transactional
+    public SportDefinition updateSportDef(Long id, SportDefRequest req) {
+        SportDefinition def = sportDefs.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Sport not found"));
+        if (req.label() != null) def.setLabel(req.label());
+        if (req.icon() != null) def.setIcon(req.icon());
+        if (req.category() != null) def.setCategory(req.category());
+        if (req.backendSport() != null) def.setBackendSport("SWIM".equalsIgnoreCase(req.backendSport()) ? "SWIM" : "RUN");
+        if (req.sortOrder() > 0) def.setSortOrder(req.sortOrder());
+        if (req.active() != null) def.setActive(req.active());
+        return sportDefs.save(def);
+    }
+
+    @Transactional
+    public void deleteSportDef(Long id) {
+        if (!sportDefs.existsById(id)) throw new IllegalArgumentException("Sport not found");
+        sportDefs.deleteById(id);
     }
 
     @Transactional(readOnly = true)
@@ -155,6 +202,30 @@ public class ActivityService {
     @Transactional(readOnly = true)
     public List<Route> routes() {
         return routes.findAll();
+    }
+
+    @Transactional
+    public Route createUserRoute(Long userId, RouteCreateRequest req) {
+        Route route = new Route();
+        route.setName(req.name().trim());
+        route.setSportType(req.sportType());
+        route.setPlace(req.place() != null ? req.place().trim() : "");
+        route.setDistanceMeters(req.distanceMeters());
+        route.setNote(req.note() != null ? req.note() : "");
+        route.setGeoJson(req.geoJson());
+        route.setCreatedBy(userId);
+        return routes.save(route);
+    }
+
+    @Transactional
+    public void deleteUserRoute(Long userId, Long routeId) {
+        Route route = routes.findById(routeId)
+                .orElseThrow(() -> new IllegalArgumentException("Route not found"));
+        if (!userId.equals(route.getCreatedBy())) {
+            throw new SecurityException("Not authorized to delete this route");
+        }
+        savedRoutes.deleteByRoute_Id(routeId);
+        routes.deleteById(routeId);
     }
 
     @Transactional(readOnly = true)
@@ -355,5 +426,12 @@ public class ActivityService {
         }
 
         public record LeaderboardEntry(Long userId, String athleteName, double value) {
+        }
+
+        public record RouteCreateRequest(String name, SportType sportType, String place, int distanceMeters, String note, String geoJson) {
+        }
+
+        public record SportDefRequest(String code, String label, String icon, String category,
+                                      String backendSport, int sortOrder, Boolean active) {
         }
 }

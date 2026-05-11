@@ -3,19 +3,24 @@ package com.tuan.activityservice.controller;
 import com.tuan.activityservice.entity.Activity;
 import com.tuan.activityservice.entity.ChallengeDefinition;
 import com.tuan.activityservice.entity.Route;
+import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.service.ActivityService;
 import com.tuan.activityservice.service.ActivityService.ActivityRequest;
 import com.tuan.activityservice.service.ActivityService.ActivityStats;
 import com.tuan.activityservice.service.ActivityService.ChallengeRequest;
 import com.tuan.activityservice.service.ActivityService.ChallengeView;
 import com.tuan.activityservice.service.ActivityService.LeaderboardEntry;
+import com.tuan.activityservice.service.ActivityService.RouteCreateRequest;
 import java.util.List;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,9 +64,38 @@ public class ActivityController {
         return activityService.stats(userId);
     }
 
+    @GetMapping("/sports")
+    List<SportDefinition> sportDefs() {
+        return activityService.activeSportDefs();
+    }
+
     @GetMapping("/routes")
     List<Route> routes() {
         return activityService.routes();
+    }
+
+    @PostMapping("/routes")
+    ResponseEntity<Route> createRoute(
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @RequestBody RouteCreateRequest req) {
+        if (userId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        return ResponseEntity.ok(activityService.createUserRoute(userId, req));
+    }
+
+    @DeleteMapping("/routes/{routeId}/mine")
+    @org.springframework.transaction.annotation.Transactional
+    ResponseEntity<Void> deleteMyRoute(
+            @PathVariable Long routeId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (userId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        try {
+            activityService.deleteUserRoute(userId, routeId);
+            return ResponseEntity.noContent().build();
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
     }
 
     @GetMapping("/routes/saved/{userId}")

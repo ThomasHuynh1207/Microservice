@@ -2,12 +2,15 @@ package com.tuan.activityservice.controller;
 
 import com.tuan.activityservice.entity.Activity;
 import com.tuan.activityservice.entity.Route;
+import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
 import com.tuan.activityservice.repository.ChallengeParticipantRepository;
 import com.tuan.activityservice.repository.ChallengeRepository;
 import com.tuan.activityservice.repository.RouteRepository;
 import com.tuan.activityservice.repository.SavedRouteRepository;
+import com.tuan.activityservice.service.ActivityService;
+import com.tuan.activityservice.service.ActivityService.SportDefRequest;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +38,7 @@ public class ActivityAdminController {
     private final SavedRouteRepository savedRouteRepo;
     private final ChallengeRepository challengeRepo;
     private final ChallengeParticipantRepository participantRepo;
+    private final ActivityService activityService;
 
     @Value("${auth.service.url:http://auth-service:8081}")
     private String authServiceUrl;
@@ -42,12 +47,14 @@ public class ActivityAdminController {
                                    RouteRepository routeRepo,
                                    SavedRouteRepository savedRouteRepo,
                                    ChallengeRepository challengeRepo,
-                                   ChallengeParticipantRepository participantRepo) {
+                                   ChallengeParticipantRepository participantRepo,
+                                   ActivityService activityService) {
         this.activityRepo = activityRepo;
         this.routeRepo = routeRepo;
         this.savedRouteRepo = savedRouteRepo;
         this.challengeRepo = challengeRepo;
         this.participantRepo = participantRepo;
+        this.activityService = activityService;
     }
 
     @GetMapping("/overview")
@@ -123,6 +130,53 @@ public class ActivityAdminController {
         participantRepo.deleteByChallenge_Id(challengeId);
         challengeRepo.deleteById(challengeId);
         return ResponseEntity.noContent().build();
+    }
+
+    // ── Sports ──────────────────────────────────────────────────────────────
+
+    @GetMapping("/sports")
+    public ResponseEntity<List<SportDefinition>> getAllSports(
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(activityService.activeSportDefs());
+    }
+
+    @PostMapping("/sports")
+    public ResponseEntity<SportDefinition> createSport(
+            @RequestBody SportDefRequest req,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        try {
+            return ResponseEntity.ok(activityService.createSportDef(req));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+    }
+
+    @PutMapping("/sports/{id}")
+    public ResponseEntity<SportDefinition> updateSport(
+            @PathVariable Long id,
+            @RequestBody SportDefRequest req,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        try {
+            return ResponseEntity.ok(activityService.updateSportDef(id, req));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
+    @DeleteMapping("/sports/{id}")
+    public ResponseEntity<Void> deleteSport(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        try {
+            activityService.deleteSportDef(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

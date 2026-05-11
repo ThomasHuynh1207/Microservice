@@ -384,6 +384,22 @@ body { background: var(--content-bg); color: var(--text-primary); }
 .al-add-btn:hover { opacity: 0.88; }
 .al-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.al-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.al-icon-btn:hover { background: var(--bg); border-color: var(--blue); color: var(--blue); }
+.al-icon-btn.danger:hover { border-color: #ef4444; color: #dc2626; background: rgba(239,68,68,0.08); }
+
 /* ── Form card ───────────────────────────────────────────────── */
 .al-form-card {
   background: var(--card-bg);

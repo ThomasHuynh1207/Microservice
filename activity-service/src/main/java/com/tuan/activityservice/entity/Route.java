@@ -33,6 +33,12 @@ public class Route {
     @Column(length = 800)
     private String note;
 
+    @Column(name = "created_by")
+    private Long createdBy;
+
+    @Column(columnDefinition = "TEXT", name = "geo_json")
+    private String geoJson;
+
     private Instant createdAt;
 
     @PrePersist
@@ -82,6 +88,22 @@ public class Route {
 
     public void setNote(String note) {
         this.note = note;
+    }
+
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
+
+    public String getGeoJson() {
+        return geoJson;
+    }
+
+    public void setGeoJson(String geoJson) {
+        this.geoJson = geoJson;
     }
 
     public Instant getCreatedAt() {

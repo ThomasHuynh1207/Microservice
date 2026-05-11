@@ -9,6 +9,7 @@ import com.tuan.activityservice.entity.PostComment;
 import com.tuan.activityservice.entity.PostLike;
 import com.tuan.activityservice.entity.Route;
 import com.tuan.activityservice.entity.SavedRoute;
+import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
 import com.tuan.activityservice.repository.ChallengeParticipantRepository;
@@ -19,6 +20,7 @@ import com.tuan.activityservice.repository.PostCommentRepository;
 import com.tuan.activityservice.repository.PostLikeRepository;
 import com.tuan.activityservice.repository.RouteRepository;
 import com.tuan.activityservice.repository.SavedRouteRepository;
+import com.tuan.activityservice.repository.SportDefinitionRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.boot.CommandLineRunner;
@@ -37,8 +39,24 @@ public class SampleDataInitializer {
             CommunityPostRepository posts,
             PostCommentRepository comments,
             PostLikeRepository likes,
-            NotificationRepository notifications) {
+            NotificationRepository notifications,
+            SportDefinitionRepository sportDefs) {
         return args -> {
+            if (sportDefs.count() == 0) {
+                sportDefs.saveAll(List.of(
+                    sport("RUN",   "Chạy bộ",          "🏃", "Môn thể thao dùng chân",  "RUN",  1),
+                    sport("TRAIL", "Chạy địa hình",     "🏔️","Môn thể thao dùng chân",  "RUN",  2),
+                    sport("WALK",  "Đi bộ",             "🚶", "Môn thể thao dùng chân",  "RUN",  3),
+                    sport("HIKE",  "Đi bộ đường dài",   "⛰️", "Môn thể thao dùng chân",  "RUN",  4),
+                    sport("BIKE",  "Xe đạp",            "🚴", "Môn thể thao đạp xe",      "RUN",  5),
+                    sport("MTB",   "Xe đạp địa hình",   "🚵", "Môn thể thao đạp xe",      "RUN",  6),
+                    sport("SWIM",  "Bơi lội",           "🏊", "Môn thể thao dưới nước",   "SWIM", 7),
+                    sport("GYM",   "Gym",               "🏋️", "Thể dục & Khác",           "RUN",  8),
+                    sport("YOGA",  "Yoga",              "🧘", "Thể dục & Khác",           "RUN",  9),
+                    sport("OTHER", "Khác",              "⚡", "Thể dục & Khác",           "RUN",  10)
+                ));
+            }
+
             if (activities.count() == 0) {
                 activities.saveAll(List.of(
                         run(1L, "Demo Runner", "Canal tempo run", "Held the middle 4K right under target pace.", 7200, 42, 91, 460),
@@ -160,6 +178,18 @@ public class SampleDataInitializer {
     private Activity withDate(Activity activity, int daysAgo, int hoursAgo) {
         activity.setStartedAt(LocalDateTime.now().minusDays(daysAgo).minusHours(hoursAgo));
         return activity;
+    }
+
+    private SportDefinition sport(String code, String label, String icon, String category, String backendSport, int order) {
+        SportDefinition def = new SportDefinition();
+        def.setCode(code);
+        def.setLabel(label);
+        def.setIcon(icon);
+        def.setCategory(category);
+        def.setBackendSport(backendSport);
+        def.setSortOrder(order);
+        def.setActive(true);
+        return def;
     }
 
     private Route route(String name, SportType sportType, String place, int meters, String note) {

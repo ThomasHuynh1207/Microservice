@@ -22,6 +22,8 @@ import {
   Plus,
   X,
   ChevronDown,
+  Zap,
+  Edit2,
 } from "lucide-react";
 import {
   PieChart,
@@ -34,7 +36,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training";
+type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training" | "sports";
 
 type AdminSession = {
   token: string;
@@ -98,6 +100,11 @@ type NutritionMealEntry = {
 type ChallengeItem = {
   id: number; code: string; title: string; sportType: string;
   targetValue: number; unit: string; note: string; createdAt: string;
+};
+
+type SportDef = {
+  id: number; code: string; label: string; icon: string;
+  category: string; backendSport: string; sortOrder: number; active: boolean;
 };
 
 type AthleteProfile = {
@@ -259,6 +266,7 @@ const NAV_GROUPS: { label: string; items: { id: Page; label: string; icon: React
     items: [
       { id: "activities", label: "Hoạt động", icon: <Activity size={16} /> },
       { id: "routes", label: "Lộ trình", icon: <MapPin size={16} /> },
+      { id: "sports", label: "Môn thể thao", icon: <Zap size={16} /> },
       { id: "training", label: "Cài đặt tập luyện", icon: <Dumbbell size={16} /> },
     ],
   },
@@ -1378,6 +1386,171 @@ function TrainingPage({ session }: { session: AdminSession }) {
   );
 }
 
+// ─── Sports Management ────────────────────────────────────────────────────────
+
+function SportsManagementPage({ session }: { session: AdminSession }) {
+  const emptySport: Omit<SportDef, "id"> = { code: "", label: "", icon: "⚡", category: "Thể dục & Khác", backendSport: "RUN", sortOrder: 99, active: true };
+  const [sports, setSports] = useState<SportDef[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(emptySport);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const data = await get<SportDef[]>(session.token, "/api/activities/admin/sports");
+      setSports(data);
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
+    finally { setLoading(false); }
+  }, [session.token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function openCreate() {
+    setEditId(null);
+    setForm(emptySport);
+    setFormError("");
+    setShowForm(true);
+  }
+
+  function openEdit(s: SportDef) {
+    setEditId(s.id);
+    setForm({ code: s.code, label: s.label, icon: s.icon, category: s.category, backendSport: s.backendSport, sortOrder: s.sortOrder, active: s.active });
+    setFormError("");
+    setShowForm(true);
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!form.code.trim() || !form.label.trim()) { setFormError("Mã và tên không được để trống."); return; }
+    setSaving(true); setFormError("");
+    try {
+      if (editId != null) {
+        await put(session.token, `/api/activities/admin/sports/${editId}`, form);
+      } else {
+        await post(session.token, "/api/activities/admin/sports", form);
+      }
+      setShowForm(false);
+      await load();
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : "Lỗi lưu");
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Xóa môn thể thao này?")) return;
+    try {
+      await del(session.token, `/api/activities/admin/sports/${id}`);
+      await load();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi xóa"); }
+  }
+
+  return (
+    <>
+      <PageHeader title="Môn thể thao" sub="Quản lý danh mục môn thể thao hiển thị trong ứng dụng" />
+      <div className="al-content">
+        <div className="al-controls">
+          <button className="al-add-btn" onClick={openCreate}><Plus size={14} /> Thêm môn mới</button>
+          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+        </div>
+
+        {error && <ErrMsg msg={error} />}
+
+        {showForm && (
+          <div className="al-form-card" style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <strong style={{ fontSize: "0.95rem" }}>{editId ? "Chỉnh sửa môn" : "Thêm môn mới"}</strong>
+              <button className="al-icon-btn" onClick={() => setShowForm(false)}><X size={16} /></button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label className="al-form-label">Mã (code) *</label>
+                  <input className="al-form-input" placeholder="VD: RUN" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} disabled={editId != null} />
+                </div>
+                <div>
+                  <label className="al-form-label">Tên hiển thị *</label>
+                  <input className="al-form-input" placeholder="VD: Chạy bộ" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="al-form-label">Icon (emoji)</label>
+                  <input className="al-form-input" placeholder="🏃" value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="al-form-label">Danh mục</label>
+                  <input className="al-form-input" placeholder="VD: Môn thể thao dùng chân" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="al-form-label">Backend sport</label>
+                  <select className="al-form-input" value={form.backendSport} onChange={e => setForm(f => ({ ...f, backendSport: e.target.value }))}>
+                    <option value="RUN">RUN (chạy/đạp/gym)</option>
+                    <option value="SWIM">SWIM (bơi)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="al-form-label">Thứ tự</label>
+                  <input className="al-form-input" type="number" min={1} value={form.sortOrder} onChange={e => setForm(f => ({ ...f, sortOrder: parseInt(e.target.value) || 99 }))} />
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+                  Hiển thị trong app
+                </label>
+              </div>
+              {formError && <p style={{ color: "#dc2626", fontSize: "0.83rem", margin: "0 0 10px" }}>{formError}</p>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="submit" className="al-add-btn" disabled={saving}>{saving ? "Đang lưu…" : editId ? "Cập nhật" : "Thêm môn"}</button>
+                <button type="button" className="al-refresh-btn" onClick={() => setShowForm(false)}>Hủy</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="al-table-wrap">
+          {loading ? <div className="al-loading">Đang tải...</div>
+            : sports.length === 0 ? <div className="al-empty">Chưa có môn thể thao nào</div>
+            : (
+              <table className="al-table">
+                <thead><tr>
+                  <th>Thứ tự</th><th>Icon</th><th>Mã</th><th>Tên</th><th>Danh mục</th>
+                  <th>Backend</th><th>Trạng thái</th><th>Hành động</th>
+                </tr></thead>
+                <tbody>
+                  {[...sports].sort((a, b) => a.sortOrder - b.sortOrder).map(s => (
+                    <tr key={s.id}>
+                      <td><span className="al-date">{s.sortOrder}</span></td>
+                      <td style={{ fontSize: "1.3rem", textAlign: "center" }}>{s.icon}</td>
+                      <td><code style={{ fontSize: "0.82rem", background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{s.code}</code></td>
+                      <td><strong style={{ fontSize: "0.88rem" }}>{s.label}</strong></td>
+                      <td><span className="al-date">{s.category}</span></td>
+                      <td><span className={`al-badge ${s.backendSport === "SWIM" ? "badge-swim" : "badge-run"}`}>{s.backendSport}</span></td>
+                      <td>
+                        <span className={`al-badge ${s.active ? "badge-active" : "badge-inactive"}`}>
+                          {s.active ? "Hiện" : "Ẩn"}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button className="al-icon-btn" title="Sửa" onClick={() => openEdit(s)}><Edit2 size={14} /></button>
+                          <button className="al-icon-btn danger" title="Xóa" onClick={() => handleDelete(s.id)}><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
 function NutritionAdminPage({ session }: { session: AdminSession }) {
@@ -1659,6 +1832,7 @@ export default function App() {
         {page === "community"   && <CommunityAdminPage session={session} />}
         {page === "nutrition"   && <NutritionAdminPage session={session} />}
         {page === "training"    && <TrainingPage session={session} />}
+        {page === "sports"      && <SportsManagementPage session={session} />}
       </div>
     </div>
   );

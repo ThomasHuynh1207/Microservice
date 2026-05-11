@@ -179,6 +179,7 @@ type RouteItem = {
   place: string;
   distanceMeters: number;
   note: string;
+  createdBy?: number;
 };
 
 type Challenge = {
@@ -392,6 +393,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [connectedDevices, setConnectedDevices] = useState<string[]>(() => readStorage("runswim-devices", []));
   const [trainingPlan, setTrainingPlan] = useState<TrainingDay[]>(() => readStorage("runswim-plan", initialTrainingPlan));
+  const [sportDefs, setSportDefs] = useState<SportDef[]>([]);
 
   useEffect(() => {
     if (!session) return;
@@ -423,7 +425,7 @@ export default function App() {
   }
 
   async function loadDashboard(current: Session) {
-    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, postData, followingData] = await Promise.all([
+    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, postData, followingData, sportDefsData] = await Promise.all([
       api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
@@ -434,6 +436,7 @@ export default function App() {
       api<Challenge[]>(`/activities/challenges/user/${current.userId}`, current.token, []),
       api<PostApiView[]>(`/community/posts?userId=${current.userId}`, current.token, []),
       api<FollowSummary[]>(`/athletes/${current.userId}/following`, current.token, []),
+      api<SportDef[]>("/activities/sports", current.token, []),
     ]);
     setProfile({ ...fallbackProfile, ...profileData });
     setStats(recalculateStats(activityData, statsData));
@@ -445,6 +448,7 @@ export default function App() {
     setChallenges(challengeData);
     setPosts(postData.map(mapPost));
     setFollowing(followingData.map((item) => item.userId));
+    if (sportDefsData.length > 0) setSportDefs(sportDefsData);
   }
 
   async function createActivity(payload: Omit<FitnessActivity, "id" | "startedAt"> & { gpsRouteJson?: string; averagePaceSecondsPerKm?: number }) {
@@ -462,6 +466,12 @@ export default function App() {
     }
     setShowActivityModal(false);
     notify("Đã ghi hoạt động vào nhật ký luyện tập.");
+  }
+
+  async function refreshRoutes() {
+    if (!session) return;
+    const data = await api<RouteItem[]>("/activities/routes", session.token, []);
+    setRoutes(data);
   }
 
   async function toggleSavedRoute(routeId: number) {
@@ -671,6 +681,9 @@ export default function App() {
             token={session.token}
             userId={session.userId}
             onSaveActivity={createActivity}
+            routes={routes}
+            onRouteCreated={refreshRoutes}
+            sportDefs={sportDefs}
           />
         )}
         {page === "maps" && (
@@ -679,6 +692,10 @@ export default function App() {
             savedRoutes={savedRoutes}
             onToggleRoute={toggleSavedRoute}
             onAddActivity={() => setShowActivityModal(true)}
+            token={session.token}
+            userId={session.userId}
+            onRouteCreated={refreshRoutes}
+            sportDefs={sportDefs}
           />
         )}
         {page === "nutrition" && (
@@ -753,14 +770,14 @@ export default function App() {
       )}
       {toast && <div className="toast">{toast}</div>}
     </main>
-  );
-}
-
-function AppHeader({
-  page, setPage, session, profile, routes, profileMenuOpen, notificationsOpen,
-  onAdd, onTrial, onProfileMenu, onNotifications, onEditProfile, onLogout,
-}: {
-  page: Page;
+                  {selectedRoute ? (
+                    <p style={{ marginTop: "8px", fontSize: "0.82rem", color: "var(--orange)" }}>
+                      Chưa có lộ trình.{" "}
+                      <button className="rcm-inline-link" type="button" onClick={() => setShowRouteCreator(true)}>
+                        Tạo ngay →
+                      </button>
+                    </p>
+                  ) : null}
   setPage: (page: Page) => void;
   session: Session;
   profile: AthleteProfile;
@@ -1155,8 +1172,563 @@ function ActivityLog({ activities, onAddActivity, onCommunity }: { activities: F
 
 type RecordingState = "idle" | "recording" | "paused" | "done";
 
+// ─── Route Create Modal ───────────────────────────────────────────────────────
+
+type SportDef = {
+  id: number;
+  code: string;
+  label: string;
+  icon: string;
+  category: string;
+  backendSport: string;
+  sortOrder: number;
+  active: boolean;
+};
+
+type RouteSuggestion = {
+  name: string;
+  place: string;
+  distanceMeters: number;
+  sportType: "RUN" | "SWIM";
+  note: string;
+  lat: number;
+  lon: number;
+  thumbnailUrl: string;
+};
+
+function buildRouteThumbnailUrl(lat: number, lon: number) {
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=15&size=180x108&maptype=mapnik&markers=${lat},${lon},red-pushpin`;
+}
+
+async function fetchRouteSuggestions(lat: number, lon: number, sport: "RUN" | "SWIM"): Promise<RouteSuggestion[]> {
+  try {
+    const revRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=vi`,
+      { headers: { "Accept-Language": "vi" } }
+    );
+    const revData = await revRes.json() as { address?: { suburb?: string; city_district?: string; quarter?: string; city?: string } };
+    const areaName =
+      revData.address?.quarter ||
+      revData.address?.suburb ||
+      revData.address?.city_district ||
+      revData.address?.city ||
+      "khu vực của bạn";
+
+    const radius = sport === "SWIM" ? 5000 : 3000;
+    const overpassFilter = sport === "SWIM"
+      ? `["leisure"~"swimming_pool|water_park"]["name"]`
+      : `["leisure"~"park|sports_centre|fitness_centre|track"]["name"]`;
+
+    const query =
+      `[out:json][timeout:10];(` +
+      `node${overpassFilter}(around:${radius},${lat},${lon});` +
+      `way${overpassFilter}(around:${radius},${lat},${lon});` +
+      `);out center 6;`;
+
+    const overpassRes = await Promise.race([
+      fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+    ]);
+    const overpassData = await (overpassRes as Response).json() as { elements: { tags: { name: string }; lat?: number; lon?: number; center?: { lat: number; lon: number } }[] };
+
+    const runDists = [3000, 5000, 8000, 5000, 3000];
+    const swimDists = [500, 1000, 1500, 2000, 1000];
+
+    const poiSuggestions: RouteSuggestion[] = overpassData.elements.slice(0, 5).map((el, i) => {
+      const latValue = el.lat ?? el.center?.lat ?? lat;
+      const lonValue = el.lon ?? el.center?.lon ?? lon;
+      return {
+        name: sport === "SWIM" ? `Bơi tại ${el.tags.name}` : `Chạy tại ${el.tags.name}`,
+        place: el.tags.name,
+        distanceMeters: sport === "SWIM" ? swimDists[i] : runDists[i],
+        sportType: sport,
+        note: `Gợi ý lộ trình cho ${areaName}`,
+        lat: latValue,
+        lon: lonValue,
+        thumbnailUrl: buildRouteThumbnailUrl(latValue, lonValue),
+      };
+    });
+
+    if (poiSuggestions.length === 0) {
+      return [
+        { name: sport === "SWIM" ? `Bơi tại ${areaName}` : `Chạy bộ quanh ${areaName}`, place: areaName, distanceMeters: sport === "SWIM" ? 1000 : 5000, sportType: sport, note: "Gợi ý lộ trình dựa trên vị trí hiện tại", lat, lon, thumbnailUrl: buildRouteThumbnailUrl(lat, lon) },
+        { name: sport === "SWIM" ? `Bơi kỹ thuật ${areaName}` : `Chạy sáng ${areaName}`, place: areaName, distanceMeters: sport === "SWIM" ? 1500 : 3000, sportType: sport, note: "Gợi ý lộ trình dựa trên vị trí hiện tại", lat, lon, thumbnailUrl: buildRouteThumbnailUrl(lat, lon) },
+      ];
+    }
+    return poiSuggestions;
+  } catch {
+    return [];
+  }
+}
+
+function RouteCreateModal({
+  token,
+  userId,
+  initialSportCode,
+  sportDefs,
+  onDone,
+  onClose,
+}: {
+  token: string;
+  userId: number;
+  initialSportCode: string;
+  sportDefs: SportDef[];
+  onDone: (route: RouteItem) => void;
+  onClose: () => void;
+}) {
+  // Form state
+  const [name, setName] = useState("");
+  const [sportCode, setSportCode] = useState(initialSportCode);
+  const [place, setPlace] = useState("");
+  const [note, setNote] = useState("");
+  const [manualDistKm, setManualDistKm] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  // Map drawing state
+  const mapRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapInstance = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mlRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wptMarkersRef = useRef<any[]>([]);
+  const [mapReady, setMapReady] = useState(false);
+  const [waypoints, setWaypoints] = useState<[number, number][]>([]);   // [lat, lng]
+  const [routeCoords, setRouteCoords] = useState<number[][]>([]);       // [lon, lat] for MapLibre
+  const [osrmDist, setOsrmDist] = useState(0);
+  const [routing, setRouting] = useState(false);
+
+  // Search
+  const [searchInput, setSearchInput] = useState("");
+  const [searchResults, setSearchResults] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+
+  // AI suggestions
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLon, setUserLon] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<RouteSuggestion[]>([]);
+  const [loadingSugg, setLoadingSugg] = useState(false);
+
+  const FALLBACK_SPORT_DEFS: SportDef[] = [
+    { id: 0, code: "RUN",   label: "Chạy bộ",         icon: "🏃", category: "Môn thể thao dùng chân",  backendSport: "RUN",  sortOrder: 1, active: true },
+    { id: 0, code: "TRAIL", label: "Chạy địa hình",    icon: "🏔️", category: "Môn thể thao dùng chân",  backendSport: "RUN",  sortOrder: 2, active: true },
+    { id: 0, code: "WALK",  label: "Đi bộ",            icon: "🚶", category: "Môn thể thao dùng chân",  backendSport: "RUN",  sortOrder: 3, active: true },
+    { id: 0, code: "HIKE",  label: "Đi bộ đường dài",  icon: "⛰️", category: "Môn thể thao dùng chân",  backendSport: "RUN",  sortOrder: 4, active: true },
+    { id: 0, code: "BIKE",  label: "Xe đạp",           icon: "🚴", category: "Môn thể thao đạp xe",      backendSport: "RUN",  sortOrder: 5, active: true },
+    { id: 0, code: "MTB",   label: "Xe đạp địa hình",  icon: "🚵", category: "Môn thể thao đạp xe",      backendSport: "RUN",  sortOrder: 6, active: true },
+    { id: 0, code: "SWIM",  label: "Bơi lội",          icon: "🏊", category: "Môn thể thao dưới nước",   backendSport: "SWIM", sortOrder: 7, active: true },
+    { id: 0, code: "GYM",   label: "Gym",              icon: "🏋️", category: "Thể dục & Khác",           backendSport: "RUN",  sortOrder: 8, active: true },
+    { id: 0, code: "YOGA",  label: "Yoga",             icon: "🧘", category: "Thể dục & Khác",           backendSport: "RUN",  sortOrder: 9, active: true },
+    { id: 0, code: "OTHER", label: "Khác",             icon: "⚡", category: "Thể dục & Khác",           backendSport: "RUN",  sortOrder: 10, active: true },
+  ];
+  const effectiveSportDefs = sportDefs.length > 0 ? sportDefs : FALLBACK_SPORT_DEFS;
+  const currentDef = effectiveSportDefs.find((d) => d.code === sportCode) ?? { backendSport: "RUN", label: sportCode, icon: "⚡", category: "" };
+  const osrmProfile = currentDef.backendSport === "SWIM" ? null : (["BIKE", "MTB"].includes(sportCode) ? "bike" : "foot");
+  const displayDist = manualDistKm ? parseFloat(manualDistKm) * 1000 : osrmDist;
+
+  // Get GPS location
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setUserLat(pos.coords.latitude); setUserLon(pos.coords.longitude); },
+      () => {},
+      { timeout: 6000 }
+    );
+  }, []);
+
+  // Load AI suggestions when location or sport changes
+  useEffect(() => {
+    if (!userLat || !userLon) return;
+    setLoadingSugg(true);
+    const backendSport = currentDef.backendSport === "SWIM" ? "SWIM" : "RUN";
+    fetchRouteSuggestions(userLat, userLon, backendSport as "RUN" | "SWIM").then((res) => {
+      setSuggestions(res);
+      setLoadingSugg(false);
+    });
+  }, [userLat, userLon, sportCode]);
+
+  // Initialize map
+  useEffect(() => {
+    if (!mapRef.current) return;
+    let cancelled = false;
+    const center: [number, number] = userLon && userLat ? [userLon, userLat] : [106.6297, 10.8231];
+    import("maplibre-gl").then((ml) => {
+      if (cancelled || !mapRef.current) return;
+      mlRef.current = ml;
+      mapInstance.current?.remove();
+      const map = new ml.Map({
+        container: mapRef.current,
+        style: "https://tiles.openfreemap.org/styles/liberty",
+        center,
+        zoom: 14,
+      });
+      map.addControl(new ml.NavigationControl(), "top-right");
+      map.on("load", () => {
+        if (cancelled) return;
+        map.addSource("drawn-route", {
+          type: "geojson",
+          data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+        });
+        map.addLayer({
+          id: "drawn-route-casing",
+          type: "line", source: "drawn-route",
+          paint: { "line-color": "rgba(0,0,0,0.15)", "line-width": 8, "line-blur": 2 },
+        });
+        map.addLayer({
+          id: "drawn-route-line",
+          type: "line", source: "drawn-route",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-color": "#f97316", "line-width": 5, "line-opacity": 0.95 },
+        });
+        if (userLat && userLon) {
+          const dot = document.createElement("div");
+          dot.className = "gps-marker";
+          const d = document.createElement("div"); d.className = "gps-marker-dot";
+          const r = document.createElement("div"); r.className = "gps-marker-ring";
+          dot.appendChild(r); dot.appendChild(d);
+          new ml.Marker({ element: dot, anchor: "center" }).setLngLat([userLon, userLat]).addTo(map);
+        }
+        setMapReady(true);
+      });
+      map.on("click", (e: { lngLat: { lat: number; lng: number } }) => {
+        if (cancelled) return;
+        setWaypoints((prev) => [...prev, [e.lngLat.lat, e.lngLat.lng]]);
+      });
+      mapInstance.current = map;
+    });
+    return () => {
+      cancelled = true;
+      mapInstance.current?.remove();
+      mapInstance.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update markers and route line when waypoints change
+  useEffect(() => {
+    if (!mapReady || !mapInstance.current || !mlRef.current) return;
+    const ml = mlRef.current;
+    const map = mapInstance.current;
+
+    // Rebuild waypoint markers
+    wptMarkersRef.current.forEach((m) => m.remove());
+    wptMarkersRef.current = [];
+    waypoints.forEach((wpt, i) => {
+      const el = document.createElement("div");
+      el.className = `rcm-wpt-marker${i === 0 ? " start" : i === waypoints.length - 1 ? " end" : ""}`;
+      el.textContent = String(i + 1);
+      wptMarkersRef.current.push(
+        new ml.Marker({ element: el, anchor: "center" }).setLngLat([wpt[1], wpt[0]]).addTo(map)
+      );
+    });
+
+    // Reverse geocode first waypoint → place name
+    if (waypoints.length === 1) {
+      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${waypoints[0][0]}&lon=${waypoints[0][1]}&format=json&accept-language=vi`)
+        .then((r) => r.json())
+        .then((d: { address?: { suburb?: string; quarter?: string; city_district?: string; city?: string } }) => {
+          const a = d.address ?? {};
+          setPlace(a.suburb ?? a.quarter ?? a.city_district ?? a.city ?? "");
+        })
+        .catch(() => {});
+    }
+
+    // Straight line when < 2 points or swimming
+    if (waypoints.length < 2) {
+      setOsrmDist(0);
+      setRouteCoords([]);
+      const src = map.getSource("drawn-route");
+      if (src) src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} });
+      return;
+    }
+    if (!osrmProfile) {
+      // Straight-line distance for swimming
+      let total = 0;
+      for (let i = 1; i < waypoints.length; i++) {
+        const R = 6371000;
+        const φ1 = waypoints[i-1][0]*Math.PI/180, φ2 = waypoints[i][0]*Math.PI/180;
+        const dφ = (waypoints[i][0]-waypoints[i-1][0])*Math.PI/180;
+        const dλ = (waypoints[i][1]-waypoints[i-1][1])*Math.PI/180;
+        total += R*2*Math.atan2(Math.sqrt(Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2), Math.sqrt(1-(Math.sin(dφ/2)**2+Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2)));
+      }
+      const coords = waypoints.map((w) => [w[1], w[0]]);
+      setRouteCoords(coords);
+      setOsrmDist(total);
+      const src = map.getSource("drawn-route");
+      if (src) src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} });
+      return;
+    }
+
+    // OSRM road routing
+    setRouting(true);
+    const coordStr = waypoints.map((w) => `${w[1]},${w[0]}`).join(";");
+    Promise.race([
+      fetch(`https://router.project-osrm.org/route/v1/${osrmProfile}/${coordStr}?overview=full&geometries=geojson`),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000)),
+    ])
+      .then((r) => (r as Response).json())
+      .then((data: { code: string; routes?: { distance: number; geometry: { coordinates: number[][] } }[] }) => {
+        if (data.code === "Ok" && data.routes?.[0]) {
+          const geom = data.routes[0].geometry.coordinates;
+          const dist = data.routes[0].distance;
+          setRouteCoords(geom);
+          setOsrmDist(dist);
+          const src = map.getSource("drawn-route");
+          if (src) src.setData({ type: "Feature", geometry: { type: "LineString", coordinates: geom }, properties: {} });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRouting(false));
+  }, [waypoints, mapReady, osrmProfile]);
+
+  // Search Nominatim
+  async function doSearch() {
+    if (!searchInput.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchInput)}&format=json&limit=5&accept-language=vi&countrycodes=vn`);
+      const data = await res.json() as { display_name: string; lat: string; lon: string }[];
+      setSearchResults(data);
+      setSearchOpen(data.length > 0);
+    } catch { /* ignore */ }
+    finally { setSearching(false); }
+  }
+
+  function selectResult(r: { display_name: string; lat: string; lon: string }) {
+    const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+    mapInstance.current?.flyTo({ center: [lon, lat], zoom: 16 });
+    setWaypoints((prev) => [...prev, [lat, lon]]);
+    setSearchInput(""); setSearchResults([]); setSearchOpen(false);
+  }
+
+  function applySuggestion(s: RouteSuggestion) {
+    setName(s.name);
+    setPlace(s.place);
+    setManualDistKm(String((s.distanceMeters / 1000).toFixed(1)));
+    setNote(s.note);
+    // Fly to the suggested location
+    if (userLat && userLon) {
+      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(s.place + ", Vietnam")}&format=json&limit=1`)
+        .then((r) => r.json())
+        .then((data: { lat: string; lon: string }[]) => {
+          if (data[0]) mapInstance.current?.flyTo({ center: [parseFloat(data[0].lon), parseFloat(data[0].lat)], zoom: 15 });
+        })
+        .catch(() => {});
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) { setError("Vui lòng nhập tên lộ trình."); return; }
+    const distM = Math.round(displayDist);
+    if (distM <= 0) { setError("Hãy vẽ lộ trình trên bản đồ hoặc nhập khoảng cách thủ công."); return; }
+    const geoJsonPayload = routeCoords.length >= 2
+      ? JSON.stringify({ type: "LineString", coordinates: routeCoords })
+      : null;
+    setCreating(true); setError("");
+    try {
+      const route = await apiStrict<RouteItem>("/activities/routes", token, {
+        method: "POST",
+        body: JSON.stringify({
+          name: name.trim(),
+          sportType: currentDef.backendSport,
+          place: place.trim(),
+          distanceMeters: distM,
+          note: note.trim(),
+          geoJson: geoJsonPayload,
+        }),
+      });
+      onDone(route);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tạo lộ trình.");
+    } finally { setCreating(false); }
+  }
+
+  const distLabel = displayDist > 0
+    ? (displayDist >= 1000 ? `${(displayDist / 1000).toFixed(2)} km` : `${Math.round(displayDist)} m`)
+    : null;
+
+  return (
+    <div className="modal-backdrop rcm-backdrop" role="dialog" aria-modal="true">
+      <section className="modal-card rcm-card">
+        {/* Search bar (above map) */}
+        <div className="rcm-search-wrap">
+          <div className="rcm-search-inner">
+            <Search size={14} />
+            <input
+              placeholder="Tìm địa điểm"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && doSearch()}
+            />
+            <button type="button" className="rcm-search-btn" onClick={doSearch} disabled={searching}>
+              {searching ? "…" : "Tìm"}
+            </button>
+          </div>
+          {searchOpen && searchResults.length > 0 && (
+            <div className="rcm-search-results">
+              {searchResults.map((r, i) => (
+                <div key={i} className="rcm-search-result-item" onClick={() => selectResult(r)}>
+                  <Map size={12} style={{ flexShrink: 0, color: "var(--muted)" }} />
+                  <span>{r.display_name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Map */}
+        <div className="rcm-map-container">
+          <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
+          {/* Map overlay status */}
+          <div className="rcm-map-status">
+            {waypoints.length === 0
+              ? "👆 Click trên bản đồ để thêm điểm, hoặc tìm địa điểm ở trên"
+              : routing
+                ? `${waypoints.length} điểm · ⏳ Đang tính theo đường đi thực tế…`
+                : distLabel
+                  ? `${waypoints.length} điểm · 📏 ${distLabel}${osrmProfile ? " (theo đường đi)" : " (đường thẳng)"}`
+                  : `${waypoints.length} điểm`}
+          </div>
+          {/* Map controls */}
+          <div className="rcm-map-controls">
+            <button
+              type="button"
+              className="rcm-map-ctrl-btn rcm-close-btn"
+              onClick={onClose}
+              title="Quay lại"
+            >
+              ← Quay lại
+            </button>
+            {waypoints.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="rcm-map-ctrl-btn"
+                  onClick={() => setWaypoints((p) => p.slice(0, -1))}
+                  title="Xóa điểm cuối"
+                >
+                  ↩ Xóa điểm cuối
+                </button>
+                <button
+                  type="button"
+                  className="rcm-map-ctrl-btn danger"
+                  onClick={() => { setWaypoints([]); setOsrmDist(0); setRouteCoords([]); }}
+                  title="Xóa tất cả"
+                >
+                  ✕ Xóa tất cả
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Scrollable form + suggestions */}
+        <div className="rcm-body">
+          <form onSubmit={handleSubmit} className="rcm-form">
+            <div className="rcm-row">
+              <div className="rcm-field" style={{ flex: "2 1 0" }}>
+                <label>Tên lộ trình *</label>
+                <input
+                  placeholder="VD: Chạy sáng Công viên Gia Định"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="rcm-field">
+                <label>Môn thể thao</label>
+                <select value={sportCode} onChange={(e) => setSportCode(e.target.value)}>
+                  {effectiveSportDefs.map((d) => (
+                    <option key={d.code} value={d.code}>{d.icon} {d.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="rcm-row">
+              <div className="rcm-field">
+                <label>Địa điểm (tự điền từ điểm đầu)</label>
+                <input
+                  placeholder="VD: Công viên Gia Định, Gò Vấp"
+                  value={place}
+                  onChange={(e) => setPlace(e.target.value)}
+                />
+              </div>
+              <div className="rcm-field">
+                <label>Khoảng cách (ghi đè)</label>
+                <div className="rcm-distance-input">
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    placeholder={distLabel ?? "Tự tính từ bản đồ"}
+                    value={manualDistKm}
+                    onChange={(e) => setManualDistKm(e.target.value)}
+                  />
+                  <span>km</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rcm-field">
+              <label>Ghi chú</label>
+              <input
+                placeholder="Mô tả ngắn về lộ trình này…"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </div>
+
+            {error && <p className="rcm-error">{error}</p>}
+
+            <button type="submit" className="orange-button" disabled={creating} style={{ width: "100%" }}>
+              {creating ? "Đang lưu…" : `Lưu lộ trình${distLabel ? ` · ${distLabel}` : ""}`}
+            </button>
+          </form>
+
+          {/* AI Suggestions */}
+          <div className="rcm-suggestions">
+            <div className="rcm-suggestions-header">
+              <Sparkles size={15} />
+              <span>Gợi ý lộ trình</span>
+            </div>
+            {!userLat && <p className="rcm-hint">Đang lấy vị trí GPS…</p>}
+            {userLat && loadingSugg && <p className="rcm-hint">Đang tìm địa điểm gần bạn…</p>}
+            {userLat && !loadingSugg && suggestions.length === 0 && <p className="rcm-hint">Không tìm thấy địa điểm phù hợp.</p>}
+            <div className="rcm-suggestion-list">
+              {suggestions.map((s, i) => (
+                <div key={i} className="rcm-suggestion-card">
+                  <div className="rcm-suggestion-thumb" style={{ backgroundImage: `url(${s.thumbnailUrl})` }} />
+                  <div className="rcm-suggestion-info">
+                    <div>
+                      <strong>{s.name}</strong>
+                      <span>{s.place} · {s.distanceMeters >= 1000 ? `${(s.distanceMeters / 1000).toFixed(1)} km` : `${s.distanceMeters} m`}</span>
+                      <small>{s.note}</small>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="outline-button"
+                    style={{ fontSize: "0.78rem", padding: "4px 10px", whiteSpace: "nowrap" }}
+                    onClick={() => applySuggestion(s)}
+                  >
+                    Dùng →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function TrainingPage({
-  profile, stats, trainingPlan, setTrainingPlan, notify, token, userId, onSaveActivity,
+  profile, stats, trainingPlan, setTrainingPlan, notify, token, userId, onSaveActivity, routes, onRouteCreated, sportDefs,
 }: {
   profile: AthleteProfile;
   stats: Stats;
@@ -1166,8 +1738,11 @@ function TrainingPage({
   token: string;
   userId: number;
   onSaveActivity: (payload: Omit<FitnessActivity, "id" | "startedAt"> & { gpsRouteJson?: string; averagePaceSecondsPerKm?: number }) => Promise<void>;
+  routes: RouteItem[];
+  onRouteCreated: () => void;
+  sportDefs: SportDef[];
 }) {
-  const [activityMode, setActivityMode] = useState<ActivityMode>("RUN");
+  const [activityMode, setActivityMode] = useState<string>("RUN");
   const [recordState, setRecordState] = useState<RecordingState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [gpsPoints, setGpsPoints] = useState<GpsPoint[]>([]);
@@ -1175,6 +1750,7 @@ function TrainingPage({
   const [userLocation, setUserLocation] = useState<[number, number]>([106.6297, 10.8231]);
   const [saving, setSaving] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState("");
+  const [showCreateRoute, setShowCreateRoute] = useState(false);
   const [showCustomPlan, setShowCustomPlan] = useState(false);
   const [cpDays, setCpDays] = useState(4);
   const [cpSport, setCpSport] = useState<"RUN" | "SWIM" | "BOTH">("RUN");
@@ -1197,14 +1773,15 @@ function TrainingPage({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showModePicker]);
 
-  function modeToSport(m: ActivityMode): Sport {
-    return m === "SWIM" ? "SWIM" : "RUN";
+  function modeToSport(m: string): Sport {
+    const def = sportDefs.find((d) => d.code === m);
+    return (def?.backendSport === "SWIM" ? "SWIM" : "RUN") as Sport;
   }
 
-  type SportEntry = { mode: ActivityMode; label: string; icon: ReactNode };
+  type SportEntry = { mode: string; label: string; icon: ReactNode };
   type SportCategory = { label: string; sports: SportEntry[] };
 
-  const SPORT_CATEGORIES: SportCategory[] = [
+  const STATIC_SPORT_CATEGORIES: SportCategory[] = [
     {
       label: "Môn thể thao dùng chân",
       sports: [
@@ -1237,6 +1814,26 @@ function TrainingPage({
     },
   ];
 
+  const iconForCode = (code: string): ReactNode => {
+    const map: Record<string, ReactNode> = {
+      RUN: <Flame size={18} />, TRAIL: <TrendingUp size={18} />, WALK: <Footprints size={18} />,
+      HIKE: <Mountain size={18} />, BIKE: <Bike size={18} />, MTB: <Bike size={18} />,
+      SWIM: <Waves size={18} />, GYM: <Dumbbell size={18} />, YOGA: <Activity size={18} />,
+      OTHER: <Zap size={18} />,
+    };
+    return map[code] ?? <Zap size={18} />;
+  };
+
+  const SPORT_CATEGORIES: SportCategory[] = sportDefs.length > 0
+    ? Object.values(
+        sportDefs.reduce<Record<string, SportCategory>>((acc, d) => {
+          if (!acc[d.category]) acc[d.category] = { label: d.category, sports: [] };
+          acc[d.category].sports.push({ mode: d.code, label: d.label, icon: iconForCode(d.code) });
+          return acc;
+        }, {})
+      )
+    : STATIC_SPORT_CATEGORIES;
+
   const ALL_SPORTS: SportEntry[] = SPORT_CATEGORIES.flatMap((c) => c.sports);
 
   const currentSport = ALL_SPORTS.find((s) => s.mode === activityMode) ?? ALL_SPORTS[0];
@@ -1244,8 +1841,6 @@ function TrainingPage({
   const filteredCategories = modeSearch.trim()
     ? [{ label: "Kết quả tìm kiếm", sports: ALL_SPORTS.filter((s) => s.label.toLowerCase().includes(modeSearch.toLowerCase())) }]
     : SPORT_CATEGORIES;
-
-  const PRESET_ROUTES = ["Công viên Gia Định", "Bờ sông Sài Gòn", "Hồ Tây", "Công viên Thống Nhất", "Đường ven biển", "Vòng quanh phố"];
 
   function createCustomPlan() {
     const sportLabels: Record<typeof cpSport, string> = { RUN: "Chạy", SWIM: "Bơi", BOTH: "Đa môn" };
@@ -1274,6 +1869,12 @@ function TrainingPage({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<{ remove: () => void; getSource: (id: string) => { setData: (d: unknown) => void } | undefined; addSource: (id: string, d: unknown) => void; addLayer: (d: unknown) => void; flyTo: (opts: unknown) => void; on: (evt: string, cb: () => void) => void } | null>(null);
+  const currentMarkerRef = useRef<{ setLngLat: (lngLat: [number, number]) => void; remove: () => void } | null>(null);
+  const latestLocationRef = useRef<[number, number]>(userLocation);
+
+  useEffect(() => {
+    latestLocationRef.current = userLocation;
+  }, [userLocation]);
 
   const distanceM = calcGpsDistance(gpsPoints);
   const distKm = distanceM / 1000;
@@ -1288,15 +1889,60 @@ function TrainingPage({
     import("maplibre-gl").then((ml) => {
       if (cancelled || !mapRef.current) return;
       mapInstanceRef.current?.remove();
+      currentMarkerRef.current?.remove();
+      currentMarkerRef.current = null;
       const map = new ml.Map({
         container: mapRef.current,
         style: "https://tiles.openfreemap.org/styles/liberty",
-        center: userLocation,
+        center: latestLocationRef.current,
         zoom: 14,
       }) as typeof mapInstanceRef.current;
       map!.on("load", () => {
-        map!.addSource("route", { type: "geojson", data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} } });
-        map!.addLayer({ id: "route-line", type: "line", source: "route", layout: { "line-join": "round", "line-cap": "round" }, paint: { "line-color": "var(--orange, #f97316)", "line-width": 4 } });
+        map!.addSource("route", {
+          type: "geojson",
+          lineMetrics: true,
+          data: { type: "Feature", geometry: { type: "LineString", coordinates: [] }, properties: {} },
+        });
+        map!.addLayer({
+          id: "route-casing",
+          type: "line",
+          source: "route",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: { "line-color": "rgba(10, 20, 40, 0.12)", "line-width": 8, "line-blur": 0.5 },
+        });
+        map!.addLayer({
+          id: "route-line",
+          type: "line",
+          source: "route",
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-width": 5,
+            "line-opacity": 0.96,
+            "line-gradient": [
+              "interpolate",
+              ["linear"],
+              ["line-progress"],
+              0,
+              "#60a5fa",
+              0.45,
+              "#34d399",
+              1,
+              "#f97316",
+            ],
+          },
+        });
+
+        const markerEl = document.createElement("div");
+        markerEl.className = "gps-marker";
+        const markerDot = document.createElement("div");
+        markerDot.className = "gps-marker-dot";
+        const markerRing = document.createElement("div");
+        markerRing.className = "gps-marker-ring";
+        markerEl.appendChild(markerRing);
+        markerEl.appendChild(markerDot);
+        currentMarkerRef.current = new ml.Marker({ element: markerEl, anchor: "center" })
+          .setLngLat(latestLocationRef.current)
+          .addTo(map!);
       });
       mapInstanceRef.current = map;
     });
@@ -1304,6 +1950,8 @@ function TrainingPage({
       cancelled = true;
       mapInstanceRef.current?.remove();
       mapInstanceRef.current = null;
+      currentMarkerRef.current?.remove();
+      currentMarkerRef.current = null;
     };
   }, []);
 
@@ -1317,9 +1965,15 @@ function TrainingPage({
     }
     if (gpsPoints.length > 0) {
       const last = gpsPoints[gpsPoints.length - 1];
+      currentMarkerRef.current?.setLngLat([last.lng, last.lat]);
+    } else {
+      currentMarkerRef.current?.setLngLat(userLocation);
+    }
+    if (gpsPoints.length > 0) {
+      const last = gpsPoints[gpsPoints.length - 1];
       map.flyTo({ center: [last.lng, last.lat], zoom: 15 });
     }
-  }, [gpsPoints]);
+  }, [gpsPoints, userLocation]);
 
   function startRecording() {
     if (!navigator.geolocation) { setGpsError("Trình duyệt không hỗ trợ GPS."); return; }
@@ -1327,8 +1981,19 @@ function TrainingPage({
     setElapsed(0);
     setGpsError("");
     setRecordState("recording");
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const currentPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() };
+      setUserLocation([currentPoint.lng, currentPoint.lat]);
+      setGpsPoints([currentPoint]);
+      currentMarkerRef.current?.setLngLat([currentPoint.lng, currentPoint.lat]);
+    });
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => setGpsPoints((prev) => [...prev, { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() }]),
+      (pos) => setGpsPoints((prev) => {
+        const nextPoint = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() };
+        setUserLocation([nextPoint.lng, nextPoint.lat]);
+        currentMarkerRef.current?.setLngLat([nextPoint.lng, nextPoint.lat]);
+        return [...prev, nextPoint];
+      }),
       () => setGpsError("Không thể lấy vị trí GPS. Kiểm tra quyền truy cập."),
       { enableHighAccuracy: true, maximumAge: 2000 }
     );
@@ -1360,13 +2025,14 @@ function TrainingPage({
     setSaving(true);
     const durationMins = Math.max(1, Math.round(elapsed / 60));
     const backendSport = modeToSport(activityMode);
-    const isSwim = activityMode === "SWIM";
-    const modeLabels: Record<ActivityMode, string> = { RUN: "Chạy bộ", TRAIL: "Chạy địa hình", WALK: "Đi bộ", HIKE: "Đi bộ đường dài", BIKE: "Đạp xe", MTB: "Đạp xe địa hình", SWIM: "Bơi", GYM: "Tập gym", YOGA: "Yoga", OTHER: "Tập luyện" };
+    const isSwim = backendSport === "SWIM";
+    const modeLabels: Record<string, string> = { RUN: "Chạy bộ", TRAIL: "Chạy địa hình", WALK: "Đi bộ", HIKE: "Đi bộ đường dài", BIKE: "Đạp xe", MTB: "Đạp xe địa hình", SWIM: "Bơi", GYM: "Tập gym", YOGA: "Yoga", OTHER: "Tập luyện" };
+    const modeLabel = ALL_SPORTS.find((s) => s.mode === activityMode)?.label ?? modeLabels[activityMode] ?? activityMode;
     await onSaveActivity({
       userId,
       athleteName: profile.displayName,
       sportType: backendSport,
-      title: isSwim ? `Bơi ${Math.round(distanceM)} m` : `${modeLabels[activityMode]} ${distKm.toFixed(2)} km`,
+      title: isSwim ? `Bơi ${Math.round(distanceM)} m` : `${modeLabel} ${distKm.toFixed(2)} km`,
       description: `GPS ghi tự động. ${gpsPoints.length} điểm.`,
       durationMinutes: durationMins,
       distanceMeters: distanceM,
@@ -1417,7 +2083,7 @@ function TrainingPage({
     return `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, "0")}`;
   };
 
-  const isSwimMode = activityMode === "SWIM";
+  const isSwimMode = modeToSport(activityMode) === "SWIM";
 
   return (
     <div className="training-record-page">
@@ -1475,23 +2141,61 @@ function TrainingPage({
             <p style={{ margin: "0 0 6px", fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
               Lộ trình
             </p>
-            <div style={{ display: "flex", gap: 6 }}>
-              <select
-                value={selectedRoute}
-                onChange={(e) => setSelectedRoute(e.target.value)}
-                style={{ flex: 1, height: 34, fontSize: "0.85rem" }}
-                disabled={recordState !== "idle"}
-              >
-                <option value="">-- Chọn lộ trình --</option>
-                {PRESET_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            {selectedRoute && (
-              <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "var(--orange)" }}>
-                <Route size={12} style={{ verticalAlign: "middle", marginRight: 3 }} />{selectedRoute}
-              </p>
-            )}
+            {(() => {
+              const sportRoutes = routes.filter((r) => r.sportType === modeToSport(activityMode));
+              return (
+                <>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <select
+                      value={selectedRoute}
+                      onChange={(e) => setSelectedRoute(e.target.value)}
+                      style={{ flex: 1, height: 34, fontSize: "0.85rem" }}
+                      disabled={recordState !== "idle"}
+                    >
+                      <option value="">-- Chọn lộ trình --</option>
+                      {sportRoutes.map((r) => (
+                        <option key={r.id} value={r.name}>
+                          {r.name} · {r.sportType === "SWIM" ? `${r.distanceMeters}m` : `${(r.distanceMeters / 1000).toFixed(1)}km`}
+                        </option>
+                      ))}
+                    </select>
+                    {recordState === "idle" && (
+                      <button
+                        type="button"
+                        className="training-add-route-btn"
+                        title="Tạo lộ trình mới"
+                        onClick={() => setShowCreateRoute(true)}
+                      >
+                        <CirclePlus size={18} />
+                      </button>
+                    )}
+                  </div>
+                  {selectedRoute && (
+                    <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "var(--orange)" }}>
+                      <Route size={12} style={{ verticalAlign: "middle", marginRight: 3 }} />{selectedRoute}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
+
+          {/* Route Create Modal */}
+          {showCreateRoute && (
+            <RouteCreateModal
+              token={token}
+              userId={userId}
+              initialSportCode={activityMode}
+              sportDefs={sportDefs}
+              onDone={(newRoute) => {
+                setShowCreateRoute(false);
+                setSelectedRoute(newRoute.name);
+                onRouteCreated();
+                notify(`Đã tạo lộ trình "${newRoute.name}"!`);
+              }}
+              onClose={() => setShowCreateRoute(false)}
+            />
+          )}
 
           <div className="record-stats">
             <div className="record-stat">
@@ -1686,35 +2390,75 @@ function MapLibreMap({ center, zoom }: { center: [number, number]; zoom: number 
   return <div ref={mapRef} style={{ width: "100%", height: "350px", borderRadius: "12px" }} />;
 }
 
-function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
+function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity, token, userId, onRouteCreated, sportDefs }: {
   routes: RouteItem[];
   savedRoutes: number[];
   onToggleRoute: (routeId: number) => void;
   onAddActivity: () => void;
+  token: string;
+  userId: number;
+  onRouteCreated: () => void;
+  sportDefs: SportDef[];
 }) {
   const [query, setQuery] = useState("");
   const [sportFilter, setSportFilter] = useState<"ALL" | Sport>("ALL");
   const [selectedRoute, setSelectedRoute] = useState<RouteItem | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [userLocation, setUserLocation] = useState<[number, number]>([106.6297, 10.8231]);
+  const [showCreateRoute, setShowCreateRoute] = useState(false);
+  const [userLocation] = useState<[number, number]>([106.6297, 10.8231]);
+  const [routeCoords, setRouteCoords] = useState<Record<number, [number, number]>>({});
+  const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<{ remove: () => void; flyTo: (o: unknown) => void } | null>(null);
+  const mapInstanceRef = useRef<{
+    remove: () => void;
+    flyTo: (o: unknown) => void;
+    addControl: (ctrl: unknown, pos?: string) => void;
+    on: (evt: string, cb: () => void) => void;
+  } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mlRef = useRef<any>(null);
+  const markersRef = useRef<{ remove: () => void }[]>([]);
 
-  const filtered = routes.filter((r) => {
-    const matchesQuery = `${r.name} ${r.place} ${r.sportType}`.toLowerCase().includes(query.toLowerCase());
-    const matchesSport = sportFilter === "ALL" || r.sportType === sportFilter;
-    return matchesQuery && matchesSport;
-  });
+  const filtered = useMemo(
+    () =>
+      routes.filter((r) => {
+        const q = `${r.name} ${r.place} ${r.sportType}`.toLowerCase();
+        return q.includes(query.toLowerCase()) && (sportFilter === "ALL" || r.sportType === sportFilter);
+      }),
+    [routes, query, sportFilter]
+  );
 
+  // Geocode place names to coordinates via Nominatim (free, no key)
+  useEffect(() => {
+    if (routes.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const coords: Record<number, [number, number]> = {};
+      for (let i = 0; i < routes.length; i++) {
+        if (cancelled) break;
+        const r = routes[i];
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(r.place + ", Vietnam")}&format=json&limit=1`,
+            { headers: { "Accept-Language": "vi" } }
+          );
+          const data = (await res.json()) as { lon: string; lat: string }[];
+          if (data.length > 0) coords[r.id] = [parseFloat(data[0].lon), parseFloat(data[0].lat)];
+        } catch {}
+        if (i < routes.length - 1) await new Promise<void>((resolve) => setTimeout(resolve, 280));
+      }
+      if (!cancelled) setRouteCoords((prev) => ({ ...prev, ...coords }));
+    })();
+    return () => { cancelled = true; };
+  }, [routes]);
+
+  // Init map
   useEffect(() => {
     if (!mapRef.current) return;
     let cancelled = false;
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => setUserLocation([pos.coords.longitude, pos.coords.latitude]),
-      () => {}
-    );
     import("maplibre-gl").then((ml) => {
       if (cancelled || !mapRef.current) return;
+      mlRef.current = ml;
       mapInstanceRef.current?.remove();
       const map = new ml.Map({
         container: mapRef.current,
@@ -1722,18 +2466,64 @@ function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
         center: userLocation,
         zoom: 13,
       });
-      mapInstanceRef.current = map as typeof mapInstanceRef.current;
+      map.addControl(new ml.NavigationControl(), "top-right");
+      map.addControl(
+        new ml.GeolocateControl({
+          positionOptions: { enableHighAccuracy: true },
+          trackUserLocation: false,
+          showUserLocation: true,
+        }),
+        "top-right"
+      );
+      map.on("load", () => { if (!cancelled) setMapReady(true); });
+      mapInstanceRef.current = map as unknown as typeof mapInstanceRef.current;
     });
     return () => {
       cancelled = true;
+      setMapReady(false);
       mapInstanceRef.current?.remove();
       mapInstanceRef.current = null;
+      mlRef.current = null;
     };
   }, []);
 
+  // Sync route markers whenever map, coords, or visible routes change
+  useEffect(() => {
+    if (!mapReady || !mlRef.current || !mapInstanceRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ml = mlRef.current as any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const map = mapInstanceRef.current as any;
+
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = [];
+
+    filtered.forEach((route) => {
+      const coords = routeCoords[route.id];
+      if (!coords) return;
+
+      const el = document.createElement("div");
+      const isSelected = selectedRoute?.id === route.id;
+      el.className = `route-map-marker ${route.sportType === "RUN" ? "run" : "swim"}${isSelected ? " selected" : ""}`;
+      el.innerHTML = route.sportType === "RUN" ? "🏃" : "🏊";
+      el.title = `${route.name} — ${route.place}`;
+      el.addEventListener("click", () => {
+        setSelectedRoute(route);
+        setPanelOpen(true);
+        map.flyTo({ center: coords, zoom: 15, duration: 800 });
+      });
+
+      const m = new ml.Marker({ element: el, anchor: "center" }).setLngLat(coords).addTo(map);
+      markersRef.current.push({ remove: () => m.remove() });
+    });
+  }, [mapReady, routeCoords, filtered, selectedRoute?.id]);
+
   function focusRoute(route: RouteItem) {
     setSelectedRoute(route);
-    mapInstanceRef.current?.flyTo({ center: userLocation, zoom: 14 });
+    const coords = routeCoords[route.id];
+    if (coords && mapReady) {
+      mapInstanceRef.current?.flyTo({ center: coords, zoom: 15 });
+    }
   }
 
   return (
@@ -1763,12 +2553,29 @@ function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
           </select>
         </div>
         <div className="maps-toolbar-actions">
+          <button className="outline-button" onClick={() => setShowCreateRoute(true)}><CirclePlus size={15} /> Tạo lộ trình</button>
           <button className="orange-button" onClick={onAddActivity}><Route size={15} /> Ghi hoạt động</button>
           <button className={`outline-button${panelOpen ? " active" : ""}`} onClick={() => setPanelOpen(!panelOpen)}>
-            Lộ trình của tôi {panelOpen ? "←" : "→"}
+            Tuyến đường {panelOpen ? "←" : "→"}
           </button>
         </div>
       </div>
+
+      {/* Route Create Modal */}
+      {showCreateRoute && (
+        <RouteCreateModal
+          token={token}
+          userId={userId}
+          initialSportCode={sportFilter === "SWIM" ? "SWIM" : "RUN"}
+          sportDefs={sportDefs}
+          onDone={(newRoute) => {
+            setShowCreateRoute(false);
+            onRouteCreated();
+            setSelectedRoute(newRoute);
+          }}
+          onClose={() => setShowCreateRoute(false)}
+        />
+      )}
 
       {/* Selected route detail overlay */}
       {selectedRoute && (
@@ -1800,7 +2607,10 @@ function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
             {filtered.length === 0 ? (
               <div className="empty-log" style={{ padding: "24px 0" }}>
                 <Route size={36} />
-                <p>Không tìm thấy tuyến nào.</p>
+                <p>{routes.length === 0 ? "Chưa có lộ trình nào." : "Không tìm thấy tuyến phù hợp."}</p>
+                <button className="orange-button" style={{ marginTop: 8 }} onClick={() => setShowCreateRoute(true)}>
+                  <CirclePlus size={14} /> Tạo lộ trình đầu tiên
+                </button>
               </div>
             ) : (
               filtered.map((route) => (
@@ -1810,18 +2620,41 @@ function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity }: {
                   onClick={() => focusRoute(route)}
                 >
                   <div className="maps-route-item-info">
-                    <SportPill sport={route.sportType} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                      <SportPill sport={route.sportType} />
+                      {route.createdBy === userId && (
+                        <span style={{ fontSize: "0.68rem", background: "var(--orange)", color: "#fff", borderRadius: 4, padding: "1px 5px" }}>Của tôi</span>
+                      )}
+                    </div>
                     <strong>{route.name}</strong>
                     <span>{route.place}</span>
                     <span className="maps-route-distance">{formatRouteDistance(route)}</span>
                   </div>
-                  <button
-                    className={savedRoutes.includes(route.id) ? "outline-button" : "orange-button"}
-                    style={{ fontSize: "0.78rem", padding: "4px 10px", minHeight: "28px" }}
-                    onClick={(e) => { e.stopPropagation(); onToggleRoute(route.id); }}
-                  >
-                    {savedRoutes.includes(route.id) ? "Đã lưu" : "Lưu"}
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                    <button
+                      className={savedRoutes.includes(route.id) ? "outline-button" : "orange-button"}
+                      style={{ fontSize: "0.78rem", padding: "4px 10px", minHeight: "28px" }}
+                      onClick={(e) => { e.stopPropagation(); onToggleRoute(route.id); }}
+                    >
+                      {savedRoutes.includes(route.id) ? "Đã lưu" : "Lưu"}
+                    </button>
+                    {route.createdBy === userId && (
+                      <button
+                        className="icon-button"
+                        style={{ color: "#dc2626", fontSize: "0.72rem" }}
+                        title="Xóa lộ trình"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Xóa lộ trình "${route.name}"?`)) return;
+                          await api<null>(`/activities/routes/${route.id}/mine`, token, null, { method: "DELETE" });
+                          if (selectedRoute?.id === route.id) setSelectedRoute(null);
+                          onRouteCreated();
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
