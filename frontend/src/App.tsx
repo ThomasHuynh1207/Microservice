@@ -3,6 +3,7 @@ import {
   Award,
   BarChart2,
   Bell,
+  Bike,
   Bot,
   CalendarDays,
   CheckCircle2,
@@ -10,12 +11,15 @@ import {
   CirclePlus,
   CreditCard,
   Droplets,
+  Dumbbell,
   Flame,
+  Footprints,
   Heart,
   LogOut,
   Map,
   Medal,
   MessageCircle,
+  Mountain,
   Route,
   Salad,
   Search,
@@ -33,6 +37,7 @@ import {
   Watch,
   Waves,
   X,
+  Zap,
 } from "lucide-react";
 import {
   BarChart,
@@ -50,6 +55,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Page = "dashboard" | "training" | "maps" | "nutrition" | "community" | "ai";
 type Sport = "RUN" | "SWIM";
+type ActivityMode = "RUN" | "TRAIL" | "WALK" | "HIKE" | "BIKE" | "MTB" | "SWIM" | "GYM" | "YOGA" | "OTHER";
 type ChallengeSport = Sport | "MIXED";
 
 type Session = {
@@ -550,7 +556,7 @@ export default function App() {
         onLogout={logout}
       />
 
-      <section className={`strava-main${page === "maps" ? " maps-fullscreen" : ""}`}>
+      <section className={`strava-main${page === "maps" ? " maps-fullscreen" : ""}${page === "training" ? " training-page" : ""}`}>
         {page === "dashboard" && (
           <DashboardPage
             profile={profile}
@@ -1030,13 +1036,108 @@ function TrainingPage({
   userId: number;
   onSaveActivity: (payload: Omit<FitnessActivity, "id" | "startedAt"> & { gpsRouteJson?: string; averagePaceSecondsPerKm?: number }) => Promise<void>;
 }) {
-  const [sport, setSport] = useState<Sport>("RUN");
+  const [activityMode, setActivityMode] = useState<ActivityMode>("RUN");
   const [recordState, setRecordState] = useState<RecordingState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [gpsPoints, setGpsPoints] = useState<GpsPoint[]>([]);
   const [gpsError, setGpsError] = useState("");
   const [userLocation, setUserLocation] = useState<[number, number]>([106.6297, 10.8231]);
   const [saving, setSaving] = useState(false);
+  const [selectedRoute, setSelectedRoute] = useState("");
+  const [showCustomPlan, setShowCustomPlan] = useState(false);
+  const [cpDays, setCpDays] = useState(4);
+  const [cpSport, setCpSport] = useState<"RUN" | "SWIM" | "BOTH">("RUN");
+  const [cpDuration, setCpDuration] = useState(45);
+  const [cpGoal, setCpGoal] = useState<"endurance" | "speed" | "fat">("endurance");
+
+  const [showModePicker, setShowModePicker] = useState(false);
+  const [modeSearch, setModeSearch] = useState("");
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showModePicker) return;
+    function handleClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowModePicker(false);
+        setModeSearch("");
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showModePicker]);
+
+  function modeToSport(m: ActivityMode): Sport {
+    return m === "SWIM" ? "SWIM" : "RUN";
+  }
+
+  type SportEntry = { mode: ActivityMode; label: string; icon: ReactNode };
+  type SportCategory = { label: string; sports: SportEntry[] };
+
+  const SPORT_CATEGORIES: SportCategory[] = [
+    {
+      label: "Môn thể thao dùng chân",
+      sports: [
+        { mode: "RUN",   label: "Chạy bộ",           icon: <Flame      size={18} /> },
+        { mode: "TRAIL", label: "Chạy địa hình",      icon: <TrendingUp size={18} /> },
+        { mode: "WALK",  label: "Đi bộ",              icon: <Footprints size={18} /> },
+        { mode: "HIKE",  label: "Đi bộ đường dài",    icon: <Mountain   size={18} /> },
+      ],
+    },
+    {
+      label: "Môn thể thao đạp xe",
+      sports: [
+        { mode: "BIKE",  label: "Xe đạp",             icon: <Bike size={18} /> },
+        { mode: "MTB",   label: "Xe đạp địa hình",    icon: <Bike size={18} /> },
+      ],
+    },
+    {
+      label: "Môn thể thao dưới nước",
+      sports: [
+        { mode: "SWIM",  label: "Bơi lội",            icon: <Waves size={18} /> },
+      ],
+    },
+    {
+      label: "Thể dục & Khác",
+      sports: [
+        { mode: "GYM",   label: "Gym",                icon: <Dumbbell size={18} /> },
+        { mode: "YOGA",  label: "Yoga",               icon: <Activity size={18} /> },
+        { mode: "OTHER", label: "Khác",               icon: <Zap     size={18} /> },
+      ],
+    },
+  ];
+
+  const ALL_SPORTS: SportEntry[] = SPORT_CATEGORIES.flatMap((c) => c.sports);
+
+  const currentSport = ALL_SPORTS.find((s) => s.mode === activityMode) ?? ALL_SPORTS[0];
+
+  const filteredCategories = modeSearch.trim()
+    ? [{ label: "Kết quả tìm kiếm", sports: ALL_SPORTS.filter((s) => s.label.toLowerCase().includes(modeSearch.toLowerCase())) }]
+    : SPORT_CATEGORIES;
+
+  const PRESET_ROUTES = ["Công viên Gia Định", "Bờ sông Sài Gòn", "Hồ Tây", "Công viên Thống Nhất", "Đường ven biển", "Vòng quanh phố"];
+
+  function createCustomPlan() {
+    const sportLabels: Record<typeof cpSport, string> = { RUN: "Chạy", SWIM: "Bơi", BOTH: "Đa môn" };
+    const goalLabels: Record<typeof cpGoal, string> = { endurance: "sức bền", speed: "tốc độ", fat: "giảm mỡ" };
+    const allDays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+    const picks = allDays.slice(0, cpDays);
+    const newPlan: TrainingDay[] = allDays.map((day, i) => {
+      const isRest = !picks.includes(day);
+      const dayMode = cpSport === "BOTH" ? (i % 2 === 0 ? "RUN" : "SWIM") : cpSport;
+      return {
+        id: `custom-${day}`,
+        day,
+        sport: isRest ? "REST" as const : dayMode as Sport,
+        title: isRest ? "Nghỉ ngơi" : `${sportLabels[cpSport]} ${goalLabels[cpGoal]}`,
+        detail: isRest ? "Phục hồi và nghỉ ngơi đầy đủ." : `${cpDuration} phút — ${goalLabels[cpGoal]}.`,
+        duration: isRest ? "Nghỉ" : `${cpDuration} phút`,
+        done: false,
+      };
+    });
+    setTrainingPlan(newPlan);
+    setShowCustomPlan(false);
+    notify("Đã tạo lịch tập tùy chỉnh!");
+  }
   const [coachNote, setCoachNote] = useState("Lịch hiện tại ưu tiên nền tảng sức bền: chạy dễ, bơi kỹ thuật và phục hồi đủ.");
   const watchIdRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1127,21 +1228,23 @@ function TrainingPage({
   async function saveAndReset() {
     setSaving(true);
     const durationMins = Math.max(1, Math.round(elapsed / 60));
-    const dist = sport === "RUN" ? distanceM : distanceM;
+    const backendSport = modeToSport(activityMode);
+    const isSwim = activityMode === "SWIM";
+    const modeLabels: Record<ActivityMode, string> = { RUN: "Chạy bộ", TRAIL: "Chạy địa hình", WALK: "Đi bộ", HIKE: "Đi bộ đường dài", BIKE: "Đạp xe", MTB: "Đạp xe địa hình", SWIM: "Bơi", GYM: "Tập gym", YOGA: "Yoga", OTHER: "Tập luyện" };
     await onSaveActivity({
       userId,
       athleteName: profile.displayName,
-      sportType: sport,
-      title: sport === "RUN" ? `Chạy ${distKm.toFixed(2)} km` : `Bơi ${Math.round(distanceM)} m`,
+      sportType: backendSport,
+      title: isSwim ? `Bơi ${Math.round(distanceM)} m` : `${modeLabels[activityMode]} ${distKm.toFixed(2)} km`,
       description: `GPS ghi tự động. ${gpsPoints.length} điểm.`,
       durationMinutes: durationMins,
-      distanceMeters: dist,
+      distanceMeters: distanceM,
       averageHeartRate: undefined,
-      calories: Math.round(durationMins * (sport === "RUN" ? 9.5 : 8)),
-      elevationGainMeters: sport === "RUN" ? undefined : undefined,
-      poolLengthMeters: sport === "SWIM" ? 50 : undefined,
+      calories: Math.round(durationMins * (isSwim ? 8 : 9.5)),
+      elevationGainMeters: undefined,
+      poolLengthMeters: isSwim ? 50 : undefined,
       strokes: undefined,
-      routeName: "GPS tự ghi",
+      routeName: selectedRoute || "GPS tự ghi",
       visibility: "PUBLIC",
       gpsRouteJson: gpsPoints.length > 0 ? JSON.stringify(gpsPoints) : undefined,
       averagePaceSecondsPerKm: paceSecPerKm || undefined,
@@ -1183,19 +1286,80 @@ function TrainingPage({
     return `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, "0")}`;
   };
 
+  const isSwimMode = activityMode === "SWIM";
+
   return (
     <div className="training-record-page">
       {/* ─── Two-column webapp layout ─── */}
       <div className="training-web-layout">
         {/* Left sidebar: controls */}
         <div className="training-web-sidebar">
-          <div className="record-sport-tabs">
-            <button className={sport === "RUN" ? "active" : ""} onClick={() => { if (recordState === "idle") setSport("RUN"); }}>
-              <Flame size={18} /> Chạy bộ
+          {/* Sport picker */}
+          <div className="sport-picker-wrap" ref={pickerRef}>
+            <button
+              className="sport-picker-trigger"
+              onClick={() => { if (recordState === "idle") { setShowModePicker(!showModePicker); setModeSearch(""); } }}
+              disabled={recordState !== "idle"}
+            >
+              <span className="sport-picker-icon">{currentSport.icon}</span>
+              <span className="sport-picker-label">{currentSport.label}</span>
+              <ChevronDown size={16} className={`sport-picker-caret${showModePicker ? " open" : ""}`} />
             </button>
-            <button className={sport === "SWIM" ? "active" : ""} onClick={() => { if (recordState === "idle") setSport("SWIM"); }}>
-              <Waves size={18} /> Bơi
-            </button>
+
+            {showModePicker && (
+              <div className="sport-picker-dropdown">
+                <div className="sport-picker-search">
+                  <Search size={15} />
+                  <input
+                    autoFocus
+                    placeholder="Tìm kiếm môn thể thao…"
+                    value={modeSearch}
+                    onChange={(e) => setModeSearch(e.target.value)}
+                  />
+                </div>
+                <div className="sport-picker-list">
+                  {filteredCategories.map((cat) => (
+                    <div key={cat.label}>
+                      <p className="sport-picker-category">{cat.label}</p>
+                      {cat.sports.map((s) => (
+                        <button
+                          key={s.mode}
+                          className={`sport-picker-item${activityMode === s.mode ? " active" : ""}`}
+                          onClick={() => { setActivityMode(s.mode); setShowModePicker(false); setModeSearch(""); }}
+                        >
+                          <span className="sport-picker-item-icon">{s.icon}</span>
+                          <span>{s.label}</span>
+                          {activityMode === s.mode && <CheckCircle2 size={16} className="sport-picker-check" />}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Route selector */}
+          <div className="training-route-selector">
+            <p style={{ margin: "0 0 6px", fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Lộ trình
+            </p>
+            <div style={{ display: "flex", gap: 6 }}>
+              <select
+                value={selectedRoute}
+                onChange={(e) => setSelectedRoute(e.target.value)}
+                style={{ flex: 1, height: 34, fontSize: "0.85rem" }}
+                disabled={recordState !== "idle"}
+              >
+                <option value="">-- Chọn lộ trình --</option>
+                {PRESET_ROUTES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            {selectedRoute && (
+              <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "var(--orange)" }}>
+                <Route size={12} style={{ verticalAlign: "middle", marginRight: 3 }} />{selectedRoute}
+              </p>
+            )}
           </div>
 
           <div className="record-stats">
@@ -1204,12 +1368,12 @@ function TrainingPage({
               <span className="record-stat-label">Thời gian</span>
             </div>
             <div className="record-stat record-stat-center">
-              <span className="record-stat-value">{sport === "RUN" ? distKm.toFixed(2) : Math.round(distanceM)}</span>
-              <span className="record-stat-label">{sport === "RUN" ? "km" : "m bơi"}</span>
+              <span className="record-stat-value">{isSwimMode ? Math.round(distanceM) : distKm.toFixed(2)}</span>
+              <span className="record-stat-label">{isSwimMode ? "m bơi" : "km"}</span>
             </div>
             <div className="record-stat">
-              <span className="record-stat-value">{sport === "RUN" ? formatPace(paceSecPerKm) : "--"}</span>
-              <span className="record-stat-label">{sport === "RUN" ? "min/km" : "pace"}</span>
+              <span className="record-stat-value">{!isSwimMode ? formatPace(paceSecPerKm) : "--"}</span>
+              <span className="record-stat-label">{!isSwimMode ? "min/km" : "pace"}</span>
             </div>
           </div>
 
@@ -1239,9 +1403,9 @@ function TrainingPage({
                 <h3>Buổi tập hoàn thành!</h3>
                 <div className="record-done-stats">
                   <div><strong>{formatElapsed(elapsed)}</strong><span>Thời gian</span></div>
-                  <div><strong>{sport === "RUN" ? distKm.toFixed(2) + " km" : Math.round(distanceM) + " m"}</strong><span>Quãng đường</span></div>
-                  {sport === "RUN" && <div><strong>{formatPace(paceSecPerKm)}</strong><span>Pace TB</span></div>}
-                  <div><strong>{Math.round((elapsed / 60) * (sport === "RUN" ? 9.5 : 8))}</strong><span>Cal</span></div>
+                  <div><strong>{isSwimMode ? Math.round(distanceM) + " m" : distKm.toFixed(2) + " km"}</strong><span>Quãng đường</span></div>
+                  {!isSwimMode && <div><strong>{formatPace(paceSecPerKm)}</strong><span>Pace TB</span></div>}
+                  <div><strong>{Math.round((elapsed / 60) * (isSwimMode ? 8 : 9.5))}</strong><span>Cal</span></div>
                 </div>
                 <div className="record-done-actions">
                   <button className="orange-button" disabled={saving} onClick={saveAndReset}>
@@ -1264,7 +1428,7 @@ function TrainingPage({
 
         {/* Right: map */}
         <div className="training-web-map">
-          {sport === "SWIM" ? (
+          {isSwimMode ? (
             <div className="record-map-placeholder" style={{ height: "100%" }}>
               <Waves size={64} color="var(--muted)" />
               <p>Bơi trong hồ — GPS không áp dụng</p>
@@ -1283,8 +1447,63 @@ function TrainingPage({
             <h2>Kế hoạch 7 ngày — {profile.displayName}</h2>
             <p style={{ color: "var(--muted)", fontSize: "0.9rem", marginTop: "4px" }}>{coachNote}</p>
           </div>
-          <button className="outline-button" onClick={regeneratePlan}><Sparkles size={16} /> AI tạo lại</button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button className="outline-button" onClick={() => setShowCustomPlan(!showCustomPlan)}>
+              <CalendarDays size={16} /> Tự tạo lịch
+            </button>
+            <button className="outline-button" onClick={regeneratePlan}><Sparkles size={16} /> AI tạo lại</button>
+          </div>
         </div>
+
+        {/* Custom plan creation panel */}
+        {showCustomPlan && (
+          <div className="custom-plan-panel">
+            <h3 style={{ margin: "0 0 16px", fontSize: "1rem" }}>Tạo lịch tập tùy chỉnh</h3>
+            <div className="custom-plan-form">
+              <div className="option-group">
+                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Số ngày / tuần</p>
+                <div className="option-row">
+                  {[2,3,4,5,6].map((d) => (
+                    <button key={d} className={`opt-btn${cpDays === d ? " active" : ""}`} onClick={() => setCpDays(d)}>{d} ngày</button>
+                  ))}
+                </div>
+              </div>
+              <div className="option-group">
+                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Môn thể thao</p>
+                <div className="option-row">
+                  {(["RUN","SWIM","BOTH"] as const).map((s) => (
+                    <button key={s} className={`opt-btn${cpSport === s ? " active" : ""}`} onClick={() => setCpSport(s)}>
+                      {s === "RUN" ? "Chạy" : s === "SWIM" ? "Bơi" : "Đa môn"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="option-group">
+                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Thời lượng / buổi</p>
+                <div className="option-row">
+                  {[30,45,60,90].map((d) => (
+                    <button key={d} className={`opt-btn${cpDuration === d ? " active" : ""}`} onClick={() => setCpDuration(d)}>{d} phút</button>
+                  ))}
+                </div>
+              </div>
+              <div className="option-group">
+                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Mục tiêu</p>
+                <div className="option-row">
+                  {(["endurance","speed","fat"] as const).map((g) => (
+                    <button key={g} className={`opt-btn${cpGoal === g ? " active" : ""}`} onClick={() => setCpGoal(g)}>
+                      {g === "endurance" ? "Sức bền" : g === "speed" ? "Tốc độ" : "Giảm mỡ"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              <button className="orange-button" onClick={createCustomPlan}>Tạo lịch tập</button>
+              <button className="outline-button" onClick={() => setShowCustomPlan(false)}>Hủy</button>
+            </div>
+          </div>
+        )}
+
         <div className="training-grid">
           {trainingPlan.map((day) => (
             <article key={day.id} className={day.done ? "training-day done" : "training-day"}>
@@ -1295,9 +1514,9 @@ function TrainingPage({
               <h3>{day.title}</h3>
               <p>{day.detail}</p>
               <div className="training-day-foot">
-                <strong>{day.duration}</strong>
-                <button className={day.done ? "outline-button" : "orange-button"} onClick={() => toggleDone(day.id)}>
-                  {day.done ? "✓ Xong" : "Hoàn thành"}
+                <strong className="day-duration">{day.duration}</strong>
+                <button className={`training-done-btn${day.done ? " done" : ""}`} onClick={() => toggleDone(day.id)}>
+                  {day.done ? "✓ Xong" : "Đánh dấu"}
                 </button>
               </div>
             </article>

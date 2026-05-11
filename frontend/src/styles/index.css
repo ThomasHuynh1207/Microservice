@@ -411,6 +411,11 @@ label {
   animation: rise 0.6s ease both;
 }
 
+.strava-main.training-page {
+  padding-top: 24px;
+  padding-bottom: 48px;
+}
+
 .strava-main.maps-fullscreen {
   max-width: 100%;
   padding: 0;
@@ -637,6 +642,11 @@ label {
   line-height: 1.52;
 }
 
+.training-day > p {
+  flex: 1;
+  font-size: 0.83rem;
+}
+
 .task-row {
   display: grid;
   grid-template-columns: 82px 1fr;
@@ -690,7 +700,6 @@ label {
 
 .section-head,
 .training-day-head,
-.training-day-foot,
 .route-actions {
   display: flex;
   align-items: center;
@@ -808,11 +817,11 @@ label {
 }
 
 .training-day {
-  min-height: 250px;
-  padding: 18px;
-  display: grid;
-  gap: 12px;
-  align-content: start;
+  min-height: 200px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .training-day.done {
@@ -822,8 +831,39 @@ label {
 
 .training-day-foot {
   align-self: end;
-  display: grid;
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.day-duration {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.training-done-btn {
+  flex-shrink: 0;
+  width: 88px;
+  padding: 5px 0;
+  border-radius: 20px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1.5px solid var(--orange);
+  color: var(--orange);
+  background: transparent;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.training-done-btn.done {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
 }
 
 .maps-title {
@@ -2545,8 +2585,9 @@ label {
 .training-web-layout {
   display: grid;
   grid-template-columns: 360px 1fr;
-  height: 560px;
-  border-radius: 16px;
+  height: calc(100vh - 170px);
+  min-height: 500px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--line);
   margin-bottom: 32px;
@@ -2607,6 +2648,237 @@ label {
 
 .training-web-sidebar .record-done-actions {
   flex-direction: column;
+}
+
+/* Sport picker dropdown */
+.sport-picker-wrap {
+  position: relative;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.sport-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: none;
+  border-radius: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sport-picker-trigger:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.sport-picker-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sport-picker-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(31, 111, 235, 0.1);
+  color: var(--orange);
+  flex-shrink: 0;
+}
+
+.sport-picker-label {
+  flex: 1;
+  text-align: left;
+}
+
+.sport-picker-caret {
+  color: var(--muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.sport-picker-caret.open {
+  transform: rotate(180deg);
+}
+
+.sport-picker-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 380px;
+}
+
+.sport-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.sport-picker-search input {
+  border: none;
+  height: auto;
+  padding: 0;
+  font-size: 0.88rem;
+  background: transparent;
+  flex: 1;
+}
+
+.sport-picker-search input:focus {
+  box-shadow: none;
+}
+
+.sport-picker-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.sport-picker-category {
+  margin: 0;
+  padding: 10px 16px 4px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
+}
+
+.sport-picker-category:first-child {
+  border-top: none;
+}
+
+.sport-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.sport-picker-item:hover {
+  background: var(--surface-2);
+}
+
+.sport-picker-item.active {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+.sport-picker-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--light);
+  flex-shrink: 0;
+}
+
+.sport-picker-item.active .sport-picker-item-icon {
+  background: rgba(31, 111, 235, 0.1);
+  color: var(--orange);
+}
+
+.sport-picker-check {
+  margin-left: auto;
+  color: var(--orange);
+  flex-shrink: 0;
+}
+
+/* Route selector */
+.training-route-selector {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.training-route-selector select {
+  height: 34px;
+  font-size: 0.82rem;
+  padding: 0 8px;
+}
+
+/* Custom plan panel */
+.custom-plan-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+
+.custom-plan-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+}
+
+.custom-plan-form .option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.custom-plan-form .option-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.opt-btn {
+  padding: 5px 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.opt-btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.opt-btn.active {
+  border-color: var(--orange);
+  color: var(--orange);
+  background: rgba(31, 111, 235, 0.07);
 }
 
 @media (max-width: 900px) {
