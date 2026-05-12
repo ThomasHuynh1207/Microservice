@@ -7,8 +7,6 @@ import com.tuan.activityservice.entity.CommunityPost;
 import com.tuan.activityservice.entity.Notification;
 import com.tuan.activityservice.entity.PostComment;
 import com.tuan.activityservice.entity.PostLike;
-import com.tuan.activityservice.entity.Route;
-import com.tuan.activityservice.entity.SavedRoute;
 import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
@@ -18,8 +16,6 @@ import com.tuan.activityservice.repository.CommunityPostRepository;
 import com.tuan.activityservice.repository.NotificationRepository;
 import com.tuan.activityservice.repository.PostCommentRepository;
 import com.tuan.activityservice.repository.PostLikeRepository;
-import com.tuan.activityservice.repository.RouteRepository;
-import com.tuan.activityservice.repository.SavedRouteRepository;
 import com.tuan.activityservice.repository.SportDefinitionRepository;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,8 +28,6 @@ public class SampleDataInitializer {
     @Bean
     CommandLineRunner seedActivities(
             ActivityRepository activities,
-            RouteRepository routes,
-            SavedRouteRepository savedRoutes,
             ChallengeRepository challenges,
             ChallengeParticipantRepository participants,
             CommunityPostRepository posts,
@@ -75,26 +69,12 @@ public class SampleDataInitializer {
                 ));
             }
 
-            if (routes.count() == 0) {
-                routes.saveAll(List.of(
-                        route("Saigon River Loop", SportType.RUN, "District 1 - Thu Thiem", 7200, "Flat riverside loop suited for steady pacing."),
-                        route("Gia Dinh Park 5K", SportType.RUN, "Gia Dinh Park", 5000, "Loop with shade and easy pacing control."),
-                        route("District Pool 50m", SportType.SWIM, "District Sports Center", 1500, "Good for interval sets and technique focus."),
-                        route("Recovery Swim Lane", SportType.SWIM, "Phu Nhuan Aquatic", 1000, "Easy lane for recovery swims."),
-                        route("Saigon Bridge Tempo", SportType.RUN, "Binh Thanh", 6400, "Rolling climb suitable for tempo blocks.")
-                ));
-            }
-
             if (challenges.count() == 0) {
                 challenges.saveAll(List.of(
                         challenge("run-30", "Run 30K in a week", "RUN", 30000, "meters", "Keep each run conversational; consistency over pace."),
                         challenge("swim-5k", "Swim 5K in a week", "SWIM", 5000, "meters", "Split into 2-3 sessions to stay relaxed."),
                         challenge("balanced", "Run + Swim balance", "MIXED", 4, "activities", "Complete 2 runs and 2 swims in 7 days.")
                 ));
-            }
-
-            if (savedRoutes.count() == 0) {
-                routes.findAll().stream().limit(2).forEach(route -> savedRoutes.save(savedRoute(1L, route)));
             }
 
             if (participants.count() == 0) {
@@ -192,16 +172,6 @@ public class SampleDataInitializer {
         return def;
     }
 
-    private Route route(String name, SportType sportType, String place, int meters, String note) {
-        Route route = new Route();
-        route.setName(name);
-        route.setSportType(sportType);
-        route.setPlace(place);
-        route.setDistanceMeters(meters);
-        route.setNote(note);
-        return route;
-    }
-
     private ChallengeDefinition challenge(String code, String title, String sportType, int target, String unit, String note) {
         ChallengeDefinition challenge = new ChallengeDefinition();
         challenge.setCode(code);
@@ -211,13 +181,6 @@ public class SampleDataInitializer {
         challenge.setUnit(unit);
         challenge.setNote(note);
         return challenge;
-    }
-
-    private SavedRoute savedRoute(Long userId, Route route) {
-        SavedRoute saved = new SavedRoute();
-        saved.setUserId(userId);
-        saved.setRoute(route);
-        return saved;
     }
 
     private ChallengeParticipant participant(Long userId, ChallengeDefinition challenge) {

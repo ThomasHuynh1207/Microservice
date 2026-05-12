@@ -51,6 +51,7 @@ public class Activity {
     private Integer strokes;
     private String routeName;
     private String visibility = "PUBLIC";
+    private String status = "COMPLETED";
 
     @Column(columnDefinition = "TEXT")
     private String gpsRouteJson;
@@ -188,6 +189,14 @@ public class Activity {
 
     public void setVisibility(String visibility) {
         this.visibility = visibility;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getGpsRouteJson() {

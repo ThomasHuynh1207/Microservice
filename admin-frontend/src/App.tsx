@@ -36,7 +36,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training" | "sports";
+type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training" | "sports" | "onboarding";
 
 type AdminSession = {
   token: string;
@@ -112,6 +112,11 @@ type AthleteProfile = {
   primaryGoal: string | null; experienceLevel: string | null;
   weeklyRunGoalKm: number; weeklySwimGoalMeters: number;
   completedOnboarding: boolean; createdAt: string;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+  heightCm?: number | null;
+  weightKg?: number | null;
+  nutritionFocus?: string | null;
 };
 
 type TrainingStats = {
@@ -268,6 +273,12 @@ const NAV_GROUPS: { label: string; items: { id: Page; label: string; icon: React
       { id: "routes", label: "Lộ trình", icon: <MapPin size={16} /> },
       { id: "sports", label: "Môn thể thao", icon: <Zap size={16} /> },
       { id: "training", label: "Cài đặt tập luyện", icon: <Dumbbell size={16} /> },
+    ],
+  },
+  {
+    label: "Người dùng",
+    items: [
+      { id: "onboarding", label: "Quản lý Onboarding", icon: <UserCheck size={16} /> },
     ],
   },
 ];
@@ -1809,6 +1820,162 @@ function NutritionAdminPage({ session }: { session: AdminSession }) {
   );
 }
 
+// ─── Onboarding Management ────────────────────────────────────────────────────
+
+function OnboardingAdminPage({ session }: { session: AdminSession }) {
+  const [profiles, setProfiles] = useState<AthleteProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "DONE" | "PENDING">("ALL");
+  const [selected, setSelected] = useState<AthleteProfile | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const data = await get<AthleteProfile[]>(session.token, "/api/athletes/admin/all");
+      setProfiles(data);
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
+    finally { setLoading(false); }
+  }, [session.token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => profiles.filter(p => {
+    const q = search.toLowerCase();
+    const matchSearch = p.displayName.toLowerCase().includes(q)
+      || (p.city ?? "").toLowerCase().includes(q)
+      || String(p.userId).includes(q);
+    const matchFilter = filter === "ALL"
+      || (filter === "DONE" && p.completedOnboarding)
+      || (filter === "PENDING" && !p.completedOnboarding);
+    return matchSearch && matchFilter;
+  }), [profiles, search, filter]);
+
+  const done = profiles.filter(p => p.completedOnboarding).length;
+
+  return (
+    <>
+      <PageHeader title="Quản lý Onboarding" sub="Hồ sơ thiết lập ban đầu của vận động viên sau đăng ký" />
+      <div className="al-content">
+        <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 20 }}>
+          {[
+            { label: "Tổng hồ sơ", value: profiles.length, color: "#3b82f6" },
+            { label: "Hoàn thành", value: done, color: "#22c55e" },
+            { label: "Chưa hoàn thành", value: profiles.length - done, color: "#ef4444" },
+          ].map(c => (
+            <div key={c.label} className="al-stat-card">
+              <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
+              <div className="al-stat-label">{c.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="al-controls">
+          <div className="al-search-wrap">
+            <Search size={14} className="al-search-icon" />
+            <input className="al-search" placeholder="Tìm tên, thành phố, user ID..." value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <div className="al-tabs">
+            {(["ALL", "DONE", "PENDING"] as const).map(f => (
+              <button key={f} className={`al-tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
+                {f === "ALL" ? "Tất cả" : f === "DONE" ? "Hoàn thành" : "Chưa xong"}
+              </button>
+            ))}
+          </div>
+          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+        </div>
+
+        <div className="al-table-wrap">
+          {loading ? <div className="al-loading">Đang tải...</div>
+            : error ? <ErrMsg msg={error} />
+            : filtered.length === 0 ? <div className="al-empty">Không có dữ liệu</div>
+            : (
+              <table className="al-table">
+                <thead><tr>
+                  <th>Vận động viên</th>
+                  <th>Giới tính</th>
+                  <th>Ngày sinh</th>
+                  <th>Chiều cao</th>
+                  <th>Cân nặng</th>
+                  <th>Thành phố</th>
+                  <th>Trình độ</th>
+                  <th>Mục tiêu chính</th>
+                  <th>Trọng tâm dinh dưỡng</th>
+                  <th>Onboarding</th>
+                </tr></thead>
+                <tbody>
+                  {filtered.map(p => (
+                    <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setSelected(p)}>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div className="al-avatar" style={{ background: avatarColor(p.userId) }}>{initials(p.displayName)}</div>
+                          <div>
+                            <div className="al-uname">{p.displayName}</div>
+                            <div className="al-uemail">ID: {p.userId}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>{p.gender ?? "—"}</td>
+                      <td>{p.dateOfBirth ?? "—"}</td>
+                      <td>{p.heightCm ? `${p.heightCm} cm` : "—"}</td>
+                      <td>{p.weightKg ? `${p.weightKg} kg` : "—"}</td>
+                      <td>{p.city ?? "—"}</td>
+                      <td>{p.experienceLevel ?? "—"}</td>
+                      <td className="al-truncate">{p.primaryGoal ?? "—"}</td>
+                      <td className="al-truncate">{p.nutritionFocus ?? "—"}</td>
+                      <td>
+                        <span className={`al-badge ${p.completedOnboarding ? "badge-active" : "badge-inactive"}`}>
+                          {p.completedOnboarding ? "Hoàn thành" : "Chưa xong"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+
+        {selected && (
+          <div className="modal-backdrop" onClick={() => setSelected(null)}>
+            <div className="al-detail-card" onClick={e => e.stopPropagation()}>
+              <div className="al-detail-header">
+                <div className="al-avatar-lg" style={{ background: avatarColor(selected.userId) }}>{initials(selected.displayName)}</div>
+                <div style={{ flex: 1 }}>
+                  <div className="al-detail-name">{selected.displayName}</div>
+                  <div className="al-detail-sub">User ID: {selected.userId}</div>
+                </div>
+                <button className="al-icon-btn" onClick={() => setSelected(null)}><X size={16} /></button>
+              </div>
+              <div className="al-detail-grid">
+                {([
+                  ["Giới tính", selected.gender ?? "—"],
+                  ["Ngày sinh", selected.dateOfBirth ?? "—"],
+                  ["Chiều cao", selected.heightCm ? `${selected.heightCm} cm` : "—"],
+                  ["Cân nặng", selected.weightKg ? `${selected.weightKg} kg` : "—"],
+                  ["Thành phố", selected.city ?? "—"],
+                  ["Trình độ", selected.experienceLevel ?? "—"],
+                  ["Mục tiêu chính", selected.primaryGoal ?? "—"],
+                  ["Trọng tâm dinh dưỡng", selected.nutritionFocus ?? "—"],
+                  ["Mục tiêu chạy/tuần", `${selected.weeklyRunGoalKm} km`],
+                  ["Mục tiêu bơi/tuần", `${selected.weeklySwimGoalMeters} m`],
+                  ["Ngày tạo hồ sơ", fmtDate(selected.createdAt)],
+                  ["Trạng thái", selected.completedOnboarding ? "Hoàn thành" : "Chưa xong"],
+                ] as [string, string][]).map(([k, v]) => (
+                  <div key={k} className="al-detail-row">
+                    <span className="al-detail-key">{k}</span>
+                    <span className="al-detail-val">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 const SESSION_KEY = "runswim_admin_session";
 
 export default function App() {
@@ -1833,6 +2000,7 @@ export default function App() {
         {page === "nutrition"   && <NutritionAdminPage session={session} />}
         {page === "training"    && <TrainingPage session={session} />}
         {page === "sports"      && <SportsManagementPage session={session} />}
+        {page === "onboarding"  && <OnboardingAdminPage session={session} />}
       </div>
     </div>
   );

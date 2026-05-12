@@ -3,6 +3,7 @@ package com.tuan.activityservice.service;
 import com.tuan.activityservice.entity.Activity;
 import com.tuan.activityservice.entity.ChallengeDefinition;
 import com.tuan.activityservice.entity.ChallengeParticipant;
+import com.tuan.activityservice.entity.GpsPoint;
 import com.tuan.activityservice.entity.Route;
 import com.tuan.activityservice.entity.SavedRoute;
 import com.tuan.activityservice.entity.SportDefinition;
@@ -10,10 +11,13 @@ import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
 import com.tuan.activityservice.repository.ChallengeParticipantRepository;
 import com.tuan.activityservice.repository.ChallengeRepository;
+import com.tuan.activityservice.repository.GpsPointRepository;
 import com.tuan.activityservice.repository.RouteRepository;
 import com.tuan.activityservice.repository.SavedRouteRepository;
 import com.tuan.activityservice.repository.SportDefinitionRepository;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -30,6 +34,7 @@ public class ActivityService {
     private final ChallengeParticipantRepository participants;
     private final NotificationService notifications;
     private final SportDefinitionRepository sportDefs;
+    private final GpsPointRepository gpsPoints;
 
     public ActivityService(
             ActivityRepository activities,
@@ -38,7 +43,8 @@ public class ActivityService {
             ChallengeRepository challenges,
             ChallengeParticipantRepository participants,
             NotificationService notifications,
-            SportDefinitionRepository sportDefs) {
+            SportDefinitionRepository sportDefs,
+            GpsPointRepository gpsPoints) {
         this.activities = activities;
         this.routes = routes;
         this.savedRoutes = savedRoutes;
@@ -46,6 +52,7 @@ public class ActivityService {
         this.participants = participants;
         this.notifications = notifications;
         this.sportDefs = sportDefs;
+        this.gpsPoints = gpsPoints;
     }
 
     // ── Sport definitions ────────────────────────────────────────────────────
@@ -176,6 +183,26 @@ public class ActivityService {
         activity.setGpsRouteJson(request.gpsRouteJson());
         activity.setAveragePaceSecondsPerKm(request.averagePaceSecondsPerKm());
         Activity saved = activities.save(activity);
+
+        if (request.gpsRouteJson() != null && !request.gpsRouteJson().isBlank()) {
+            String lineString = convertLegacyGpsJson(request.gpsRouteJson());
+            if (lineString != null) {
+                saved.setGpsRouteJson(lineString);
+                activities.save(saved);
+                Route route = new Route();
+                route.setName(defaultText(request.routeName(), saved.getTitle()));
+                route.setSportType(saved.getSportType());
+                route.setPlace("");
+                route.setDistanceMeters((int) Math.round(saved.getDistanceMeters()));
+                route.setNote(request.description() != null ? request.description() : "");
+                route.setGeoJson(lineString);
+                route.setCreatedBy(saved.getUserId());
+                route.setActivityId(saved.getId());
+                route.setVisibility(defaultText(request.visibility(), "PUBLIC"));
+                routes.save(route);
+            }
+        }
+
         notifications.create(
             request.userId(),
             "Activity logged",
@@ -201,7 +228,91 @@ public class ActivityService {
 
     @Transactional(readOnly = true)
     public List<Route> routes() {
-        return routes.findAll();
+        return routes.findPublicRoutes();
+    }
+
+    @Transactional(readOnly = true)
+    public Route getRoute(Long id) {
+        return routes.findById(id).orElseThrow(() -> new IllegalArgumentException("Route not found"));
+    }
+
+    @Transactional
+    public Activity startActivity(StartActivityRequest req) {
+        Activity activity = new Activity();
+        activity.setUserId(req.userId());
+        activity.setAthleteName(defaultText(req.athleteName(), "Athlete #" + req.userId()));
+        activity.setSportType(req.sportType());
+        activity.setTitle(defaultText(req.title(), req.sportType() == SportType.RUN ? "GPS Run" : "GPS Swim"));
+        activity.setStartedAt(LocalDateTime.now());
+        activity.setDurationMinutes(0);
+        activity.setDistanceMeters(0);
+        activity.setVisibility(defaultText(req.visibility(), "PUBLIC"));
+        activity.setStatus("RECORDING");
+        return activities.save(activity);
+    }
+
+    @Transactional
+    public void addGpsPoints(Long activityId, List<GpsPointRequest> pts) {
+        activities.findById(activityId)
+                .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
+        List<GpsPoint> entities = new ArrayList<>();
+        for (int i = 0; i < pts.size(); i++) {
+            GpsPointRequest p = pts.get(i);
+            GpsPoint gp = new GpsPoint();
+            gp.setActivityId(activityId);
+            gp.setLatitude(p.latitude());
+            gp.setLongitude(p.longitude());
+            gp.setRecordedAt(p.recordedAt() != null ? p.recordedAt() : Instant.now());
+            gp.setSequenceOrder(i);
+            entities.add(gp);
+        }
+        gpsPoints.saveAll(entities);
+    }
+
+    @Transactional
+    public ActivityFinishResult finishActivity(Long activityId, FinishActivityRequest req) {
+        Activity activity = activities.findById(activityId)
+                .orElseThrow(() -> new IllegalArgumentException("Activity not found"));
+
+        List<GpsPoint> pts = gpsPoints.findByActivityIdOrderBySequenceOrderAsc(activityId);
+        double distanceMeters = req.distanceMeters() > 0 ? req.distanceMeters() : totalDistanceMeters(pts);
+        int durationMins = req.durationMinutes() > 0 ? req.durationMinutes() : 1;
+
+        activity.setStatus("COMPLETED");
+        activity.setTitle(defaultText(req.title(), activity.getTitle()));
+        activity.setDescription(req.description());
+        activity.setDurationMinutes(durationMins);
+        activity.setDistanceMeters(distanceMeters);
+        activity.setAverageHeartRate(req.averageHeartRate());
+        activity.setCalories(req.calories());
+        activity.setVisibility(defaultText(req.visibility(), "PUBLIC"));
+        if (req.averagePaceSecondsPerKm() != null) activity.setAveragePaceSecondsPerKm(req.averagePaceSecondsPerKm());
+
+        String lineString = buildLineString(pts);
+        activity.setGpsRouteJson(lineString != null ? lineString : activity.getGpsRouteJson());
+        Activity saved = activities.save(activity);
+
+        Route route = null;
+        if (lineString != null && pts.size() >= 2) {
+            route = new Route();
+            route.setName(defaultText(req.routeName(), saved.getTitle()));
+            route.setSportType(saved.getSportType());
+            route.setPlace("");
+            route.setDistanceMeters((int) Math.round(distanceMeters));
+            route.setNote(req.description() != null ? req.description() : "");
+            route.setGeoJson(lineString);
+            route.setCreatedBy(saved.getUserId());
+            route.setActivityId(activityId);
+            route.setVisibility(defaultText(req.visibility(), "PUBLIC"));
+            route = routes.save(route);
+        }
+
+        notifications.create(
+            saved.getUserId(), "Activity completed",
+            "Your " + saved.getSportType().name().toLowerCase(Locale.ROOT) + " is saved.",
+            "ACTIVITY"
+        );
+        return new ActivityFinishResult(saved, route);
     }
 
     @Transactional
@@ -214,6 +325,18 @@ public class ActivityService {
         route.setNote(req.note() != null ? req.note() : "");
         route.setGeoJson(req.geoJson());
         route.setCreatedBy(userId);
+        route.setVisibility("PUBLIC");
+        return routes.save(route);
+    }
+
+    @Transactional
+    public Route toggleRouteVisibility(Long userId, Long routeId) {
+        Route route = routes.findById(routeId)
+                .orElseThrow(() -> new IllegalArgumentException("Route not found"));
+        if (!userId.equals(route.getCreatedBy())) {
+            throw new SecurityException("Not authorized");
+        }
+        route.setVisibility("PUBLIC".equals(route.getVisibility()) ? "PRIVATE" : "PUBLIC");
         return routes.save(route);
     }
 
@@ -380,6 +503,90 @@ public class ActivityService {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    private static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6_371_000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    private static double totalDistanceMeters(List<GpsPoint> pts) {
+        double total = 0;
+        for (int i = 1; i < pts.size(); i++) {
+            total += haversineMeters(
+                    pts.get(i - 1).getLatitude(), pts.get(i - 1).getLongitude(),
+                    pts.get(i).getLatitude(), pts.get(i).getLongitude());
+        }
+        return total;
+    }
+
+    private static String buildLineString(List<GpsPoint> pts) {
+        if (pts.size() < 2) return null;
+        StringBuilder sb = new StringBuilder("{\"type\":\"LineString\",\"coordinates\":[");
+        for (int i = 0; i < pts.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append("[").append(pts.get(i).getLongitude()).append(",").append(pts.get(i).getLatitude()).append("]");
+        }
+        sb.append("]}");
+        return sb.toString();
+    }
+
+    /** Convert legacy [{lat,lng,ts}] array to GeoJSON LineString, or return as-is if already GeoJSON. */
+    @SuppressWarnings("unchecked")
+    private static String convertLegacyGpsJson(String json) {
+        if (json == null || json.isBlank()) return null;
+        String trimmed = json.trim();
+        if (trimmed.startsWith("{")) return trimmed; // already GeoJSON
+        if (!trimmed.startsWith("[")) return null;
+        // Parse simple [{lat:...,lng:...},...] without a heavy JSON library
+        try {
+            List<double[]> coords = new ArrayList<>();
+            String inner = trimmed.substring(1, trimmed.length() - 1).trim();
+            if (inner.isEmpty()) return null;
+            for (String obj : splitJsonObjects(inner)) {
+                Double lat = extractDouble(obj, "lat");
+                Double lng = extractDouble(obj, "lng");
+                if (lat != null && lng != null) coords.add(new double[]{lng, lat});
+            }
+            if (coords.size() < 2) return null;
+            StringBuilder sb = new StringBuilder("{\"type\":\"LineString\",\"coordinates\":[");
+            for (int i = 0; i < coords.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append("[").append(coords.get(i)[0]).append(",").append(coords.get(i)[1]).append("]");
+            }
+            sb.append("]}");
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static List<String> splitJsonObjects(String s) {
+        List<String> result = new ArrayList<>();
+        int depth = 0, start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '{') { if (depth == 0) start = i; depth++; }
+            else if (c == '}') { depth--; if (depth == 0) result.add(s.substring(start, i + 1)); }
+        }
+        return result;
+    }
+
+    private static Double extractDouble(String obj, String key) {
+        String search = "\"" + key + "\"";
+        int idx = obj.indexOf(search);
+        if (idx < 0) return null;
+        int colon = obj.indexOf(':', idx + search.length());
+        if (colon < 0) return null;
+        int end = colon + 1;
+        while (end < obj.length() && (Character.isDigit(obj.charAt(end)) || obj.charAt(end) == '.' || obj.charAt(end) == '-')) end++;
+        String num = obj.substring(colon + 1, end).trim();
+        return num.isEmpty() ? null : Double.parseDouble(num);
+    }
+
     public record ActivityRequest(
             Long userId,
             String athleteName,
@@ -433,5 +640,37 @@ public class ActivityService {
 
         public record SportDefRequest(String code, String label, String icon, String category,
                                       String backendSport, int sortOrder, Boolean active) {
+        }
+
+        public record StartActivityRequest(
+                Long userId,
+                String athleteName,
+                SportType sportType,
+                String title,
+                String visibility
+        ) {
+        }
+
+        public record GpsPointRequest(
+                double latitude,
+                double longitude,
+                Instant recordedAt
+        ) {
+        }
+
+        public record FinishActivityRequest(
+                String title,
+                String description,
+                int durationMinutes,
+                double distanceMeters,
+                Integer averageHeartRate,
+                Integer calories,
+                String visibility,
+                String routeName,
+                Integer averagePaceSecondsPerKm
+        ) {
+        }
+
+        public record ActivityFinishResult(Activity activity, Route route) {
         }
 }

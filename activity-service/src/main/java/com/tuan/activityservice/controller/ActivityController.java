@@ -10,12 +10,17 @@ import com.tuan.activityservice.service.ActivityService.ActivityStats;
 import com.tuan.activityservice.service.ActivityService.ChallengeRequest;
 import com.tuan.activityservice.service.ActivityService.ChallengeView;
 import com.tuan.activityservice.service.ActivityService.LeaderboardEntry;
+import com.tuan.activityservice.service.ActivityService.ActivityFinishResult;
+import com.tuan.activityservice.service.ActivityService.FinishActivityRequest;
+import com.tuan.activityservice.service.ActivityService.GpsPointRequest;
 import com.tuan.activityservice.service.ActivityService.RouteCreateRequest;
+import com.tuan.activityservice.service.ActivityService.StartActivityRequest;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -69,9 +74,41 @@ public class ActivityController {
         return activityService.activeSportDefs();
     }
 
+    @PostMapping("/start")
+    ResponseEntity<Activity> startActivity(@RequestBody StartActivityRequest req) {
+        if (req.userId() == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        return ResponseEntity.ok(activityService.startActivity(req));
+    }
+
+    @PostMapping("/{id}/gps")
+    ResponseEntity<Void> addGps(@PathVariable Long id, @RequestBody List<GpsPointRequest> pts) {
+        activityService.addGpsPoints(id, pts);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/{id}/finish")
+    ResponseEntity<ActivityFinishResult> finishActivity(
+            @PathVariable Long id,
+            @RequestBody FinishActivityRequest req) {
+        try {
+            return ResponseEntity.ok(activityService.finishActivity(id, req));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
     @GetMapping("/routes")
     List<Route> routes() {
         return activityService.routes();
+    }
+
+    @GetMapping("/routes/{id}")
+    ResponseEntity<Route> getRoute(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(activityService.getRoute(id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
     }
 
     @PostMapping("/routes")
@@ -82,8 +119,21 @@ public class ActivityController {
         return ResponseEntity.ok(activityService.createUserRoute(userId, req));
     }
 
+    @PatchMapping("/routes/{routeId}/visibility")
+    ResponseEntity<Route> toggleVisibility(
+            @PathVariable Long routeId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        if (userId == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        try {
+            return ResponseEntity.ok(activityService.toggleRouteVisibility(userId, routeId));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+    }
+
     @DeleteMapping("/routes/{routeId}/mine")
-    @org.springframework.transaction.annotation.Transactional
     ResponseEntity<Void> deleteMyRoute(
             @PathVariable Long routeId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {

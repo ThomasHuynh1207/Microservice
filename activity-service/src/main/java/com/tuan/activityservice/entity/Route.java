@@ -25,7 +25,6 @@ public class Route {
     @Column(nullable = false)
     private SportType sportType;
 
-    @Column(nullable = false)
     private String place;
 
     private int distanceMeters;
@@ -35,6 +34,11 @@ public class Route {
 
     @Column(name = "created_by")
     private Long createdBy;
+
+    @Column(name = "activity_id")
+    private Long activityId;
+
+    private String visibility = "PUBLIC";
 
     @Column(columnDefinition = "TEXT", name = "geo_json")
     private String geoJson;
@@ -104,6 +108,22 @@ public class Route {
 
     public void setGeoJson(String geoJson) {
         this.geoJson = geoJson;
+    }
+
+    public Long getActivityId() {
+        return activityId;
+    }
+
+    public void setActivityId(Long activityId) {
+        this.activityId = activityId;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
     }
 
     public Instant getCreatedAt() {
