@@ -1,6 +1,6 @@
 {
-  "id": "ai-fitness-openai",
-  "name": "AI Fitness Gemini Webhook",
+  "id": "ai-fitness",
+  "name": "AI Fitness Gemini Orchestrator",
   "active": true,
   "nodes": [
     {
@@ -10,26 +10,69 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "ai-fitness-webhook-node",
-      "name": "AI Fitness Webhook",
+      "id": "webhook",
+      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [
-        -640,
-        0
-      ],
-      "webhookId": "ai-fitness-webhook"
+      "position": [-1000, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\n\nif (!body.message || typeof body.message !== 'string' || body.message.trim() === '') {\n  throw new Error('Message is required');\n}\n\nreturn [{\n  json: {\n    message: body.message.trim(),\n    userId: body.userId || 'anonymous',\n    context: body.context || {},\n    timestamp: new Date().toISOString()\n  }\n}];\n"
+      },
+      "id": "parse",
+      "name": "Parse & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-800, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $json.context || {};\nlet contextText = '';\n\nif (ctx.profile) contextText += `Profile: ${JSON.stringify(ctx.profile)}\n`;\nif (ctx.activity) contextText += `Recent Activity: ${JSON.stringify(ctx.activity)}\n`;\nif (ctx.nutrition) contextText += `Nutrition Log: ${JSON.stringify(ctx.nutrition)}\n`;\n\nreturn [{\n  json: {\n    ...$json,\n    systemContext: contextText.trim()\n  }\n}];\n"
+      },
+      "id": "build-context",
+      "name": "Build Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-600, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userMsg = $json.message;\nconst context = $json.systemContext || '';\n\nconst systemPrompt = `Bạn là Fitness Coach chuyên nghiệp về chạy bộ, bơi lội, phục hồi và dinh dưỡng thể thao.\nChỉ trả lời các câu hỏi liên quan đến fitness, tập luyện, dinh dưỡng và phục hồi.\nTrả lời bằng tiếng Việt nếu người dùng hỏi bằng tiếng Việt.\nĐưa ra lời khuyên an toàn, thực tế.`;\n\nconst fullPrompt = `${systemPrompt}\n\n${context}\n\nCâu hỏi: ${userMsg}`;\n\nreturn [{\n  json: {\n    ...$json,\n    systemPrompt,\n    userPrompt: userMsg,\n    fullPrompt\n  }\n}];\n"
+      },
+      "id": "prompt-engineering",
+      "name": "Prompt Engineering",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.message.toLowerCase().includes('tập') || $json.message.toLowerCase().includes('ăn') || $json.message.toLowerCase().includes('dinh dưỡng') }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "guardrail",
+      "name": "Input Guardrail",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [-200, 0]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + ($env.GEMINI_MODEL || 'gemini-2.5-flash') + ':generateContent?key=' + $env.GEMINI_API_KEY }}",
-        "sendHeaders": true,
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL || 'gemini-2.5-flash' }}:generateContent",
+        "authentication": "headerAuth",
         "headerParameters": {
           "parameters": [
             {
-              "name": "Content-Type",
-              "value": "application/json"
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GEMINI_API_KEY }}"
             }
           ]
         },
@@ -38,12 +81,8 @@
         "bodyParameters": {
           "parameters": [
             {
-              "name": "systemInstruction",
-              "value": "={{ { parts: [{ text: 'You are a concise AI fitness coach for running, swimming, recovery, and nutrition. Reply in Vietnamese when the user writes Vietnamese. Give practical, safe, non-medical training advice.' }] } }}"
-            },
-            {
               "name": "contents",
-              "value": "={{ [{ role: 'user', parts: [{ text: 'User ID: ' + ($json.body.userId ?? '') + '\\nContext: ' + ($json.body.context ?? '') + '\\nMessage: ' + ($json.body.message ?? '') }] }] }}"
+              "value": "={{ [{ parts: [{ text: $json.fullPrompt }] }] }}"
             }
           ]
         },
@@ -51,84 +90,47 @@
           "timeout": 60000
         }
       },
-      "id": "call-gemini-openai-compatibility-node",
-      "name": "Call Gemini Chat Completions API",
+      "id": "gemini",
+      "name": "Gemini API",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "continueOnFail": true,
-      "alwaysOutputData": true,
-      "position": [
-        -360,
-        0
-      ]
+      "position": [0, 0]
     },
     {
       "parameters": {
-        "jsCode": "const data = $json ?? {};\nlet reply = '';\n\nconst statusCode = typeof data.statusCode === 'number' ? data.statusCode : null;\nconst hasError = Boolean(data.error) || (statusCode !== null && statusCode >= 400);\n\nif (Array.isArray(data.candidates) && data.candidates.length > 0) {\n  const firstCandidate = data.candidates[0];\n  const parts = firstCandidate?.content?.parts;\n\n  if (Array.isArray(parts)) {\n    reply = parts\n      .map((part) => part?.text || '')\n      .filter(Boolean)\n      .join('\\n');\n  }\n}\n\nif (!reply && data.output_text) {\n  reply = data.output_text;\n}\n\nif (!reply && Array.isArray(data.output)) {\n  reply = data.output\n    .flatMap((item) => Array.isArray(item.content) ? item.content : [])\n    .map((content) => content.text || '')\n    .filter(Boolean)\n    .join('\\n');\n}\n\nif (!reply && data.choices?.[0]?.message?.content) {\n  reply = data.choices[0].message.content;\n}\n\nif (!reply) {\n  reply = hasError\n    ? 'Gemini is unavailable. Check GEMINI_API_KEY and model.'\n    : 'Gemini did not return a fitness recommendation.';\n}\n\nreturn [{\n  json: {\n    reply: String(reply).trim()\n  }\n}];"
+        "jsCode": "const response = $json;\nlet reply = '';\n\nif (response.candidates?.[0]?.content?.parts?.[0]?.text) {\n  reply = response.candidates[0].content.parts[0].text;\n} else {\n  reply = 'Xin lỗi, tôi không thể trả lời lúc này. Vui lòng thử lại sau.';\n}\n\nreturn [{\n  json: {\n    reply: reply.trim(),\n    text: reply.trim(),\n    success: true,\n    model: $env.GEMINI_MODEL || 'gemini-2.5-flash'\n  }\n}];\n"
       },
-      "id": "normalize-gemini-response-node",
-      "name": "Normalize Gemini Response",
+      "id": "output-filter",
+      "name": "Output Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        -80,
-        0
-      ]
+      "position": [200, 0]
     },
     {
       "parameters": {
         "respondWith": "firstIncomingItem",
         "options": {}
       },
-      "id": "respond-to-backend-node",
-      "name": "Respond to Backend",
+      "id": "respond",
+      "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [
-        200,
-        0
-      ]
+      "position": [400, 0]
     }
   ],
   "connections": {
-    "AI Fitness Webhook": {
+    "Webhook": { "main": [[{ "node": "Parse & Validate", "type": "main", "index": 0 }]] },
+    "Parse & Validate": { "main": [[{ "node": "Build Context", "type": "main", "index": 0 }]] },
+    "Build Context": { "main": [[{ "node": "Prompt Engineering", "type": "main", "index": 0 }]] },
+    "Prompt Engineering": { "main": [[{ "node": "Input Guardrail", "type": "main", "index": 0 }]] },
+    "Input Guardrail": { 
       "main": [
-        [
-          {
-            "node": "Call Gemini Chat Completions API",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+        [{ "node": "Gemini API", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ] 
     },
-    "Call Gemini Chat Completions API": {
-      "main": [
-        [
-          {
-            "node": "Normalize Gemini Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Normalize Gemini Response": {
-      "main": [
-        [
-          {
-            "node": "Respond to Backend",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "staticData": null,
-  "pinData": {},
-  "tags": []
+    "Gemini API": { "main": [[{ "node": "Output Filter", "type": "main", "index": 0 }]] },
+    "Output Filter": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  }
 }
