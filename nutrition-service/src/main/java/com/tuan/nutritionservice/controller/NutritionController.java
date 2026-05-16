@@ -18,6 +18,8 @@ import com.tuan.nutritionservice.service.NutritionService.NutritionSummary;
 import com.tuan.nutritionservice.service.NutritionService.QuickMealRequest;
 import com.tuan.nutritionservice.service.NutritionService.RecoveryRequest;
 import com.tuan.nutritionservice.service.NutritionService.RecoverySuggestion;
+import com.tuan.nutritionservice.service.NutritionService.AutoCalculateRequest;
+import com.tuan.nutritionservice.service.NutritionService.NutritionRecommendation;
 import com.tuan.nutritionservice.service.NutritionService.WaterRequest;
 import com.tuan.nutritionservice.service.NutritionService.WaterSummary;
 import java.util.List;
@@ -108,6 +110,25 @@ public class NutritionController {
     @GetMapping("/{userId}/analytics/weekly")
     List<DailyStats> weeklyAnalytics(@PathVariable Long userId) {
         return nutritionService.weeklyAnalytics(userId);
+    }
+
+    @PostMapping("/{userId}/plan/auto-calculate")
+    NutritionPlan autoCalculatePlan(@PathVariable Long userId,
+            @RequestBody AutoCalculateRequest request) {
+        return nutritionService.autoCalculatePlan(userId, request);
+    }
+
+    @GetMapping("/{userId}/recommendation")
+    NutritionRecommendation recommendation(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "0") int caloriesBurned) {
+        return nutritionService.recommendation(userId, caloriesBurned);
+    }
+
+    @DeleteMapping("/{userId}/meals/{mealId}")
+    ResponseEntity<Void> deleteMeal(@PathVariable Long userId, @PathVariable Long mealId) {
+        nutritionService.deleteMeal(userId, mealId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/admin/overview")

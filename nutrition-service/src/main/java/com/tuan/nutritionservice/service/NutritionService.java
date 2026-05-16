@@ -13,6 +13,7 @@ import com.tuan.nutritionservice.repository.WaterEntryRepository;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -212,6 +213,147 @@ public class NutritionService {
         return meals.save(mealFromFood(userId, food, request.mealType(), servings, request.query(), request.eatenAt()));
     }
 
+    @Transactional
+    public NutritionPlan autoCalculatePlan(Long userId, AutoCalculateRequest req) {
+        if (req.heightCm() <= 0 || req.weightKg() <= 0)
+            throw new IllegalArgumentException("Chiều cao và cân nặng phải lớn hơn 0");
+
+        // Age from dateOfBirth
+        int age = 25;
+        if (req.dateOfBirth() != null && !req.dateOfBirth().isBlank()) {
+            try {
+                LocalDate dob = LocalDate.parse(req.dateOfBirth());
+                age = LocalDate.now().getYear() - dob.getYear();
+                if (LocalDate.now().getDayOfYear() < dob.getDayOfYear()) age--;
+                age = Math.max(15, Math.min(80, age));
+            } catch (Exception ignored) {}
+        }
+
+        // BMR — Mifflin-St Jeor
+        boolean isMale = req.gender() == null || !req.gender().equalsIgnoreCase("Nữ");
+        double bmr = 10 * req.weightKg() + 6.25 * req.heightCm() - 5 * age + (isMale ? 5 : -161);
+
+        // TDEE — activity factor from experience level
+        double activity = switch (req.experienceLevel() == null ? "" : req.experienceLevel().toUpperCase()) {
+            case "ADVANCED"     -> 1.725;
+            case "INTERMEDIATE" -> 1.55;
+            default             -> 1.375;
+        };
+        double tdee = bmr * activity;
+
+        // Goal adjustment
+        String goalLower = req.primaryGoal() == null ? "" : req.primaryGoal().toLowerCase();
+        if (goalLower.contains("gi") && (goalLower.contains("m c") || goalLower.contains("m cân"))) {
+            tdee -= 500; // weight-loss deficit
+        } else if (goalLower.contains("t") && goalLower.contains("ng c")) {
+            tdee += 300; // muscle-gain surplus
+        }
+
+        int dailyCalories = Math.max(1200, (int) (Math.round(tdee / 50.0) * 50));
+
+        // Macros — athlete-oriented
+        int protein = (int) Math.round(req.weightKg() * 1.6);
+        int fat     = (int) Math.round(dailyCalories * 0.25 / 9);
+        int carbs   = Math.max(100, (int) Math.round((dailyCalories - protein * 4 - fat * 9) / 4.0));
+
+        // Hydration — 35ml/kg body weight
+        double hydration = Math.round(Math.max(2.0, req.weightKg() * 0.035) * 10) / 10.0;
+
+        // BMI label
+        double bmi = req.weightKg() / Math.pow(req.heightCm() / 100.0, 2);
+        String bmiLabel = bmi < 18.5 ? "Thiếu cân" : bmi < 25 ? "Bình thường" : bmi < 30 ? "Thừa cân" : "Béo phì";
+        String goalText = req.primaryGoal() != null && !req.primaryGoal().isBlank() ? req.primaryGoal() : "Duy trì sức khỏe";
+        String goalDesc = String.format("Mục tiêu: %s. BMI %.1f (%s). TDEE %.0f kcal/ngày.", goalText, bmi, bmiLabel, tdee);
+
+        String guidance;
+        if (goalLower.contains("gi") && goalLower.contains("m")) {
+            guidance = String.format("Thiếu hụt 500 kcal so với TDEE giúp giảm ~0.5kg/tuần. Protein %dg/ngày để giữ cơ. Ưu tiên rau xanh, hạn chế đường và tinh bột tinh chế.", protein);
+        } else if (goalLower.contains("t") && goalLower.contains("ng")) {
+            guidance = String.format("Dư thừa 300 kcal để tăng cơ từ từ. Protein %dg/ngày, phân chia 4-5 bữa. Carb cao trước buổi tập để tối ưu hiệu suất.", protein);
+        } else {
+            guidance = String.format("Duy trì %d kcal mỗi ngày. Phân bổ đều macro qua các bữa. Ưu tiên thực phẩm nguyên chất và bổ sung đủ nước mỗi ngày.", dailyCalories);
+        }
+
+        NutritionPlan plan = plans.findByUserId(userId).orElseGet(() -> defaultPlan(userId));
+        plan.setGoal(goalDesc);
+        plan.setDailyCalories(dailyCalories);
+        plan.setProteinGrams(protein);
+        plan.setCarbsGrams(carbs);
+        plan.setFatGrams(fat);
+        plan.setHydrationLiters(hydration);
+        plan.setGuidance(guidance);
+        return plans.save(plan);
+    }
+
+    @Transactional
+    public NutritionRecommendation recommendation(Long userId, int caloriesBurned) {
+        NutritionPlan plan = getOrCreatePlan(userId);
+        NutritionSummary today = summary(userId);
+
+        // Net target increases by calories burned (need to eat back exercise calories)
+        int netTarget = plan.getDailyCalories() + Math.max(0, caloriesBurned);
+        int remCal  = netTarget         - today.calories();
+        int remPro  = plan.getProteinGrams()  - today.proteinGrams();
+        int remCarb = plan.getCarbsGrams()    - today.carbsGrams();
+        int remFat  = plan.getFatGrams()      - today.fatGrams();
+        double pct  = netTarget > 0 ? Math.min(100, today.calories() * 100.0 / netTarget) : 0;
+
+        List<String> alerts = new ArrayList<>();
+
+        // Activity-aware alerts
+        if (caloriesBurned >= 600) {
+            alerts.add(String.format("Bạn đã đốt %d kcal hôm nay — hãy bổ sung thêm tinh bột và protein phục hồi cơ.", caloriesBurned));
+        } else if (caloriesBurned >= 300) {
+            alerts.add(String.format("Vận động tốt! Đã đốt %d kcal — đừng quên bù protein sau buổi tập.", caloriesBurned));
+        } else if (caloriesBurned == 0 && today.calories() > plan.getDailyCalories() / 2) {
+            alerts.add("Hôm nay ít vận động — cân nhắc giảm tinh bột trong bữa tối.");
+        }
+
+        // Food intake alerts
+        if (today.calories() == 0) {
+            alerts.add("Chưa có bữa ăn nào hôm nay. Đừng quên nạp năng lượng!");
+        } else if (remCal < -300) {
+            alerts.add("Bạn đã vượt " + Math.abs(remCal) + " kcal so với mục tiêu. Chú ý bữa tiếp theo.");
+        } else if (remCal > 0 && remCal <= 200) {
+            alerts.add("Gần đạt mục tiêu! Chỉ còn " + remCal + " kcal.");
+        }
+        if (remPro > 25)  alerts.add("Thiếu " + remPro + "g protein — gợi ý: ức gà, trứng luộc, đậu hũ.");
+        if (remCarb > 60 && remCal > 0) alerts.add("Thiếu " + remCarb + "g carb — gợi ý: cơm trắng, chuối, yến mạch.");
+
+        List<Food> suggestions = suggestFoods(remPro, remCarb, remCal, caloriesBurned);
+
+        return new NutritionRecommendation(
+                plan.getDailyCalories(), plan.getProteinGrams(), plan.getCarbsGrams(), plan.getFatGrams(),
+                today.calories(), today.proteinGrams(), today.carbsGrams(), today.fatGrams(),
+                remCal, remPro, remCarb, remFat, caloriesBurned, netTarget, pct, alerts, suggestions);
+    }
+
+    @Transactional
+    public void deleteMeal(Long userId, Long mealId) {
+        MealEntry meal = meals.findById(mealId)
+                .orElseThrow(() -> new IllegalArgumentException("Bữa ăn không tồn tại: " + mealId));
+        if (!meal.getUserId().equals(userId))
+            throw new IllegalArgumentException("Không có quyền xóa bữa ăn này");
+        meals.deleteById(mealId);
+    }
+
+    private List<Food> suggestFoods(int remPro, int remCarb, int remCal, int caloriesBurned) {
+        if (remCal <= 0) return List.of();
+        int calCap = Math.max(200, Math.min(remCal, 900));
+        boolean highActivity = caloriesBurned >= 400;
+        return foods.findAllByActiveTrueOrderByNameAsc().stream()
+                .filter(f -> f.getCalories() > 0 && f.getCalories() <= calCap)
+                .sorted(Comparator.comparingDouble((Food f) -> {
+                    double score = 0;
+                    if (remPro  > 20 || highActivity) score += f.getProteinGrams() * 3.5;
+                    if (remCarb > 40 || highActivity) score += f.getCarbsGrams()   * 1.8;
+                    score += f.getCalories() * 0.03;
+                    return -score;
+                }))
+                .limit(4)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public NutritionSummary summary(Long userId) {
         LocalDate today = LocalDate.now();
@@ -236,20 +378,20 @@ public class NutritionService {
             protein = 35;
         }
         List<String> ideas = burned >= 650
-                ? List.of("Com trang + uc ga + chuoi", "Pho bo them trung", "Bun bo + sua chua Hy Lap")
-                : List.of("Chuoi + whey protein", "Trung ga + com trang", "Sua chua Hy Lap + chuoi");
+                ? List.of("Cơm trắng + ức gà + chuối", "Phở bò thêm trứng", "Bún bò + sữa chua Hy Lạp")
+                : List.of("Chuối + whey protein", "Trứng gà + cơm trắng", "Sữa chua Hy Lạp + chuối");
         String message = burned >= 650
-                ? "Buoi tap tieu hao cao. Nen bo sung carb de nap glycogen va them protein trong 60-90 phut sau tap."
-                : "Buoi tap vua phai. Uu tien mot bua nhe co carb de hoi phuc va protein de ho tro co bap.";
+                ? "Buổi tập tiêu hao cao. Hãy bổ sung carb để nạp lại glycogen và thêm protein trong 60–90 phút sau tập."
+                : "Buổi tập vừa phải. Ưu tiên bữa nhẹ có carb để phục hồi và protein để hỗ trợ cơ bắp.";
         return new RecoverySuggestion(message, burned, targetCalories, protein, carbs, ideas);
     }
 
     public List<FoodSuggestion> library() {
         return List.of(
-                new FoodSuggestion("Pre-run banana toast", "BEFORE_RUN", 310, "Carbs, a little protein, easy digestion."),
-                new FoodSuggestion("Recovery rice bowl", "AFTER_RUN", 640, "Rice, lean protein, vegetables, sodium."),
-                new FoodSuggestion("Pool-session smoothie", "AFTER_SWIM", 420, "Milk, banana, oats, whey or yogurt."),
-                new FoodSuggestion("Long day hydration", "HYDRATION", 120, "Electrolytes and 500-750ml fluid per hour.")
+                new FoodSuggestion("Chuối + bánh mì đen", "TRƯỚC_TẬP", 310, "Carb chậm + đường tự nhiên, dễ tiêu hóa trước khi chạy."),
+                new FoodSuggestion("Cơm trắng + ức gà + rau xanh", "SAU_TẬP", 640, "Phục hồi glycogen và protein cơ sau bài tập dài."),
+                new FoodSuggestion("Sinh tố phục hồi sau bơi", "SAU_BƠI", 420, "Sữa tươi + chuối + yến mạch, nhanh phục hồi năng lượng."),
+                new FoodSuggestion("Nước dừa tươi", "BỔ_SUNG_NƯỚC", 120, "Điện giải tự nhiên, bổ sung 500-750ml mỗi giờ vận động.")
         );
     }
 
@@ -370,13 +512,13 @@ public class NutritionService {
     private NutritionPlan defaultPlan(Long userId) {
         NutritionPlan plan = new NutritionPlan();
         plan.setUserId(userId);
-        plan.setGoal("Fuel run and swim training without feeling heavy.");
+        plan.setGoal("Duy trì sức khỏe và hỗ trợ luyện tập chạy bộ & bơi lội.");
         plan.setDailyCalories(2450);
         plan.setProteinGrams(135);
         plan.setCarbsGrams(330);
         plan.setFatGrams(70);
         plan.setHydrationLiters(2.8);
-        plan.setGuidance("Prioritize carbs around run days, protein after swim sessions, and consistent hydration.");
+        plan.setGuidance("Ưu tiên carb trước buổi chạy, bổ sung protein sau bơi và uống đủ nước mỗi ngày. Dùng nút Thiết lập thông minh để tính kế hoạch cá nhân hóa theo hồ sơ của bạn.");
         return plan;
     }
 
@@ -496,6 +638,26 @@ public class NutritionService {
 
     public record CategoryRequest(String name, String description, String icon) {
     }
+
+    public record AutoCalculateRequest(
+            String gender,
+            String dateOfBirth,
+            double heightCm,
+            double weightKg,
+            String primaryGoal,
+            String experienceLevel
+    ) {}
+
+    public record NutritionRecommendation(
+            int targetCalories, int targetProtein, int targetCarbs, int targetFat,
+            int consumedCalories, int consumedProtein, int consumedCarbs, int consumedFat,
+            int remainingCalories, int remainingProtein, int remainingCarbs, int remainingFat,
+            int caloriesBurned,
+            int netCaloriesTarget,
+            double completionPercent,
+            List<String> alerts,
+            List<Food> suggestedFoods
+    ) {}
 
     public record NutritionAdminOverview(
             long totalFoods,

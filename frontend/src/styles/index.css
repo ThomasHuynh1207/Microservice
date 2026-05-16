@@ -6150,6 +6150,50 @@ label {
 }
 .nut-modal-actions button { flex: 1; }
 
+/* ── Activity energy card ── */
+.nut-activity-card { display: flex; flex-direction: column; gap: 12px; }
+.nut-activity-row { display: flex; align-items: center; gap: 0; }
+.nut-activity-stat { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0; }
+.nut-activity-val { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+.nut-activity-label { font-size: 0.72rem; color: var(--text-2); text-align: center; }
+.nut-activity-sep { width: 1px; height: 40px; background: var(--line); flex-shrink: 0; }
+.nut-activity-tip { font-size: 0.82rem; color: #92400e; background: #fef3c7; border-radius: 8px; padding: 8px 12px; line-height: 1.4; }
+
+/* ── BMI card ── */
+.nut-bmi-card { display: flex; flex-direction: column; gap: 10px; }
+.nut-bmi-main { display: flex; align-items: baseline; gap: 10px; }
+.nut-bmi-value { font-size: 2.2rem; font-weight: 800; }
+.nut-bmi-label { font-size: 0.92rem; font-weight: 700; }
+.nut-bmi-bar-track { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.nut-bmi-bar-fill { height: 100%; border-radius: 99px; transition: width 0.4s; }
+.nut-bmi-ranges { display: flex; gap: 8px; font-size: 0.72rem; font-weight: 600; flex-wrap: wrap; }
+
+/* ── Recommendation card ── */
+.nut-rec-card { display: flex; flex-direction: column; gap: 12px; }
+.nut-rec-pct { font-size: 0.8rem; font-weight: 700; color: var(--orange); background: #fff7ed; padding: 2px 8px; border-radius: 99px; }
+.nut-rec-alerts { display: flex; flex-direction: column; gap: 6px; }
+.nut-rec-alert { font-size: 0.84rem; color: #92400e; background: #fef3c7; border-radius: 8px; padding: 8px 12px; line-height: 1.4; }
+.nut-rec-remaining { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.nut-rec-macro { display: flex; flex-direction: column; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 10px; padding: 8px 6px; }
+.nut-rec-macro span { font-size: 0.72rem; color: var(--text-2); }
+.nut-rec-macro strong { font-size: 1rem; font-weight: 800; color: var(--ink); }
+.nut-rec-suggest p { font-size: 0.82rem; font-weight: 600; color: var(--ink); margin: 0 0 6px; }
+.nut-rec-foods { display: flex; flex-wrap: wrap; gap: 6px; }
+.nut-rec-food-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; transition: all 0.15s; text-align: left; }
+.nut-rec-food-btn:hover { border-color: var(--orange); background: #fff7ed; transform: translateY(-1px); }
+.nut-rec-food-name { font-size: 0.84rem; font-weight: 600; color: var(--ink); }
+.nut-rec-food-meta { font-size: 0.72rem; color: var(--orange); font-weight: 700; }
+.nut-rec-complete { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; font-weight: 600; color: #16a34a; background: #f0fdf4; border-radius: 10px; padding: 10px 14px; }
+
+/* ── Diary delete button ── */
+.nut-diary-del { display: flex; align-items: center; justify-content: center; padding: 3px; border: none; background: transparent; color: #94a3b8; border-radius: 6px; cursor: pointer; transition: color 0.15s, background 0.15s; flex-shrink: 0; }
+.nut-diary-del:hover { color: #ef4444; background: #fee2e2; }
+
+/* ── Auto-calculate button ── */
+.nut-auto-calc-btn { display: flex; align-items: center; gap: 7px; width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--orange); background: #fff7ed; color: var(--orange); font-size: 0.88rem; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+.nut-auto-calc-btn:hover { background: var(--orange); color: #fff; }
+.nut-auto-calc-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 @media (max-width: 600px) {
   .nut-page { padding: 14px 12px 32px; }
   .nut-dashboard { grid-template-columns: 1fr; }
@@ -6159,4 +6203,5 @@ label {
   .nut-avg-row { grid-template-columns: repeat(2, 1fr); }
   .nut-manual-macros { grid-template-columns: repeat(2, 1fr); }
   .nut-modal-grid { grid-template-columns: 1fr; }
+  .nut-rec-remaining { grid-template-columns: repeat(2, 1fr); }
 }

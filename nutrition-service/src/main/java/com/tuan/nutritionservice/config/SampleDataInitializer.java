@@ -66,77 +66,77 @@ public class SampleDataInitializer {
 
             // 4. Seed foods
             seedFood(foods, food("Phở bò",          buaChinhCat, "1 tô",       520, 28, 65, 16,
-                "pho bo beef noodle soup", "Good after a longer run.",
+                "pho bo beef noodle soup", "Bổ sung carb và protein sau buổi chạy dài.",
                 "https://images.unsplash.com/photo-1555126634-323283e090fa?w=400&q=80"));
             seedFood(foods, food("Cơm tấm sườn",    buaChinhCat, "1 dĩa",      760, 34, 96, 24,
-                "com tam suon rice pork", "High energy Vietnamese lunch.",
+                "com tam suon rice pork", "Bữa trưa năng lượng cao cho ngày tập nặng.",
                 "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&q=80"));
             seedFood(foods, food("Bún bò Huế",      buaChinhCat, "1 tô",       610, 31, 78, 18,
-                "bun bo hue beef noodle spicy soup", "Good after endurance sessions.",
+                "bun bo hue beef noodle spicy soup", "Phù hợp sau buổi tập sức bền.",
                 "https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?w=400&q=80"));
             seedFood(foods, food("Bánh mì trứng",   buaChinhCat, "1 ổ",        430, 18, 58, 14,
-                "banh mi trung sandwich egg baguette", "Practical breakfast.",
+                "banh mi trung sandwich egg baguette", "Bữa sáng tiện lợi, cân bằng protein và carb.",
                 "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&q=80"));
             seedFood(foods, food("Cơm gà xé",       buaChinhCat, "1 dĩa",      650, 38, 80, 18,
-                "com ga xe chicken rice shredded", "High protein lunch.",
+                "com ga xe chicken rice shredded", "Protein cao, lý tưởng cho bữa trưa sau tập.",
                 "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400&q=80"));
             seedFood(foods, food("Trứng gà luộc",   proteinCat,  "1 quả",       70,  6,  1,  5,
-                "trung ga egg boiled", "Simple protein source.",
+                "trung ga egg boiled", "Nguồn protein đơn giản, dễ kết hợp với mọi bữa ăn.",
                 "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=400&q=80"));
             seedFood(foods, food("Whey protein",    proteinCat,  "1 scoop 30g", 120, 24,  3,  2,
-                "whey protein scoop supplement", "Convenient post-workout protein.",
+                "whey protein scoop supplement", "Bổ sung protein nhanh sau buổi tập.",
                 "https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=400&q=80"));
             seedFood(foods, food("Ức gà nướng",     proteinCat,  "100g",        165, 31,  0,  4,
-                "uc ga chicken breast nuong grilled", "Lean protein for recovery.",
+                "uc ga chicken breast nuong grilled", "Protein nạc cao, hỗ trợ phục hồi cơ sau tập.",
                 "https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=400&q=80"));
             seedFood(foods, food("Sữa chua Hy Lạp", proteinCat,  "170g",        150, 15, 12,  4,
-                "sua chua hy lap greek yogurt", "Protein snack with probiotics.",
+                "sua chua hy lap greek yogurt", "Protein và probiotic, tốt cho tiêu hóa.",
                 "https://images.unsplash.com/photo-1488477181899-9e8560fdd03c?w=400&q=80"));
             seedFood(foods, food("Cá hồi nướng",    proteinCat,  "150g",        280, 39,  0, 13,
-                "ca hoi salmon nuong grilled fish", "High protein and omega-3.",
+                "ca hoi salmon nuong grilled fish", "Protein cao và omega-3 tốt cho cơ khớp.",
                 "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400&q=80"));
             seedFood(foods, food("Đậu hũ xào",      proteinCat,  "150g",        180, 14, 10, 10,
-                "dau hu tofu xao stir fried", "Plant-based protein option.",
+                "dau hu tofu xao stir fried", "Protein thực vật, phù hợp cho ngày ăn nhẹ.",
                 "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&q=80"));
             seedFood(foods, food("Cơm trắng",        carbCat,     "100g",        130,  3, 28,  0,
-                "com trang rice white cooked", "Simple carb base.",
+                "com trang rice white cooked", "Nguồn carb cơ bản, dễ tiêu hóa.",
                 "https://images.unsplash.com/photo-1536304447766-da0ed4ce1b73?w=400&q=80"));
             seedFood(foods, food("Chuối",            carbCat,     "1 trái",      105,  1, 27,  0,
-                "chuoi banana trai", "Easy pre-run or post-run carb.",
+                "chuoi banana trai", "Carb nhanh lý tưởng trước hoặc sau khi chạy.",
                 "https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=400&q=80"));
             seedFood(foods, food("Yến mạch",         carbCat,     "50g khô",     190,  7, 32,  4,
-                "yen mach oats oatmeal", "Slow-release carb for morning training.",
+                "yen mach oats oatmeal", "Carb chậm, duy trì năng lượng cho buổi sáng tập luyện.",
                 "https://images.unsplash.com/photo-1517673400267-0251440c45dc?w=400&q=80"));
             seedFood(foods, food("Khoai lang",       carbCat,     "1 củ 150g",   130,  2, 30,  0,
-                "khoai lang sweet potato", "Low-GI carb for sustained energy.",
+                "khoai lang sweet potato", "Carb chỉ số GI thấp, năng lượng bền vững.",
                 "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?w=400&q=80"));
             seedFood(foods, food("Bánh mì đen",      carbCat,     "2 lát",       180,  8, 34,  3,
-                "banh mi den whole wheat bread", "Fiber-rich carb source.",
+                "banh mi den whole wheat bread", "Carb giàu chất xơ, no lâu.",
                 "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&q=80"));
             seedFood(foods, food("Hạt hạnh nhân",    snackCat,    "30g",         170,  6,  6, 15,
-                "hat hanh nhan almond nuts", "Healthy fat and protein snack.",
+                "hat hanh nhan almond nuts", "Chất béo lành mạnh và protein, ăn vặt lý tưởng.",
                 "https://images.unsplash.com/photo-1508061253366-f7da158b6d46?w=400&q=80"));
             seedFood(foods, food("Thanh năng lượng", snackCat,    "1 thanh 40g", 180,  5, 28,  6,
-                "thanh nang luong energy bar granola", "Quick fuel mid-training.",
+                "thanh nang luong energy bar granola", "Bổ sung năng lượng nhanh giữa buổi tập.",
                 "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&q=80"));
             seedFood(foods, food("Sữa tươi ít béo",  drinkCat,    "200ml",        90,  7, 10,  2,
-                "sua tuoi milk low fat", "Post-swim recovery drink.",
+                "sua tuoi milk low fat", "Phục hồi sau bơi với protein và canxi.",
                 "https://images.unsplash.com/photo-1550583724-b2692b85b150?w=400&q=80"));
             seedFood(foods, food("Nước dừa tươi",    drinkCat,    "330ml",        60,  1, 14,  0,
-                "nuoc dua coconut water fresh", "Natural electrolyte replenishment.",
+                "nuoc dua coconut water fresh", "Điện giải tự nhiên, bổ sung sau vận động.",
                 "https://images.unsplash.com/photo-1550828520-4cb496926fc9?w=400&q=80"));
 
             // 5. Nutrition plans — one per user, idempotent
-            seedPlan(plans, 1L,  "Support 4 run days and 3 swim sessions per week.",        2500, 140, 350, 68, 3.0);
-            seedPlan(plans, 2L,  "Fuel bridge repeats and steady weekday runs.",            2350, 125, 320, 65, 2.7);
-            seedPlan(plans, 3L,  "Recover from swim volume while keeping meals light.",     2300, 135, 285, 72, 3.1);
-            seedPlan(plans, 4L,  "Support weight control with enough protein.",             2100, 130, 245, 62, 2.5);
-            seedPlan(plans, 5L,  "Build consistent swim endurance and recovery.",           2400, 135, 315, 70, 3.0);
-            seedPlan(plans, 6L,  "Fuel marathon training with high carb and iron intake.",  2700, 145, 390, 70, 3.2);
-            seedPlan(plans, 7L,  "Support swim speed work with clean protein and carbs.",   2200, 130, 270, 75, 3.3);
-            seedPlan(plans, 8L,  "Triathlon prep: balanced macros for multisport training.",2600, 145, 360, 72, 3.0);
-            seedPlan(plans, 9L,  "Ultra trail fuel: calorie-dense and iron-rich foods.",    3100, 155, 430, 85, 3.5);
-            seedPlan(plans, 10L, "Recreational athlete: moderate intake, active lifestyle.", 2200, 120, 290, 65, 2.8);
+            seedPlan(plans, 1L,  "Duy trì năng lượng cho 4 ngày chạy và 3 buổi bơi mỗi tuần.",       2500, 140, 350, 68, 3.0);
+            seedPlan(plans, 2L,  "Hỗ trợ các buổi chạy nhịp cao và chạy nhẹ hàng ngày.",             2350, 125, 320, 65, 2.7);
+            seedPlan(plans, 3L,  "Phục hồi sau khối lượng bơi lớn, giữ bữa ăn cân bằng.",            2300, 135, 285, 72, 3.1);
+            seedPlan(plans, 4L,  "Kiểm soát cân nặng với protein đủ và calorie hợp lý.",              2100, 130, 245, 62, 2.5);
+            seedPlan(plans, 5L,  "Xây dựng sức bền bơi lội và phục hồi hiệu quả.",                   2400, 135, 315, 70, 3.0);
+            seedPlan(plans, 6L,  "Hỗ trợ tập marathon với carb cao và đủ sắt.",                       2700, 145, 390, 70, 3.2);
+            seedPlan(plans, 7L,  "Nâng cao tốc độ bơi với protein sạch và carb cân đối.",             2200, 130, 270, 75, 3.3);
+            seedPlan(plans, 8L,  "Chuẩn bị triathlon: macro cân bằng cho đa môn thể thao.",           2600, 145, 360, 72, 3.0);
+            seedPlan(plans, 9L,  "Chạy địa hình siêu dài: thực phẩm dày calorie và giàu sắt.",        3100, 155, 430, 85, 3.5);
+            seedPlan(plans, 10L, "Vận động viên phong trào: lượng ăn vừa phải, lối sống năng động.",  2200, 120, 290, 65, 2.8);
 
             // 6. Meal entries — per-user idempotent
             Set<Long> seededMealUsers = meals.findAll().stream()
@@ -285,7 +285,7 @@ public class SampleDataInitializer {
         plan.setCarbsGrams(carbs);
         plan.setFatGrams(fat);
         plan.setHydrationLiters(hydration);
-        plan.setGuidance("Prioritize carbs near training, protein after workouts, and steady hydration through the day.");
+        plan.setGuidance("Ưu tiên carb gần buổi tập, bổ sung protein sau tập và uống đủ nước xuyên suốt cả ngày.");
         plans.save(plan);
     }
 

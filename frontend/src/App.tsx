@@ -177,6 +177,26 @@ type RecoverySuggestion = {
   mealIdeas: string[];
 };
 
+type NutritionRecommendation = {
+  targetCalories: number;
+  targetProtein: number;
+  targetCarbs: number;
+  targetFat: number;
+  consumedCalories: number;
+  consumedProtein: number;
+  consumedCarbs: number;
+  consumedFat: number;
+  remainingCalories: number;
+  remainingProtein: number;
+  remainingCarbs: number;
+  remainingFat: number;
+  caloriesBurned: number;
+  netCaloriesTarget: number;
+  completionPercent: number;
+  alerts: string[];
+  suggestedFoods: FoodItem[];
+};
+
 type TrainingDay = {
   id: string;
   day: string;
@@ -692,7 +712,7 @@ export default function App() {
             onSaveActivity={createActivity}
             routes={routes}
             onRouteCreated={(newRoute) => {
-              setRoutes((prev) => [...prev.filter((r) => r.id !== newRoute.id), newRoute]);
+              if (newRoute) setRoutes((prev) => [...prev.filter((r) => r.id !== newRoute.id), newRoute]);
               refreshRoutes();
             }}
             sportDefs={sportDefs}
@@ -714,6 +734,7 @@ export default function App() {
           <NutritionPage
             token={session.token}
             userId={session.userId}
+            profile={profile}
             plan={nutritionPlan}
             setPlan={setNutritionPlan}
             meals={meals}
@@ -1873,7 +1894,7 @@ function TrainingPage({
   userId: number;
   onSaveActivity: (payload: Omit<FitnessActivity, "id" | "startedAt"> & { gpsRouteJson?: string; averagePaceSecondsPerKm?: number }) => Promise<void>;
   routes: RouteItem[];
-  onRouteCreated: (route: RouteItem) => void;
+  onRouteCreated: (route?: RouteItem) => void;
   sportDefs: SportDef[];
   onActivitiesRefresh?: () => void;
 }) {
@@ -3285,9 +3306,10 @@ function WaterDroplets({ totalMl, goalMl }: { totalMl: number; goalMl: number })
   );
 }
 
-function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activities, notify }: {
+function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals, activities, notify }: {
   token: string;
   userId: number;
+  profile: AthleteProfile;
   plan: NutritionPlan;
   setPlan: (plan: NutritionPlan) => void;
   meals: MealEntry[];
@@ -3311,13 +3333,35 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
   const [busyMeal, setBusyMeal] = useState(false);
   const [weeklyStats, setWeeklyStats] = useState<DailyStats[]>([]);
   const [showPlanEditor, setShowPlanEditor] = useState(false);
+  const [recommendation, setRecommendation] = useState<NutritionRecommendation | null>(null);
+  const [autoCalcBusy, setAutoCalcBusy] = useState(false);
 
   useEffect(() => setDraft(plan), [plan]);
+
+  const todayKey = new Date().toDateString();
+  const todayBurnedCalories = useMemo(() =>
+    activities
+      .filter((a) => a.startedAt && new Date(a.startedAt).toDateString() === todayKey)
+      .reduce((sum, a) => sum + (a.calories ?? 0), 0),
+    [activities, todayKey]
+  );
+
+  const loadRecommendation = (burned?: number) => {
+    if (!token || token === "demo") return;
+    const kcal = burned !== undefined ? burned : todayBurnedCalories;
+    const url = `/nutrition/${userId}/recommendation${kcal > 0 ? `?caloriesBurned=${kcal}` : ""}`;
+    api<NutritionRecommendation>(url, token, null as unknown as NutritionRecommendation)
+      .then((r) => { if (r && r.targetCalories) setRecommendation(r); });
+  };
 
   useEffect(() => {
     if (!token || token === "demo") return;
     api<{ totalMl: number }>(`/nutrition/${userId}/water/today`, token, { totalMl: 0 }).then((r) => setWaterTotalMl(r.totalMl));
   }, [token, userId]);
+
+  useEffect(() => {
+    loadRecommendation(todayBurnedCalories);
+  }, [token, userId, todayBurnedCalories]);
 
   useEffect(() => {
     if (!token || token === "demo" || activeTab !== "analytics") return;
@@ -3367,6 +3411,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
       setMeals([created, ...meals]);
       setQuickInput("");
       notify(`Đã thêm ${created.name}.`);
+      loadRecommendation(todayBurnedCalories);
     } catch (err) {
       notify(err instanceof Error ? err.message : "Không tìm thấy món phù hợp.");
     } finally {
@@ -3383,6 +3428,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
       });
       setMeals([created, ...meals]);
       notify(`Đã thêm ${created.name} vào nhật ký.`);
+      loadRecommendation();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Không thể thêm món ăn.");
     } finally {
@@ -3402,10 +3448,50 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
       setMeals([created, ...meals]);
       setManualMeal({ mealType: "SNACK", name: "", calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0 });
       notify("Đã thêm bữa ăn vào nhật ký.");
+      loadRecommendation();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Không thể thêm bữa ăn.");
     } finally {
       setBusyMeal(false);
+    }
+  }
+
+  async function deleteMeal(mealId: number) {
+    try {
+      await apiStrict<void>(`/nutrition/${userId}/meals/${mealId}`, token, { method: "DELETE" });
+      setMeals(meals.filter((m) => m.id !== mealId));
+      notify("Đã xóa bữa ăn.");
+      loadRecommendation();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Không thể xóa bữa ăn.");
+    }
+  }
+
+  async function autoCalculatePlan() {
+    if (!profile.heightCm || !profile.weightKg) {
+      notify("Vui lòng cập nhật chiều cao và cân nặng trong hồ sơ trước.");
+      return;
+    }
+    setAutoCalcBusy(true);
+    try {
+      const saved = await apiStrict<NutritionPlan>(`/nutrition/${userId}/plan/auto-calculate`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          gender: profile.gender,
+          dateOfBirth: profile.dateOfBirth,
+          heightCm: profile.heightCm,
+          weightKg: profile.weightKg,
+          primaryGoal: profile.primaryGoal,
+          experienceLevel: profile.experienceLevel,
+        }),
+      });
+      setPlan(saved);
+      setDraft(saved);
+      notify("Đã thiết lập kế hoạch thông minh từ hồ sơ của bạn!");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Không thể tính toán kế hoạch.");
+    } finally {
+      setAutoCalcBusy(false);
     }
   }
 
@@ -3439,7 +3525,6 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
     }
   }
 
-  const todayKey = new Date().toDateString();
   const todayMeals = meals.filter((meal) => !meal.eatenAt || new Date(meal.eatenAt).toDateString() === todayKey);
   const totals = todayMeals.reduce((s, m) => ({ calories: s.calories + m.calories, protein: s.protein + m.proteinGrams, carbs: s.carbs + m.carbsGrams, fat: s.fat + m.fatGrams }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
   const waterGoalMl = Math.round(plan.hydrationLiters * 1000);
@@ -3557,6 +3642,110 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
                 <div><span>F {plan.fatGrams}g</span></div>
               </div>
             </div>
+
+            {/* BMI card */}
+            {profile.heightCm && profile.weightKg && (() => {
+              const bmi = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
+              const bmiLabel = bmi < 18.5 ? "Thiếu cân" : bmi < 25 ? "Bình thường" : bmi < 30 ? "Thừa cân" : "Béo phì";
+              const bmiColor = bmi < 18.5 ? "#3b82f6" : bmi < 25 ? "#22c55e" : bmi < 30 ? "#f59e0b" : "#ef4444";
+              const bmiPct = Math.min(100, Math.max(5, ((bmi - 10) / 30) * 100));
+              return (
+                <div className="nut-card nut-bmi-card">
+                  <div className="nut-card-head"><span>📊 Chỉ số BMI</span></div>
+                  <div className="nut-bmi-main">
+                    <span className="nut-bmi-value" style={{ color: bmiColor }}>{bmi.toFixed(1)}</span>
+                    <span className="nut-bmi-label" style={{ color: bmiColor }}>{bmiLabel}</span>
+                  </div>
+                  <div className="nut-bmi-bar-track">
+                    <div className="nut-bmi-bar-fill" style={{ width: `${bmiPct}%`, background: bmiColor }} />
+                  </div>
+                  <div className="nut-bmi-ranges">
+                    <span style={{ color: "#3b82f6" }}>Thiếu &lt;18.5</span>
+                    <span style={{ color: "#22c55e" }}>Bình thường 18.5–25</span>
+                    <span style={{ color: "#f59e0b" }}>Thừa 25–30</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Activity energy card */}
+            {todayBurnedCalories > 0 && (
+              <div className="nut-card nut-activity-card">
+                <div className="nut-card-head"><span><Flame size={18} style={{ color: "#f97316" }} /> Vận động hôm nay</span></div>
+                <div className="nut-activity-row">
+                  <div className="nut-activity-stat">
+                    <span className="nut-activity-val" style={{ color: "#f97316" }}>{todayBurnedCalories}</span>
+                    <span className="nut-activity-label">kcal đã đốt</span>
+                  </div>
+                  <div className="nut-activity-sep" />
+                  <div className="nut-activity-stat">
+                    <span className="nut-activity-val" style={{ color: "#22c55e" }}>{totals.calories}</span>
+                    <span className="nut-activity-label">kcal đã ăn</span>
+                  </div>
+                  <div className="nut-activity-sep" />
+                  <div className="nut-activity-stat">
+                    <span className="nut-activity-val" style={{ color: recommendation ? (recommendation.remainingCalories > 0 ? "#3b82f6" : "#ef4444") : "#6b7280" }}>
+                      {recommendation ? Math.max(0, recommendation.remainingCalories) : plan.dailyCalories + todayBurnedCalories - totals.calories}
+                    </span>
+                    <span className="nut-activity-label">kcal còn cần</span>
+                  </div>
+                </div>
+                {todayBurnedCalories >= 400 && (
+                  <div className="nut-activity-tip">
+                    💪 Hôm nay vận động nhiều — hãy bổ sung đủ protein và carb phục hồi!
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Recommendation card */}
+            {recommendation ? (
+              <div className="nut-card nut-rec-card">
+                <div className="nut-card-head">
+                  <span><Sparkles size={18} style={{ color: "#f97316" }} /> Gợi ý hôm nay</span>
+                  <span className="nut-rec-pct">{Math.round(recommendation.completionPercent)}% mục tiêu</span>
+                </div>
+                {recommendation.alerts.length > 0 && (
+                  <div className="nut-rec-alerts">
+                    {recommendation.alerts.map((alert, i) => (
+                      <div key={i} className="nut-rec-alert">💡 {alert}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="nut-rec-remaining">
+                  <div className="nut-rec-macro"><span>Còn lại</span><strong style={{ color: recommendation.remainingCalories > 0 ? "#22c55e" : "#ef4444" }}>{Math.max(0, recommendation.remainingCalories)} kcal</strong></div>
+                  <div className="nut-rec-macro"><span>Protein</span><strong>{Math.max(0, recommendation.remainingProtein)}g</strong></div>
+                  <div className="nut-rec-macro"><span>Carb</span><strong>{Math.max(0, recommendation.remainingCarbs)}g</strong></div>
+                  <div className="nut-rec-macro"><span>Fat</span><strong>{Math.max(0, recommendation.remainingFat)}g</strong></div>
+                </div>
+                {recommendation.suggestedFoods.length > 0 && (
+                  <div className="nut-rec-suggest">
+                    <p>Gợi ý món ăn phù hợp:</p>
+                    <div className="nut-rec-foods">
+                      {recommendation.suggestedFoods.map((food) => (
+                        <button key={food.id} className="nut-rec-food-btn" onClick={() => { setFoodQuery(food.name); setActiveTab("addfood"); }}>
+                          <span className="nut-rec-food-name">{food.name}</span>
+                          <span className="nut-rec-food-meta">P {food.proteinGrams}g · {food.calories} kcal</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {recommendation.suggestedFoods.length === 0 && recommendation.remainingCalories <= 0 && (
+                  <div className="nut-rec-complete">
+                    <CheckCircle2 size={20} style={{ color: "#22c55e" }} /> Bạn đã đạt mục tiêu calo hôm nay!
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="nut-card nut-rec-card nut-rec-loading">
+                <div className="nut-card-head"><span><Sparkles size={18} style={{ color: "#f97316" }} /> Gợi ý hôm nay</span></div>
+                <p style={{ color: "var(--text-2)", fontSize: "0.88rem" }}>Đang tải gợi ý dinh dưỡng...</p>
+                <button className="nut-auto-calc-btn" style={{ marginTop: 8 }} onClick={() => loadRecommendation()}>
+                  <Sparkles size={15} /> Tải lại gợi ý
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3588,6 +3777,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
                       <span>C {m.carbsGrams}g</span>
                       <span>F {m.fatGrams}g</span>
                       <strong>{m.calories} kcal</strong>
+                      <button className="nut-diary-del" title="Xóa" onClick={() => deleteMeal(m.id)}><X size={13} /></button>
                     </div>
                   </div>
                 ))}
@@ -3816,6 +4006,9 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
               <h3>Kế hoạch dinh dưỡng</h3>
               <button type="button" className="icon-button" onClick={() => setShowPlanEditor(false)}><X size={16} /></button>
             </div>
+            <button type="button" className="nut-auto-calc-btn" disabled={autoCalcBusy} onClick={autoCalculatePlan}>
+              <Sparkles size={15} /> {autoCalcBusy ? "Đang tính..." : "Thiết lập thông minh từ hồ sơ"}
+            </button>
             <label>Mục tiêu<input value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} /></label>
             <div className="nut-modal-grid">
               <NumberField label="Calories" value={draft.dailyCalories} onChange={(v) => setDraft({ ...draft, dailyCalories: v })} />
