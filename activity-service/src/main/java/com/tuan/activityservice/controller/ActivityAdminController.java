@@ -13,7 +13,6 @@ import com.tuan.activityservice.service.ActivityService;
 import com.tuan.activityservice.service.ActivityService.SportDefRequest;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,13 +24,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 
 @RestController
 @RequestMapping("/api/activities/admin")
 public class ActivityAdminController {
-
-    private static final RestTemplate REST = new RestTemplate();
 
     private final ActivityRepository activityRepo;
     private final RouteRepository routeRepo;
@@ -39,9 +35,6 @@ public class ActivityAdminController {
     private final ChallengeRepository challengeRepo;
     private final ChallengeParticipantRepository participantRepo;
     private final ActivityService activityService;
-
-    @Value("${auth.service.url:http://auth-service:8081}")
-    private String authServiceUrl;
 
     public ActivityAdminController(ActivityRepository activityRepo,
                                    RouteRepository routeRepo,
@@ -59,8 +52,8 @@ public class ActivityAdminController {
 
     @GetMapping("/overview")
     public ResponseEntity<Map<String, Long>> overview(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(Map.of(
                 "totalActivities", activityRepo.count(),
                 "runActivities",   activityRepo.countBySportType(SportType.RUN),
@@ -72,16 +65,16 @@ public class ActivityAdminController {
 
     @GetMapping("/all")
     public ResponseEntity<List<Activity>> allActivities(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(activityRepo.findAllByOrderByStartedAtDesc());
     }
 
     @DeleteMapping("/{activityId}")
     public ResponseEntity<Void> deleteActivity(
             @PathVariable Long activityId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         if (!activityRepo.existsById(activityId))
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         activityRepo.deleteById(activityId);
@@ -93,8 +86,8 @@ public class ActivityAdminController {
     @PostMapping("/routes")
     public ResponseEntity<Route> createRoute(
             @RequestBody RouteRequest req,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         Route route = new Route();
         route.setName(req.name());
         route.setSportType(req.sportType());
@@ -108,8 +101,8 @@ public class ActivityAdminController {
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Void> deleteRoute(
             @PathVariable Long routeId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         if (!routeRepo.existsById(routeId))
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         savedRouteRepo.deleteByRoute_Id(routeId);
@@ -123,8 +116,8 @@ public class ActivityAdminController {
     @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<Void> deleteChallenge(
             @PathVariable Long challengeId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         if (!challengeRepo.existsById(challengeId))
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         participantRepo.deleteByChallenge_Id(challengeId);
@@ -136,16 +129,16 @@ public class ActivityAdminController {
 
     @GetMapping("/sports")
     public ResponseEntity<List<SportDefinition>> getAllSports(
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(activityService.activeSportDefs());
     }
 
     @PostMapping("/sports")
     public ResponseEntity<SportDefinition> createSport(
             @RequestBody SportDefRequest req,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
             return ResponseEntity.ok(activityService.createSportDef(req));
         } catch (IllegalArgumentException e) {
@@ -157,8 +150,8 @@ public class ActivityAdminController {
     public ResponseEntity<SportDefinition> updateSport(
             @PathVariable Long id,
             @RequestBody SportDefRequest req,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
             return ResponseEntity.ok(activityService.updateSportDef(id, req));
         } catch (IllegalArgumentException e) {
@@ -169,8 +162,8 @@ public class ActivityAdminController {
     @DeleteMapping("/sports/{id}")
     public ResponseEntity<Void> deleteSport(
             @PathVariable Long id,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        if (!isAdmin(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         try {
             activityService.deleteSportDef(id);
             return ResponseEntity.noContent().build();
@@ -181,16 +174,8 @@ public class ActivityAdminController {
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private boolean isAdmin(Long userId) {
-        if (userId == null) return false;
-        try {
-            Boolean result = REST.getForObject(
-                    authServiceUrl + "/api/auth/internal/users/" + userId + "/is-admin",
-                    Boolean.class);
-            return Boolean.TRUE.equals(result);
-        } catch (Exception e) {
-            return false;
-        }
+    private boolean isAdmin(String requesterRole) {
+        return requesterRole != null && requesterRole.equalsIgnoreCase("ADMIN");
     }
 
     public record RouteRequest(String name, SportType sportType, String place,

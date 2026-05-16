@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Program Files/**)"
+      "Read(//c/Program Files/**)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "PowerShell($env:PATH = $env:PATH + \";C:\\\\Program Files\\\\nodejs\"; cd \"d:\\\\CodeDoAn\\\\Microservice\\\\frontend\"; npx tsc --noEmit 2>&1 | Select-Object -First 80)",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)",
+      "PowerShell($env:PATH -split \";\")"
     ]
   }
 }

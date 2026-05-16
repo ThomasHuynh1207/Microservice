@@ -24,6 +24,8 @@ import {
   ChevronDown,
   Zap,
   Edit2,
+  Eye,
+  AlertCircle,
 } from "lucide-react";
 import {
   PieChart,
@@ -36,7 +38,8 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition" | "training" | "sports" | "onboarding";
+type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition/foods" | "nutrition/categories" | "training" | "sports" | "onboarding";
+type NutPage = "foods" | "categories";
 
 type AdminSession = {
   token: string;
@@ -80,10 +83,13 @@ type CommunityOverview = {
   totalPosts: number; totalComments: number; totalLikes: number; activeAuthors: number;
 };
 
+type FoodCategory = { id: number; name: string; description?: string; icon?: string; };
 type NutritionFood = {
-  id: number; name: string; category: string; servingSize: string;
-  calories: number; proteinGrams: number; carbsGrams: number; fatGrams: number;
-  active: boolean; aliases?: string; note?: string; createdAt?: string; updatedAt?: string;
+  id: number; name: string;
+  foodCategory: FoodCategory | null;
+  category: string;
+  servingSize: string; calories: number; proteinGrams: number; carbsGrams: number; fatGrams: number;
+  active: boolean; aliases?: string; note?: string; imageUrl?: string; createdAt?: string; updatedAt?: string;
 };
 
 type NutritionOverview = {
@@ -126,37 +132,50 @@ type TrainingStats = {
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
+const SESSION_KEY = "runswim_admin_session";
+
 function h(token: string) {
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 }
 
+function handleUnauthorized() {
+  localStorage.removeItem(SESSION_KEY);
+  window.location.reload();
+}
+
+async function checkResponse(res: Response): Promise<Response> {
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Phiên đăng nhập hết hạn, đang đăng xuất...");
+  }
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res;
+}
+
 async function get<T>(token: string, url: string): Promise<T> {
   const res = await fetch(url, { headers: h(token) });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return (await checkResponse(res)).json();
 }
 
 async function del(token: string, url: string): Promise<void> {
   const res = await fetch(url, { method: "DELETE", headers: h(token) });
+  if (res.status === 401) { handleUnauthorized(); return; }
   if (!res.ok && res.status !== 404) throw new Error(`${res.status} ${res.statusText}`);
 }
 
 async function post<T>(token: string, url: string, body: unknown): Promise<T> {
   const res = await fetch(url, { method: "POST", headers: h(token), body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return (await checkResponse(res)).json();
 }
 
 async function put<T>(token: string, url: string, body: unknown): Promise<T> {
   const res = await fetch(url, { method: "PUT", headers: h(token), body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return (await checkResponse(res)).json();
 }
 
 async function patch<T>(token: string, url: string, body: unknown): Promise<T> {
   const res = await fetch(url, { method: "PATCH", headers: h(token), body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return (await checkResponse(res)).json();
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -251,42 +270,40 @@ function LoginPage({ onLogin }: { onLogin: (s: AdminSession) => void }) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-const NAV_GROUPS: { label: string; items: { id: Page; label: string; icon: ReactNode }[] }[] = [
-  {
-    label: "Van hanh",
-    items: [
-      { id: "nutrition", label: "Dinh duong", icon: <Salad size={16} /> },
-    ],
-  },
-  {
-    label: "Tổng quan",
-    items: [
-      { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
-      { id: "users", label: "Người dùng", icon: <Users size={16} /> },
-      { id: "community", label: "Cộng đồng", icon: <MessageSquare size={16} /> },
-    ],
-  },
-  {
-    label: "Tập luyện",
-    items: [
-      { id: "activities", label: "Hoạt động", icon: <Activity size={16} /> },
-      { id: "routes", label: "Lộ trình", icon: <MapPin size={16} /> },
-      { id: "sports", label: "Môn thể thao", icon: <Zap size={16} /> },
-      { id: "training", label: "Cài đặt tập luyện", icon: <Dumbbell size={16} /> },
-    ],
-  },
-  {
-    label: "Người dùng",
-    items: [
-      { id: "onboarding", label: "Quản lý Onboarding", icon: <UserCheck size={16} /> },
-    ],
-  },
+const NAV_ITEMS_TOP: { id: Page; label: string; icon: ReactNode }[] = [
+  { id: "dashboard",  label: "Dashboard",             icon: <LayoutDashboard size={16} /> },
+  { id: "onboarding", label: "Quản lý Onboarding",   icon: <UserCheck size={16} /> },
+  { id: "users",      label: "Quản lý người dùng",   icon: <Users size={16} /> },
+  { id: "activities", label: "Hoạt động",             icon: <Activity size={16} /> },
+  { id: "routes",     label: "Lộ trình",              icon: <MapPin size={16} /> },
+  { id: "sports",     label: "Môn thể thao",          icon: <Zap size={16} /> },
+  { id: "training",   label: "Cài đặt tập luyện",    icon: <Dumbbell size={16} /> },
 ];
+
+const NAV_ITEMS_BOTTOM: { id: Page; label: string; icon: ReactNode }[] = [
+  { id: "community",  label: "Cộng đồng",             icon: <MessageSquare size={16} /> },
+];
+
+const NUT_SUB_ITEMS: { id: Page; label: string }[] = [
+  { id: "nutrition/categories", label: "Danh mục" },
+  { id: "nutrition/foods",      label: "Món ăn" },
+];
+
+function NavItem({ item, active, onClick }: { item: { id: Page; label: string; icon: ReactNode }; active: boolean; onClick: () => void }) {
+  return (
+    <button className={`al-nav-item${active ? " active" : ""}`} onClick={onClick}>
+      {item.icon}{item.label}
+    </button>
+  );
+}
 
 function Sidebar({ page, setPage, session, onLogout }: {
   page: Page; setPage: (p: Page) => void;
   session: AdminSession; onLogout: () => void;
 }) {
+  const nutActive = page.startsWith("nutrition/");
+  const [nutOpen, setNutOpen] = useState(nutActive);
+
   return (
     <div className="al-sidebar">
       <div className="al-logo">
@@ -295,20 +312,33 @@ function Sidebar({ page, setPage, session, onLogout }: {
       </div>
 
       <nav className="al-nav">
-        {NAV_GROUPS.map(group => (
-          <div key={group.label} className="al-nav-group">
-            <div className="al-nav-group-label">{group.label}</div>
-            {group.items.map(item => (
-              <button
-                key={item.id}
-                className={`al-nav-item${page === item.id ? " active" : ""}`}
-                onClick={() => setPage(item.id)}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-            ))}
-          </div>
+        {NAV_ITEMS_TOP.map(item => (
+          <NavItem key={item.id} item={item} active={page === item.id} onClick={() => setPage(item.id)} />
+        ))}
+
+        {/* Expandable Dinh dưỡng */}
+        <button
+          className={`al-nav-item al-nav-expandable${nutActive ? " active" : ""}`}
+          onClick={() => setNutOpen(o => !o)}
+        >
+          <Salad size={16} />
+          <span style={{ flex: 1, textAlign: "left" }}>Dinh dưỡng</span>
+          <ChevronDown size={14} className={`al-nav-chevron${nutOpen ? " open" : ""}`} />
+        </button>
+        <div className={`al-nav-sub${nutOpen ? " open" : ""}`}>
+          {NUT_SUB_ITEMS.map(item => (
+            <button
+              key={item.id}
+              className={`al-nav-sub-item${page === item.id ? " active" : ""}`}
+              onClick={() => setPage(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {NAV_ITEMS_BOTTOM.map(item => (
+          <NavItem key={item.id} item={item} active={page === item.id} onClick={() => setPage(item.id)} />
         ))}
       </nav>
 
@@ -1564,44 +1594,48 @@ function SportsManagementPage({ session }: { session: AdminSession }) {
 
 // ─── App Root ─────────────────────────────────────────────────────────────────
 
-function NutritionAdminPage({ session }: { session: AdminSession }) {
+function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPage: NutPage }) {
+  // ── Foods state ──────────────────────────────────────────────────────────────
   const emptyForm = {
-    name: "",
-    category: "MEAL",
-    servingSize: "1 serving",
-    calories: 300,
-    proteinGrams: 20,
-    carbsGrams: 35,
-    fatGrams: 8,
-    aliases: "",
-    note: "",
-    active: true,
+    name: "", categoryId: 0, servingSize: "1 serving",
+    calories: 300, proteinGrams: 20, carbsGrams: 35, fatGrams: 8,
+    aliases: "", note: "", imageUrl: "", active: true,
   };
   const [overview, setOverview] = useState<NutritionOverview | null>(null);
   const [foods, setFoods] = useState<NutritionFood[]>([]);
-  const [recentMeals, setRecentMeals] = useState<NutritionMealEntry[]>([]);
+  const [categories, setCategories] = useState<FoodCategory[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(false);
+  const [filter, setFilter] = useState<"all" | "active" | "hidden">("active");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onOk: () => void } | null>(null);
+  const [detailFood, setDetailFood] = useState<NutritionFood | null>(null);
+
+  // ── Categories CRUD state ────────────────────────────────────────────────────
+  const emptyCatForm = { name: "", description: "" };
+  const [catSearch, setCatSearch] = useState("");
+  const [catForm, setCatForm] = useState(emptyCatForm);
+  const [editingCatId, setEditingCatId] = useState<number | null>(null);
+  const [showCatForm, setShowCatForm] = useState(false);
+  const [catSaving, setCatSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const [ov, foodItems, meals] = await Promise.all([
+      const [ov, foodItems, cats] = await Promise.all([
         get<NutritionOverview>(session.token, "/api/nutrition/admin/overview"),
         get<NutritionFood[]>(session.token, "/api/nutrition/admin/foods"),
-        get<NutritionMealEntry[]>(session.token, "/api/nutrition/admin/meals/recent"),
+        get<FoodCategory[]>(session.token, "/api/nutrition/admin/categories"),
       ]);
       setOverview(ov);
       setFoods(foodItems);
-      setRecentMeals(meals);
+      setCategories(cats);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Loi tai du lieu dinh duong");
+      setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu dinh dưỡng");
     } finally {
       setLoading(false);
     }
@@ -1609,237 +1643,470 @@ function NutritionAdminPage({ session }: { session: AdminSession }) {
 
   useEffect(() => { load(); }, [load]);
 
-  function editFood(food: NutritionFood) {
+  // ── Foods CRUD ───────────────────────────────────────────────────────────────
+  function openEdit(food: NutritionFood) {
     setEditingId(food.id);
     setForm({
-      name: food.name,
-      category: food.category,
-      servingSize: food.servingSize,
-      calories: food.calories,
-      proteinGrams: food.proteinGrams,
-      carbsGrams: food.carbsGrams,
-      fatGrams: food.fatGrams,
-      aliases: food.aliases ?? "",
-      note: food.note ?? "",
-      active: food.active,
+      name: food.name, categoryId: food.foodCategory?.id ?? 0, servingSize: food.servingSize,
+      calories: food.calories, proteinGrams: food.proteinGrams, carbsGrams: food.carbsGrams,
+      fatGrams: food.fatGrams, aliases: food.aliases ?? "", note: food.note ?? "",
+      imageUrl: food.imageUrl ?? "", active: food.active,
     });
     setShowForm(true);
   }
 
-  function resetForm() {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowForm(false);
-  }
+  function resetForm() { setEditingId(null); setForm(emptyForm); setShowForm(false); }
 
   async function saveFood(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const body = {
-      ...form,
-      calories: Number(form.calories),
-      proteinGrams: Number(form.proteinGrams),
-      carbsGrams: Number(form.carbsGrams),
-      fatGrams: Number(form.fatGrams),
-    };
+    const body = { ...form, calories: Number(form.calories), proteinGrams: Number(form.proteinGrams), carbsGrams: Number(form.carbsGrams), fatGrams: Number(form.fatGrams), categoryId: Number(form.categoryId) };
     try {
       const saved = editingId
         ? await put<NutritionFood>(session.token, `/api/nutrition/admin/foods/${editingId}`, body)
         : await post<NutritionFood>(session.token, "/api/nutrition/admin/foods", body);
-      setFoods(prev => editingId ? prev.map(item => item.id === saved.id ? saved : item) : [saved, ...prev]);
+      setFoods(prev => editingId ? prev.map(f => f.id === saved.id ? saved : f) : [saved, ...prev]);
       resetForm();
-      load();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Loi luu mon an");
-    } finally {
-      setSaving(false);
-    }
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi lưu món ăn"); }
+    finally { setSaving(false); }
   }
 
-  async function deactivateFood(id: number) {
-    if (!confirm("An mon an nay khoi database nguoi dung?")) return;
+  async function hideFood(food: NutritionFood) {
     try {
-      await del(session.token, `/api/nutrition/admin/foods/${id}`);
-      setFoods(prev => prev.map(item => item.id === id ? { ...item, active: false } : item));
-      load();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Loi cap nhat mon an");
-    }
+      await del(session.token, `/api/nutrition/admin/foods/${food.id}`);
+      setFoods(prev => prev.map(f => f.id === food.id ? { ...f, active: false } : f));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi ẩn món ăn"); }
   }
 
-  const filteredFoods = foods.filter(food => {
+  async function restoreFood(food: NutritionFood) {
+    try {
+      const saved = await put<NutritionFood>(session.token, `/api/nutrition/admin/foods/${food.id}`, { ...food, active: true, categoryId: food.foodCategory?.id });
+      setFoods(prev => prev.map(f => f.id === food.id ? saved : f));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi khôi phục món ăn"); }
+  }
+
+  async function permanentDeleteFood(id: number) {
+    try {
+      await del(session.token, `/api/nutrition/admin/foods/${id}/permanent`);
+      setFoods(prev => prev.filter(f => f.id !== id));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi xóa vĩnh viễn"); }
+  }
+
+  const filteredFoods = foods.filter(f => {
     const q = search.toLowerCase();
-    const matchSearch = `${food.name} ${food.category} ${food.aliases ?? ""}`.toLowerCase().includes(q);
-    return matchSearch && (showInactive || food.active);
+    const matchQ = `${f.name} ${f.category} ${f.aliases ?? ""}`.toLowerCase().includes(q);
+    const matchFilter = filter === "all" || (filter === "active" && f.active) || (filter === "hidden" && !f.active);
+    return matchQ && matchFilter;
   });
+
+  // ── Categories CRUD ──────────────────────────────────────────────────────────
+  function openEditCat(cat: FoodCategory) {
+    setEditingCatId(cat.id);
+    setCatForm({ name: cat.name, description: cat.description ?? "" });
+    setShowCatForm(true);
+  }
+
+  function resetCatForm() { setEditingCatId(null); setCatForm(emptyCatForm); setShowCatForm(false); }
+
+  async function saveCat(e: FormEvent) {
+    e.preventDefault();
+    setCatSaving(true);
+    try {
+      const saved = editingCatId
+        ? await put<FoodCategory>(session.token, `/api/nutrition/admin/categories/${editingCatId}`, catForm)
+        : await post<FoodCategory>(session.token, "/api/nutrition/admin/categories", catForm);
+      setCategories(prev => editingCatId ? prev.map(c => c.id === saved.id ? saved : c) : [saved, ...prev]);
+      resetCatForm();
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi lưu danh mục"); }
+    finally { setCatSaving(false); }
+  }
+
+  async function deleteCategory(id: number) {
+    if (!confirm("Xóa danh mục này? Các món ăn thuộc danh mục sẽ mất phân loại.")) return;
+    try {
+      await del(session.token, `/api/nutrition/admin/categories/${id}`);
+      setCategories(prev => prev.filter(c => c.id !== id));
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi xóa danh mục"); }
+  }
+
+  const foodCountByCategory = useMemo(() => {
+    const map: Record<number, number> = {};
+    foods.forEach(f => { if (f.foodCategory) map[f.foodCategory.id] = (map[f.foodCategory.id] ?? 0) + 1; });
+    return map;
+  }, [foods]);
+
+  const filteredCats = categories.filter(c =>
+    c.name.toLowerCase().includes(catSearch.toLowerCase()) ||
+    (c.description ?? "").toLowerCase().includes(catSearch.toLowerCase())
+  );
+
+  const PAGE_TITLES: Record<NutPage, { title: string; sub: string }> = {
+    foods:      { title: "Món ăn",          sub: "Quản lý danh sách món ăn trong hệ thống" },
+    categories: { title: "Danh mục món ăn", sub: "Quản lý và phân loại danh mục món ăn" },
+  };
+
+  if (loading) return <div className="al-content"><div className="al-loading">Đang tải dữ liệu dinh dưỡng...</div></div>;
+  if (error) return <div className="al-content"><ErrMsg msg={error} /></div>;
 
   return (
     <>
-      <PageHeader title="Dinh duong" sub="Quan ly database mon an, macro va nhat ky bua an cua nguoi dung" />
+      <PageHeader title={PAGE_TITLES[nutPage].title} sub={PAGE_TITLES[nutPage].sub} />
       <div className="al-content">
-        {overview && (
-          <div className="al-stats-row">
-            {[
-              { label: "Mon dang dung", value: overview.activeFoods, color: "#22c55e", icon: <Salad size={18} /> },
-              { label: "Tong mon", value: overview.totalFoods, color: "#3b82f6", icon: <Utensils size={18} /> },
-              { label: "Bua da log", value: overview.mealsLogged, color: "#f97316", icon: <Activity size={18} /> },
-              { label: "Kcal hom nay", value: overview.caloriesToday, color: "#ef4444", icon: <Flame size={18} /> },
-            ].map(card => (
-              <div key={card.label} className="al-stat-card">
-                <div className="al-stat-icon" style={{ background: `${card.color}18`, color: card.color }}>{card.icon}</div>
-                <div className="al-stat-value" style={{ color: card.color }}>{card.value.toLocaleString("vi-VN")}</div>
-                <div className="al-stat-label">{card.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
 
-        <div className="al-controls">
-          <div className="al-search-wrap">
-            <Search size={14} className="al-search-icon" />
-            <input className="al-search" placeholder="Tim mon, category, alias..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <div className="al-tabs">
-            <button className={`al-tab${!showInactive ? " active" : ""}`} onClick={() => setShowInactive(false)}>Dang dung</button>
-            <button className={`al-tab${showInactive ? " active" : ""}`} onClick={() => setShowInactive(true)}>Tat ca</button>
-          </div>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Lam moi</button>
-          <button className="al-add-btn" onClick={() => { setShowForm(v => !v); setEditingId(null); }}>
-            {showForm ? <X size={14} /> : <Plus size={14} />} {showForm ? "Dong" : "Them mon"}
-          </button>
-        </div>
-
-        {showForm && (
-          <div className="al-form-card al-nutrition-form-card">
-            <div className="al-form-card-title">{editingId ? "Cap nhat mon an" : "Them mon an vao database"}</div>
-            <form onSubmit={saveFood} className="al-inline-form">
-              <div className="al-form-row">
-                <div className="al-form-group">
-                  <label className="al-form-label">Ten mon</label>
-                  <input className="al-form-input" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Category</label>
-                  <select className="al-form-input" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-                    <option value="MEAL">MEAL</option>
-                    <option value="CARB">CARB</option>
-                    <option value="PROTEIN">PROTEIN</option>
-                    <option value="SNACK">SNACK</option>
-                    <option value="DRINK">DRINK</option>
-                  </select>
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Khau phan</label>
-                  <input className="al-form-input" value={form.servingSize} onChange={e => setForm(f => ({ ...f, servingSize: e.target.value }))} />
-                </div>
-              </div>
-              <div className="al-form-row">
+        {/* ══ FOODS ══ */}
+        {nutPage === "foods" && (
+          <div>
+            {overview && (
+              <div className="al-stats-row cols-5">
                 {[
-                  ["calories", "Calories"],
-                  ["proteinGrams", "Protein (g)"],
-                  ["carbsGrams", "Carb (g)"],
-                  ["fatGrams", "Fat (g)"],
-                ].map(([key, label]) => (
-                  <div key={key} className="al-form-group">
-                    <label className="al-form-label">{label}</label>
-                    <input className="al-form-input" type="number" min={0} value={form[key as keyof typeof form] as number} onChange={e => setForm(f => ({ ...f, [key]: Number(e.target.value) }))} />
+                  { label: "Món ăn đang hoạt động",  value: overview.activeFoods,    color: "#22c55e", icon: <Salad size={18} /> },
+                  { label: "Tổng món trong hệ thống", value: overview.totalFoods,     color: "#3b82f6", icon: <Utensils size={18} /> },
+                  { label: "Người dùng dinh dưỡng",   value: overview.usersWithPlans, color: "#a855f7", icon: <Zap size={18} /> },
+                  { label: "Lượt ghi nhận bữa ăn",   value: overview.mealsLogged,    color: "#f97316", icon: <Activity size={18} /> },
+                  { label: "Tổng calo hôm nay",       value: overview.caloriesToday,  color: "#ef4444", icon: <Flame size={18} /> },
+                ].map(card => (
+                  <div key={card.label} className="al-stat-card">
+                    <div className="al-stat-icon" style={{ background: `${card.color}18`, color: card.color }}>{card.icon}</div>
+                    <div className="al-stat-value" style={{ color: card.color }}>{card.value.toLocaleString("vi-VN")}</div>
+                    <div className="al-stat-label">{card.label}</div>
                   </div>
                 ))}
               </div>
-              <div className="al-form-row">
-                <div className="al-form-group">
-                  <label className="al-form-label">Alias search</label>
-                  <input className="al-form-input" value={form.aliases} onChange={e => setForm(f => ({ ...f, aliases: e.target.value }))} placeholder="pho bo beef noodle..." />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Ghi chu</label>
-                  <input className="al-form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
-                </div>
-                <div className="al-form-group al-check-group">
-                  <label className="al-form-label">Trang thai</label>
-                  <label className="al-check-line"><input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Dang hien thi</label>
-                </div>
+            )}
+
+            <div className="al-controls">
+              <div className="al-search-wrap">
+                <Search size={14} className="al-search-icon" />
+                <input className="al-search" placeholder="Tìm tên món, danh mục, alias..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <div className="al-form-actions">
-                <button className="al-add-btn" type="submit" disabled={saving}>{saving ? "Dang luu..." : "Luu mon an"}</button>
-                <button className="al-refresh-btn" type="button" onClick={resetForm}>Huy</button>
+              <div className="al-tabs">
+                <button className={`al-tab${filter === "all"    ? " active" : ""}`} onClick={() => setFilter("all")}>Tất cả</button>
+                <button className={`al-tab${filter === "active" ? " active" : ""}`} onClick={() => setFilter("active")}>Đang dùng</button>
+                <button className={`al-tab${filter === "hidden" ? " active" : ""}`} onClick={() => setFilter("hidden")}>Đã ẩn</button>
               </div>
-            </form>
+              <button className="al-add-btn" onClick={() => { resetForm(); setShowForm(v => !v); }}>
+                {showForm && !editingId ? <X size={14} /> : <Plus size={14} />} {showForm && !editingId ? "Đóng" : "Thêm món"}
+              </button>
+            </div>
+
+            {showForm && (
+              <div className="al-form-card al-nutrition-form-card">
+                <div className="al-form-card-title">{editingId ? "Cập nhật món ăn" : "Thêm món ăn mới"}</div>
+                <form onSubmit={saveFood} className="al-inline-form">
+                  <div className="al-nut-form-layout">
+                    <div className="al-nut-img-panel">
+                      <div className="al-nut-img-preview">
+                        {form.imageUrl ? (
+                          <img src={form.imageUrl} alt="preview" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        ) : (
+                          <div className="al-nut-img-empty"><Salad size={36} /><span>Chưa có ảnh</span></div>
+                        )}
+                      </div>
+                      <div className="al-form-group">
+                        <label className="al-form-label">URL ảnh món ăn</label>
+                        <input className="al-form-input" value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://images.unsplash.com/..." />
+                      </div>
+                      {form.imageUrl && (
+                        <button type="button" className="al-refresh-btn" style={{ width: "100%" }} onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}>
+                          <X size={13} /> Xóa ảnh
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="al-nut-form-fields">
+                      <div className="al-form-row">
+                        <div className="al-form-group" style={{ gridColumn: "1 / -1" }}>
+                          <label className="al-form-label">Tên món <span style={{ color: "#ef4444" }}>*</span></label>
+                          <input className="al-form-input" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="VD: Phở bò, Cơm tấm sườn..." />
+                        </div>
+                      </div>
+                      <div className="al-form-row">
+                        <div className="al-form-group">
+                          <label className="al-form-label">Danh mục</label>
+                          <select className="al-form-input" value={form.categoryId} onChange={e => setForm(f => ({ ...f, categoryId: Number(e.target.value) }))}>
+                            <option value={0}>-- Chọn danh mục --</option>
+                            {categories.map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="al-form-group">
+                          <label className="al-form-label">Khẩu phần</label>
+                          <input className="al-form-input" value={form.servingSize} onChange={e => setForm(f => ({ ...f, servingSize: e.target.value }))} placeholder="VD: 1 tô, 100g, 1 quả" />
+                        </div>
+                      </div>
+                      <div className="al-form-row">
+                        {([ ["calories","Calories (kcal)"], ["proteinGrams","Protein (g)"], ["carbsGrams","Carb (g)"], ["fatGrams","Fat (g)"] ] as [string,string][]).map(([key, label]) => (
+                          <div key={key} className="al-form-group">
+                            <label className="al-form-label">{label}</label>
+                            <input className="al-form-input" type="number" min={0} value={form[key as keyof typeof form] as number} onChange={e => setForm(f => ({ ...f, [key]: Number(e.target.value) }))} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="al-form-row">
+                        <div className="al-form-group">
+                          <label className="al-form-label">Từ khóa tìm kiếm (alias)</label>
+                          <input className="al-form-input" value={form.aliases} onChange={e => setForm(f => ({ ...f, aliases: e.target.value }))} placeholder="pho bo beef noodle soup..." />
+                        </div>
+                        <div className="al-form-group">
+                          <label className="al-form-label">Ghi chú</label>
+                          <input className="al-form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Phù hợp sau buổi chạy dài..." />
+                        </div>
+                      </div>
+                      <div className="al-form-row" style={{ alignItems: "center" }}>
+                        <label className="al-check-line">
+                          <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Đang hiển thị cho người dùng
+                        </label>
+                      </div>
+                      <div className="al-form-actions">
+                        <button className="al-add-btn" type="submit" disabled={saving}>{saving ? "Đang lưu..." : editingId ? "Cập nhật món ăn" : "Thêm món ăn"}</button>
+                        <button className="al-refresh-btn" type="button" onClick={resetForm}>Hủy</button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="al-table-wrap">
+              {filteredFoods.length === 0
+                ? <div className="al-empty">Không có món phù hợp</div>
+                : (
+                  <table className="al-table al-food-table">
+                    <thead><tr>
+                      <th style={{ width: 64 }}>Ảnh</th>
+                      <th>Tên món</th>
+                      <th>Danh mục</th>
+                      <th>Khẩu phần</th>
+                      <th>Calories</th>
+                      <th>Macro</th>
+                      <th>Trạng thái</th>
+                      <th></th>
+                    </tr></thead>
+                    <tbody>
+                      {filteredFoods.map(food => (
+                        <tr key={food.id}>
+                          <td>
+                            <div className="al-food-thumb">
+                              {food.imageUrl
+                                ? <img src={food.imageUrl} alt={food.name} className="al-food-img" />
+                                : <div className="al-food-img-ph"><Salad size={16} /></div>}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="al-uname">{food.name}</div>
+                            {food.note && <div className="al-uemail" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{food.note}</div>}
+                          </td>
+                          <td>
+                            {food.foodCategory
+                              ? <span className="al-badge badge-active" style={{ background: "#f0fdf4", color: "#16a34a" }}>{food.foodCategory.name}</span>
+                              : <span className="al-badge" style={{ background: "#f1f5f9", color: "#64748b" }}>{food.category || "—"}</span>}
+                          </td>
+                          <td><span className="al-date">{food.servingSize}</span></td>
+                          <td><strong>{food.calories}</strong> kcal</td>
+                          <td><span className="al-date">P {food.proteinGrams}g · C {food.carbsGrams}g · F {food.fatGrams}g</span></td>
+                          <td>
+                            <span className={`al-badge ${food.active ? "badge-active" : "badge-inactive"}`}>
+                              {food.active ? "Hiển thị" : "Đã ẩn"}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="al-row-actions">
+                              <button className="al-refresh-btn" onClick={() => setDetailFood(food)}><Eye size={13} /> Chi tiết</button>
+                              <button className="al-refresh-btn" onClick={() => openEdit(food)}><Edit2 size={13} /> Sửa</button>
+                              {food.active ? (
+                                <button className="al-refresh-btn" onClick={() => setConfirmModal({ msg: `Ẩn "${food.name}" khỏi danh sách người dùng?`, onOk: () => hideFood(food) })}>Ẩn</button>
+                              ) : (
+                                <button className="al-refresh-btn" onClick={() => restoreFood(food)}>Khôi phục</button>
+                              )}
+                              <button className="al-icon-del" title="Xóa vĩnh viễn" onClick={() => setConfirmModal({ msg: `Xóa vĩnh viễn "${food.name}"? Hành động này không thể hoàn tác.`, onOk: () => permanentDeleteFood(food.id) })}><Trash2 size={13} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+            </div>
           </div>
         )}
 
-        <div className="al-nutrition-grid">
-          <div className="al-table-wrap">
-            {loading ? <div className="al-loading">Dang tai...</div>
-              : error ? <ErrMsg msg={error} />
-              : filteredFoods.length === 0 ? <div className="al-empty">Khong co mon phu hop</div>
-              : (
-                <table className="al-table">
-                  <thead><tr>
-                    <th>Mon an</th><th>Khau phan</th><th>Calories</th><th>Macro</th><th>Trang thai</th><th></th>
-                  </tr></thead>
-                  <tbody>
-                    {filteredFoods.map(food => (
-                      <tr key={food.id}>
-                        <td>
-                          <div className="al-uname">{food.name}</div>
-                          <div className="al-uemail">{food.category} {food.aliases ? `| ${food.aliases}` : ""}</div>
-                        </td>
-                        <td><span className="al-date">{food.servingSize}</span></td>
-                        <td><strong>{food.calories}</strong> kcal</td>
-                        <td><span className="al-date">P {food.proteinGrams}g | C {food.carbsGrams}g | F {food.fatGrams}g</span></td>
-                        <td><span className={`al-badge ${food.active ? "badge-active" : "badge-inactive"}`}>{food.active ? "Active" : "Hidden"}</span></td>
-                        <td>
-                          <div className="al-row-actions">
-                            <button className="al-refresh-btn" onClick={() => editFood(food)}>Sua</button>
-                            {food.active && <button className="al-icon-del" onClick={() => deactivateFood(food.id)}><Trash2 size={13} /></button>}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-          </div>
-
-          <div className="al-card al-nutrition-recent">
-            <div className="al-card-title">Bua an gan day</div>
-            {recentMeals.length === 0 ? <div className="al-empty">Chua co log bua an</div> : recentMeals.slice(0, 10).map(meal => (
-              <div key={meal.id} className="al-mini-activity">
-                <div>
-                  <strong>{meal.name}</strong>
-                  <span>User {meal.userId} | {meal.mealType}</span>
-                </div>
-                <span>{meal.calories} kcal</span>
+        {/* ══ CATEGORIES ══ */}
+        {nutPage === "categories" && (
+          <div>
+            <div className="al-controls">
+              <div className="al-search-wrap">
+                <Search size={14} className="al-search-icon" />
+                <input className="al-search" placeholder="Tìm danh mục..." value={catSearch} onChange={e => setCatSearch(e.target.value)} />
               </div>
-            ))}
+              <button className="al-add-btn" onClick={() => { resetCatForm(); setShowCatForm(v => !v); }}>
+                {showCatForm && !editingCatId ? <X size={14} /> : <Plus size={14} />} {showCatForm && !editingCatId ? "Đóng" : "Thêm danh mục"}
+              </button>
+              <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+            </div>
+
+            {showCatForm && (
+              <div className="al-form-card">
+                <div className="al-form-card-title">{editingCatId ? "Cập nhật danh mục" : "Thêm danh mục mới"}</div>
+                <form onSubmit={saveCat} className="al-inline-form">
+                  <div className="al-form-row">
+                    <div className="al-form-group">
+                      <label className="al-form-label">Tên danh mục <span style={{ color: "#ef4444" }}>*</span></label>
+                      <input className="al-form-input" required value={catForm.name} onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))} placeholder="VD: Bữa chính, Protein..." />
+                    </div>
+                  </div>
+                  <div className="al-form-row">
+                    <div className="al-form-group" style={{ gridColumn: "1 / -1" }}>
+                      <label className="al-form-label">Mô tả</label>
+                      <input className="al-form-input" value={catForm.description} onChange={e => setCatForm(f => ({ ...f, description: e.target.value }))} placeholder="VD: Bữa ăn chính trong ngày..." />
+                    </div>
+                  </div>
+                  <div className="al-form-actions">
+                    <button className="al-add-btn" type="submit" disabled={catSaving}>{catSaving ? "Đang lưu..." : editingCatId ? "Cập nhật" : "Thêm danh mục"}</button>
+                    <button className="al-refresh-btn" type="button" onClick={resetCatForm}>Hủy</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            <div className="al-table-wrap">
+              {filteredCats.length === 0
+                ? <div className="al-empty">Không có danh mục nào</div>
+                : (
+                  <table className="al-table">
+                    <thead><tr>
+                      <th>Tên danh mục</th>
+                      <th>Mô tả</th>
+                      <th>Số món</th>
+                      <th></th>
+                    </tr></thead>
+                    <tbody>
+                      {filteredCats.map(cat => (
+                        <tr key={cat.id}>
+                          <td><div className="al-uname">{cat.name}</div></td>
+                          <td><span className="al-uemail">{cat.description || "—"}</span></td>
+                          <td><span className="al-badge badge-active">{foodCountByCategory[cat.id] ?? 0} món</span></td>
+                          <td>
+                            <div className="al-row-actions">
+                              <button className="al-refresh-btn" onClick={() => openEditCat(cat)}><Edit2 size={13} /> Sửa</button>
+                              <button className="al-icon-del" title="Xóa danh mục" onClick={() => deleteCategory(cat.id)}><Trash2 size={13} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {/* ══ CONFIRM MODAL ══ */}
+      {confirmModal && (
+        <div className="al-modal-overlay" onClick={() => setConfirmModal(null)}>
+          <div className="al-modal-box" onClick={e => e.stopPropagation()}>
+            <div className="al-modal-icon"><AlertCircle size={28} /></div>
+            <div className="al-modal-msg">{confirmModal.msg}</div>
+            <div className="al-modal-actions">
+              <button className="al-add-btn" onClick={() => { confirmModal.onOk(); setConfirmModal(null); }}>Xác nhận</button>
+              <button className="al-refresh-btn" onClick={() => setConfirmModal(null)}>Hủy</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ══ DETAIL MODAL ══ */}
+      {detailFood && (
+        <div className="al-modal-overlay" onClick={() => setDetailFood(null)}>
+          <div className="al-modal-box al-food-detail" onClick={e => e.stopPropagation()}>
+            <div className="al-modal-head">
+              <div className="al-modal-title">{detailFood.name}</div>
+              <button className="al-icon-btn" onClick={() => setDetailFood(null)}><X size={16} /></button>
+            </div>
+            {detailFood.imageUrl && (
+              <img src={detailFood.imageUrl} alt={detailFood.name} className="al-detail-img" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            )}
+            <div className="al-detail-info-grid">
+              {[
+                ["Danh mục",  detailFood.foodCategory ? detailFood.foodCategory.name : (detailFood.category || "—")],
+                ["Khẩu phần", detailFood.servingSize],
+                ["Calories",  `${detailFood.calories} kcal`],
+                ["Protein",   `${detailFood.proteinGrams}g`],
+                ["Carb",      `${detailFood.carbsGrams}g`],
+                ["Fat",       `${detailFood.fatGrams}g`],
+                ...(detailFood.aliases ? [["Alias", detailFood.aliases]] : []),
+                ...(detailFood.note    ? [["Ghi chú", detailFood.note]]  : []),
+              ].map(([label, value]) => (
+                <div key={label} className="al-detail-info-row">
+                  <span className="al-detail-info-label">{label}</span>
+                  <span className="al-detail-info-val">{value}</span>
+                </div>
+              ))}
+              <div className="al-detail-info-row">
+                <span className="al-detail-info-label">Trạng thái</span>
+                <span className={`al-badge ${detailFood.active ? "badge-active" : "badge-inactive"}`}>{detailFood.active ? "Hiển thị" : "Đã ẩn"}</span>
+              </div>
+            </div>
+            <div className="al-modal-actions">
+              <button className="al-add-btn" onClick={() => { openEdit(detailFood); setDetailFood(null); }}><Edit2 size={13} /> Chỉnh sửa</button>
+              <button className="al-refresh-btn" onClick={() => setDetailFood(null)}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
 // ─── Onboarding Management ────────────────────────────────────────────────────
 
+type OnboardingGoal = { id: number; title: string; description: string; sortOrder: number; active: boolean; createdAt: string; };
+type OBTab = "tracking" | "goals" | "levels";
+
+const EXPERIENCE_LEVELS = [
+  { code: "BEGINNER",     label: "Mới bắt đầu",  desc: "Chưa có thói quen tập luyện thường xuyên. Mục tiêu: xây dựng nền tảng thể lực cơ bản và tạo thói quen vận động đều đặn.",  sessions: "2–3 buổi/tuần" },
+  { code: "INTERMEDIATE", label: "Trung bình",    desc: "Đã tập luyện được vài tháng đến một năm. Có thể hoàn thành các cự ly trung bình và đang hướng đến mục tiêu cụ thể hơn.",   sessions: "3–5 buổi/tuần" },
+  { code: "ADVANCED",     label: "Nâng cao",      desc: "Vận động viên có kinh nghiệm, đã tham gia thi đấu hoặc tập luyện cường độ cao. Hướng đến đỉnh cao thành tích cá nhân.",     sessions: "5–7 buổi/tuần" },
+];
+
 function OnboardingAdminPage({ session }: { session: AdminSession }) {
+  const [tab, setTab] = useState<OBTab>("tracking");
+
+  // ── Tracking state ──
   const [profiles, setProfiles] = useState<AthleteProfile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loadingProfiles, setLoadingProfiles] = useState(true);
+  const [profileError, setProfileError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | "DONE" | "PENDING">("ALL");
   const [selected, setSelected] = useState<AthleteProfile | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const data = await get<AthleteProfile[]>(session.token, "/api/athletes/admin/all");
-      setProfiles(data);
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoading(false); }
+  // ── Goals state ──
+  const [goals, setGoals] = useState<OnboardingGoal[]>([]);
+  const [loadingGoals, setLoadingGoals] = useState(false);
+  const [goalError, setGoalError] = useState("");
+  const [goalForm, setGoalForm] = useState({ title: "", description: "", sortOrder: 0, active: true });
+  const [editingGoal, setEditingGoal] = useState<OnboardingGoal | null>(null);
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [goalConfirm, setGoalConfirm] = useState<{ id: number; title: string } | null>(null);
+
+  const loadProfiles = useCallback(async () => {
+    setLoadingProfiles(true); setProfileError("");
+    try { setProfiles(await get<AthleteProfile[]>(session.token, "/api/athletes/admin/all")); }
+    catch (e: unknown) { setProfileError(e instanceof Error ? e.message : "Lỗi tải"); }
+    finally { setLoadingProfiles(false); }
   }, [session.token]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadGoals = useCallback(async () => {
+    setLoadingGoals(true); setGoalError("");
+    try { setGoals(await get<OnboardingGoal[]>(session.token, "/api/athletes/admin/onboarding/goals")); }
+    catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi tải"); }
+    finally { setLoadingGoals(false); }
+  }, [session.token]);
+
+  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+  useEffect(() => { if (tab === "goals") loadGoals(); }, [tab, loadGoals]);
 
   const filtered = useMemo(() => profiles.filter(p => {
     const q = search.toLowerCase();
@@ -1853,130 +2120,325 @@ function OnboardingAdminPage({ session }: { session: AdminSession }) {
   }), [profiles, search, filter]);
 
   const done = profiles.filter(p => p.completedOnboarding).length;
+  const completionRate = profiles.length > 0 ? Math.round((done / profiles.length) * 100) : 0;
+
+  async function saveGoal() {
+    if (!goalForm.title.trim()) return;
+    try {
+      if (editingGoal) {
+        const updated = await put<OnboardingGoal>(session.token, `/api/athletes/admin/onboarding/goals/${editingGoal.id}`, goalForm);
+        setGoals(prev => prev.map(g => g.id === updated.id ? updated : g));
+      } else {
+        const created = await post<OnboardingGoal>(session.token, "/api/athletes/admin/onboarding/goals", goalForm);
+        setGoals(prev => [...prev, created]);
+      }
+      setShowGoalForm(false); setEditingGoal(null);
+      setGoalForm({ title: "", description: "", sortOrder: 0, active: true });
+    } catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi lưu"); }
+  }
+
+  async function deleteGoal(id: number) {
+    try {
+      await del(session.token, `/api/athletes/admin/onboarding/goals/${id}`);
+      setGoals(prev => prev.filter(g => g.id !== id));
+    } catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi xóa"); }
+    setGoalConfirm(null);
+  }
+
+  function startEdit(g: OnboardingGoal) {
+    setEditingGoal(g);
+    setGoalForm({ title: g.title, description: g.description ?? "", sortOrder: g.sortOrder, active: g.active });
+    setShowGoalForm(true);
+  }
+
+  function cancelGoalForm() {
+    setShowGoalForm(false); setEditingGoal(null);
+    setGoalForm({ title: "", description: "", sortOrder: 0, active: true });
+  }
 
   return (
     <>
-      <PageHeader title="Quản lý Onboarding" sub="Hồ sơ thiết lập ban đầu của vận động viên sau đăng ký" />
+      <PageHeader title="Quản lý Onboarding" sub="Cấu hình trải nghiệm đăng ký và theo dõi tiến độ người dùng mới" />
       <div className="al-content">
-        <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(3,1fr)", marginBottom: 20 }}>
-          {[
-            { label: "Tổng hồ sơ", value: profiles.length, color: "#3b82f6" },
-            { label: "Hoàn thành", value: done, color: "#22c55e" },
-            { label: "Chưa hoàn thành", value: profiles.length - done, color: "#ef4444" },
-          ].map(c => (
-            <div key={c.label} className="al-stat-card">
-              <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
-              <div className="al-stat-label">{c.label}</div>
-            </div>
+
+        {/* Tab bar */}
+        <div className="al-tabs" style={{ marginBottom: 20 }}>
+          {([
+            { id: "tracking", label: "Theo dõi người dùng" },
+            { id: "goals",    label: "Mục tiêu sức khỏe" },
+            { id: "levels",   label: "Cấp độ luyện tập" },
+          ] as { id: OBTab; label: string }[]).map(t => (
+            <button key={t.id} className={`al-tab${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
+              {t.label}
+            </button>
           ))}
         </div>
 
-        <div className="al-controls">
-          <div className="al-search-wrap">
-            <Search size={14} className="al-search-icon" />
-            <input className="al-search" placeholder="Tìm tên, thành phố, user ID..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <div className="al-tabs">
-            {(["ALL", "DONE", "PENDING"] as const).map(f => (
-              <button key={f} className={`al-tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                {f === "ALL" ? "Tất cả" : f === "DONE" ? "Hoàn thành" : "Chưa xong"}
-              </button>
-            ))}
-          </div>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
-        </div>
-
-        <div className="al-table-wrap">
-          {loading ? <div className="al-loading">Đang tải...</div>
-            : error ? <ErrMsg msg={error} />
-            : filtered.length === 0 ? <div className="al-empty">Không có dữ liệu</div>
-            : (
-              <table className="al-table">
-                <thead><tr>
-                  <th>Vận động viên</th>
-                  <th>Giới tính</th>
-                  <th>Ngày sinh</th>
-                  <th>Chiều cao</th>
-                  <th>Cân nặng</th>
-                  <th>Thành phố</th>
-                  <th>Trình độ</th>
-                  <th>Mục tiêu chính</th>
-                  <th>Trọng tâm dinh dưỡng</th>
-                  <th>Onboarding</th>
-                </tr></thead>
-                <tbody>
-                  {filtered.map(p => (
-                    <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setSelected(p)}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div className="al-avatar" style={{ background: avatarColor(p.userId) }}>{initials(p.displayName)}</div>
-                          <div>
-                            <div className="al-uname">{p.displayName}</div>
-                            <div className="al-uemail">ID: {p.userId}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>{p.gender ?? "—"}</td>
-                      <td>{p.dateOfBirth ?? "—"}</td>
-                      <td>{p.heightCm ? `${p.heightCm} cm` : "—"}</td>
-                      <td>{p.weightKg ? `${p.weightKg} kg` : "—"}</td>
-                      <td>{p.city ?? "—"}</td>
-                      <td>{p.experienceLevel ?? "—"}</td>
-                      <td className="al-truncate">{p.primaryGoal ?? "—"}</td>
-                      <td className="al-truncate">{p.nutritionFocus ?? "—"}</td>
-                      <td>
-                        <span className={`al-badge ${p.completedOnboarding ? "badge-active" : "badge-inactive"}`}>
-                          {p.completedOnboarding ? "Hoàn thành" : "Chưa xong"}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-        </div>
-
-        {selected && (
-          <div className="modal-backdrop" onClick={() => setSelected(null)}>
-            <div className="al-detail-card" onClick={e => e.stopPropagation()}>
-              <div className="al-detail-header">
-                <div className="al-avatar-lg" style={{ background: avatarColor(selected.userId) }}>{initials(selected.displayName)}</div>
-                <div style={{ flex: 1 }}>
-                  <div className="al-detail-name">{selected.displayName}</div>
-                  <div className="al-detail-sub">User ID: {selected.userId}</div>
+        {/* ── Tab 1: Tracking ── */}
+        {tab === "tracking" && (
+          <>
+            <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
+              {[
+                { label: "Tổng hồ sơ",       value: profiles.length,            color: "#3b82f6" },
+                { label: "Hoàn thành",        value: done,                       color: "#22c55e" },
+                { label: "Chưa hoàn thành",   value: profiles.length - done,     color: "#ef4444" },
+                { label: "Tỷ lệ hoàn thành",  value: `${completionRate}%`,       color: "#f97316" },
+              ].map(c => (
+                <div key={c.label} className="al-stat-card">
+                  <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
+                  <div className="al-stat-label">{c.label}</div>
                 </div>
-                <button className="al-icon-btn" onClick={() => setSelected(null)}><X size={16} /></button>
+              ))}
+            </div>
+
+            <div className="al-controls">
+              <div className="al-search-wrap">
+                <Search size={14} className="al-search-icon" />
+                <input className="al-search" placeholder="Tìm tên, thành phố, user ID..." value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <div className="al-detail-grid">
-                {([
-                  ["Giới tính", selected.gender ?? "—"],
-                  ["Ngày sinh", selected.dateOfBirth ?? "—"],
-                  ["Chiều cao", selected.heightCm ? `${selected.heightCm} cm` : "—"],
-                  ["Cân nặng", selected.weightKg ? `${selected.weightKg} kg` : "—"],
-                  ["Thành phố", selected.city ?? "—"],
-                  ["Trình độ", selected.experienceLevel ?? "—"],
-                  ["Mục tiêu chính", selected.primaryGoal ?? "—"],
-                  ["Trọng tâm dinh dưỡng", selected.nutritionFocus ?? "—"],
-                  ["Mục tiêu chạy/tuần", `${selected.weeklyRunGoalKm} km`],
-                  ["Mục tiêu bơi/tuần", `${selected.weeklySwimGoalMeters} m`],
-                  ["Ngày tạo hồ sơ", fmtDate(selected.createdAt)],
-                  ["Trạng thái", selected.completedOnboarding ? "Hoàn thành" : "Chưa xong"],
-                ] as [string, string][]).map(([k, v]) => (
-                  <div key={k} className="al-detail-row">
-                    <span className="al-detail-key">{k}</span>
-                    <span className="al-detail-val">{v}</span>
-                  </div>
+              <div className="al-tabs">
+                {(["ALL", "DONE", "PENDING"] as const).map(f => (
+                  <button key={f} className={`al-tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
+                    {f === "ALL" ? `Tất cả (${profiles.length})` : f === "DONE" ? `Hoàn thành (${done})` : `Chưa xong (${profiles.length - done})`}
+                  </button>
                 ))}
               </div>
+              <button className="al-refresh-btn" onClick={loadProfiles}><RefreshCw size={13} /> Làm mới</button>
             </div>
-          </div>
+
+            <div className="al-table-wrap">
+              {loadingProfiles ? <div className="al-loading">Đang tải...</div>
+                : profileError ? <ErrMsg msg={profileError} />
+                : filtered.length === 0 ? <div className="al-empty">Không có dữ liệu</div>
+                : (
+                  <table className="al-table">
+                    <thead><tr>
+                      <th>Vận động viên</th>
+                      <th>Thành phố</th>
+                      <th>Trình độ</th>
+                      <th>Mục tiêu chính</th>
+                      <th>Chạy/tuần</th>
+                      <th>Bơi/tuần</th>
+                      <th>Ngày tạo</th>
+                      <th>Onboarding</th>
+                    </tr></thead>
+                    <tbody>
+                      {filtered.map(p => (
+                        <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setSelected(p)}>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div className="al-avatar" style={{ background: avatarColor(p.userId) }}>{initials(p.displayName)}</div>
+                              <div>
+                                <div className="al-uname">{p.displayName}</div>
+                                <div className="al-uemail">ID: {p.userId}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>{p.city ?? "—"}</td>
+                          <td>
+                            <span className="al-badge" style={{ background: p.experienceLevel === "ADVANCED" ? "#fef3c7" : p.experienceLevel === "INTERMEDIATE" ? "#dbeafe" : "#f0fdf4", color: p.experienceLevel === "ADVANCED" ? "#92400e" : p.experienceLevel === "INTERMEDIATE" ? "#1d4ed8" : "#166534" }}>
+                              {p.experienceLevel === "BEGINNER" ? "Mới bắt đầu" : p.experienceLevel === "INTERMEDIATE" ? "Trung bình" : p.experienceLevel === "ADVANCED" ? "Nâng cao" : p.experienceLevel ?? "—"}
+                            </span>
+                          </td>
+                          <td className="al-truncate" style={{ maxWidth: 180 }}>{p.primaryGoal ?? "—"}</td>
+                          <td>{p.weeklyRunGoalKm} km</td>
+                          <td>{p.weeklySwimGoalMeters} m</td>
+                          <td>{fmtDate(p.createdAt)}</td>
+                          <td>
+                            <span className={`al-badge ${p.completedOnboarding ? "badge-active" : "badge-inactive"}`}>
+                              {p.completedOnboarding ? "Hoàn thành" : "Chưa xong"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+            </div>
+
+            {selected && (
+              <div className="modal-backdrop" onClick={() => setSelected(null)}>
+                <div className="al-detail-card" onClick={e => e.stopPropagation()}>
+                  <div className="al-detail-header">
+                    <div className="al-avatar-lg" style={{ background: avatarColor(selected.userId) }}>{initials(selected.displayName)}</div>
+                    <div style={{ flex: 1 }}>
+                      <div className="al-detail-name">{selected.displayName}</div>
+                      <div className="al-detail-sub">User ID: {selected.userId}</div>
+                    </div>
+                    <button className="al-icon-btn" onClick={() => setSelected(null)}><X size={16} /></button>
+                  </div>
+                  <div className="al-detail-grid">
+                    {([
+                      ["Giới tính", selected.gender ?? "—"],
+                      ["Ngày sinh", selected.dateOfBirth ?? "—"],
+                      ["Chiều cao", selected.heightCm ? `${selected.heightCm} cm` : "—"],
+                      ["Cân nặng", selected.weightKg ? `${selected.weightKg} kg` : "—"],
+                      ["Thành phố", selected.city ?? "—"],
+                      ["Trình độ", selected.experienceLevel ?? "—"],
+                      ["Mục tiêu chính", selected.primaryGoal ?? "—"],
+                      ["Trọng tâm dinh dưỡng", selected.nutritionFocus ?? "—"],
+                      ["Mục tiêu chạy/tuần", `${selected.weeklyRunGoalKm} km`],
+                      ["Mục tiêu bơi/tuần", `${selected.weeklySwimGoalMeters} m`],
+                      ["Ngày tạo hồ sơ", fmtDate(selected.createdAt)],
+                      ["Trạng thái", selected.completedOnboarding ? "Hoàn thành" : "Chưa xong"],
+                    ] as [string, string][]).map(([k, v]) => (
+                      <div key={k} className="al-detail-row">
+                        <span className="al-detail-key">{k}</span>
+                        <span className="al-detail-val">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
+
+        {/* ── Tab 2: Goals ── */}
+        {tab === "goals" && (
+          <>
+            <div className="al-controls" style={{ marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, color: "#64748b" }}>
+                  Danh sách mục tiêu sức khỏe hiển thị trong form đăng ký onboarding của người dùng.
+                </div>
+              </div>
+              <button className="al-add-btn" onClick={() => { setShowGoalForm(true); setEditingGoal(null); setGoalForm({ title: "", description: "", sortOrder: goals.length + 1, active: true }); }}>
+                <Plus size={14} /> Thêm mục tiêu
+              </button>
+              <button className="al-refresh-btn" onClick={loadGoals}><RefreshCw size={13} /> Làm mới</button>
+            </div>
+
+            {goalError && <ErrMsg msg={goalError} />}
+
+            {showGoalForm && (
+              <div className="al-form-card" style={{ marginBottom: 16, padding: "20px 24px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+                <div style={{ fontWeight: 600, marginBottom: 14, color: "#1e293b" }}>
+                  {editingGoal ? "Chỉnh sửa mục tiêu" : "Thêm mục tiêu mới"}
+                </div>
+                <div className="al-form-group">
+                  <label className="al-form-label">Tên mục tiêu *</label>
+                  <input className="al-form-input" value={goalForm.title} onChange={e => setGoalForm({ ...goalForm, title: e.target.value })} placeholder="VD: Giảm cân & cải thiện vóc dáng" />
+                </div>
+                <div className="al-form-group">
+                  <label className="al-form-label">Mô tả</label>
+                  <textarea className="al-form-input" rows={3} value={goalForm.description} onChange={e => setGoalForm({ ...goalForm, description: e.target.value })} placeholder="Giải thích ngắn gọn về mục tiêu này..." style={{ resize: "vertical" }} />
+                </div>
+                <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                  <div className="al-form-group" style={{ flex: "0 0 140px", marginBottom: 0 }}>
+                    <label className="al-form-label">Thứ tự</label>
+                    <input className="al-form-input" type="number" min={0} value={goalForm.sortOrder} onChange={e => setGoalForm({ ...goalForm, sortOrder: Number(e.target.value) })} />
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginTop: 18 }}>
+                    <input type="checkbox" checked={goalForm.active} onChange={e => setGoalForm({ ...goalForm, active: e.target.checked })} />
+                    Đang kích hoạt
+                  </label>
+                  <div style={{ flex: 1 }} />
+                  <button className="al-btn-secondary" onClick={cancelGoalForm} style={{ marginTop: 0 }}>Hủy</button>
+                  <button className="al-add-btn" onClick={saveGoal} style={{ marginTop: 0 }}>
+                    {editingGoal ? "Lưu thay đổi" : "Thêm mục tiêu"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="al-table-wrap">
+              {loadingGoals ? <div className="al-loading">Đang tải...</div>
+                : goals.length === 0 ? <div className="al-empty">Chưa có mục tiêu nào. Nhấn "Thêm mục tiêu" để bắt đầu.</div>
+                : (
+                  <table className="al-table">
+                    <thead><tr>
+                      <th style={{ width: 50 }}>STT</th>
+                      <th>Tên mục tiêu</th>
+                      <th>Mô tả</th>
+                      <th style={{ width: 100 }}>Trạng thái</th>
+                      <th style={{ width: 110 }}>Thao tác</th>
+                    </tr></thead>
+                    <tbody>
+                      {goals.map(g => (
+                        <tr key={g.id}>
+                          <td style={{ textAlign: "center", color: "#94a3b8" }}>{g.sortOrder}</td>
+                          <td><div className="al-uname">{g.title}</div></td>
+                          <td style={{ color: "#64748b", fontSize: 13 }}>{g.description || "—"}</td>
+                          <td>
+                            <span className={`al-badge ${g.active ? "badge-active" : "badge-inactive"}`}>
+                              {g.active ? "Kích hoạt" : "Tắt"}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button className="al-action-btn" title="Sửa" onClick={() => startEdit(g)}><Edit2 size={13} /></button>
+                              <button className="al-action-btn danger" title="Xóa" onClick={() => setGoalConfirm({ id: g.id, title: g.title })}><Trash2 size={13} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+            </div>
+
+            {goalConfirm && (
+              <div className="al-modal-overlay" onClick={() => setGoalConfirm(null)}>
+                <div className="al-modal-box" onClick={e => e.stopPropagation()}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <AlertCircle size={22} color="#ef4444" />
+                    <div style={{ fontWeight: 600, fontSize: 16 }}>Xóa mục tiêu</div>
+                  </div>
+                  <p style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
+                    Xóa mục tiêu <strong>"{goalConfirm.title}"</strong>? Hành động này không thể hoàn tác.
+                  </p>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                    <button className="al-btn-secondary" onClick={() => setGoalConfirm(null)}>Hủy</button>
+                    <button className="al-add-btn" style={{ background: "#ef4444" }} onClick={() => deleteGoal(goalConfirm.id)}>Xóa</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Tab 3: Experience Levels ── */}
+        {tab === "levels" && (
+          <>
+            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 20 }}>
+              Ba cấp độ luyện tập được sử dụng trong quá trình onboarding để phân loại vận động viên và gợi ý kế hoạch phù hợp.
+            </div>
+            <div style={{ display: "grid", gap: 16 }}>
+              {EXPERIENCE_LEVELS.map((lv, i) => (
+                <div key={lv.code} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "20px 24px", display: "flex", gap: 20, alignItems: "flex-start" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: i === 0 ? "#f0fdf4" : i === 1 ? "#dbeafe" : "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                    {i === 0 ? "🌱" : i === 1 ? "⚡" : "🔥"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>{lv.label}</div>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: i === 0 ? "#dcfce7" : i === 1 ? "#dbeafe" : "#fef9c3", color: i === 0 ? "#166534" : i === 1 ? "#1d4ed8" : "#713f12" }}>
+                        {lv.code}
+                      </span>
+                    </div>
+                    <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>{lv.desc}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
+                      <span style={{ fontWeight: 600, color: "#475569" }}>Tần suất đề xuất:</span>
+                      {lv.sessions}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0 }}>
+                    <span className="al-badge badge-active">Đang dùng</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 20, padding: "14px 18px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#64748b" }}>
+              Thông tin cấp độ luyện tập được hiển thị cho người dùng trong bước "Cá nhân" của quy trình đăng ký. Người dùng chọn cấp độ phù hợp nhất với khả năng hiện tại của mình.
+            </div>
+          </>
+        )}
+
       </div>
     </>
   );
 }
-
-const SESSION_KEY = "runswim_admin_session";
 
 export default function App() {
   const [session, setSession] = useState<AdminSession | null>(() => {
@@ -1992,15 +2454,15 @@ export default function App() {
       <Sidebar page={page} setPage={setPage} session={session}
         onLogout={() => { localStorage.removeItem(SESSION_KEY); setSession(null); }} />
       <div className="al-main">
-        {page === "dashboard"   && <DashboardPage session={session} />}
-        {page === "users"       && <UsersManagementPage session={session} />}
-        {page === "activities"  && <ActivitiesPage session={session} />}
-        {page === "routes"      && <RoutesPage session={session} />}
-        {page === "community"   && <CommunityAdminPage session={session} />}
-        {page === "nutrition"   && <NutritionAdminPage session={session} />}
-        {page === "training"    && <TrainingPage session={session} />}
-        {page === "sports"      && <SportsManagementPage session={session} />}
-        {page === "onboarding"  && <OnboardingAdminPage session={session} />}
+        {page === "dashboard"              && <DashboardPage session={session} />}
+        {page === "users"                  && <UsersManagementPage session={session} />}
+        {page === "activities"             && <ActivitiesPage session={session} />}
+        {page === "routes"                 && <RoutesPage session={session} />}
+        {page === "community"              && <CommunityAdminPage session={session} />}
+        {page.startsWith("nutrition/")     && <NutritionAdminPage session={session} nutPage={page.split("/")[1] as NutPage} />}
+        {page === "training"               && <TrainingPage session={session} />}
+        {page === "sports"                 && <SportsManagementPage session={session} />}
+        {page === "onboarding"             && <OnboardingAdminPage session={session} />}
       </div>
     </div>
   );

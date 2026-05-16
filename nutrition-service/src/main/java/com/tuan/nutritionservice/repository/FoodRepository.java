@@ -11,5 +11,7 @@ public interface FoodRepository extends JpaRepository<Food, Long> {
 
     boolean existsByNameIgnoreCase(String name);
 
+    java.util.Optional<Food> findByNameIgnoreCase(String name);
+
     long countByActiveTrue();
 }

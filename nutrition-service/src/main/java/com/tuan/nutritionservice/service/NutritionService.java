@@ -1,9 +1,11 @@
 package com.tuan.nutritionservice.service;
 
 import com.tuan.nutritionservice.entity.Food;
+import com.tuan.nutritionservice.entity.FoodCategory;
 import com.tuan.nutritionservice.entity.MealEntry;
 import com.tuan.nutritionservice.entity.NutritionPlan;
 import com.tuan.nutritionservice.entity.WaterEntry;
+import com.tuan.nutritionservice.repository.FoodCategoryRepository;
 import com.tuan.nutritionservice.repository.FoodRepository;
 import com.tuan.nutritionservice.repository.MealEntryRepository;
 import com.tuan.nutritionservice.repository.NutritionPlanRepository;
@@ -14,8 +16,10 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,15 +32,18 @@ public class NutritionService {
     private final MealEntryRepository meals;
     private final WaterEntryRepository waterEntries;
     private final FoodRepository foods;
+    private final FoodCategoryRepository categories;
 
     public NutritionService(NutritionPlanRepository plans,
                             MealEntryRepository meals,
                             WaterEntryRepository waterEntries,
-                            FoodRepository foods) {
+                            FoodRepository foods,
+                            FoodCategoryRepository categories) {
         this.plans = plans;
         this.meals = meals;
         this.waterEntries = waterEntries;
         this.foods = foods;
+        this.categories = categories;
     }
 
     @Transactional(readOnly = true)
@@ -81,6 +88,12 @@ public class NutritionService {
         foods.save(food);
     }
 
+    @Transactional
+    public void deleteFood(Long foodId) {
+        if (!foods.existsById(foodId)) throw new IllegalArgumentException("Food not found: " + foodId);
+        foods.deleteById(foodId);
+    }
+
     @Transactional(readOnly = true)
     public NutritionAdminOverview adminOverview() {
         LocalDate today = LocalDate.now();
@@ -101,6 +114,48 @@ public class NutritionService {
     @Transactional(readOnly = true)
     public List<MealEntry> recentMeals() {
         return meals.findTop30ByOrderByEatenAtDesc();
+    }
+
+    @Transactional(readOnly = true)
+    public List<FoodCategory> listCategories() {
+        return categories.findAllByOrderByNameAsc();
+    }
+
+    @Transactional
+    public FoodCategory createCategory(CategoryRequest request) {
+        if (request.name() == null || request.name().isBlank()) {
+            throw new IllegalArgumentException("Tên danh mục không được để trống");
+        }
+        if (categories.findByNameIgnoreCase(request.name().trim()).isPresent()) {
+            throw new IllegalArgumentException("Danh mục đã tồn tại: " + request.name());
+        }
+        FoodCategory cat = new FoodCategory();
+        applyCategoryRequest(cat, request);
+        return categories.save(cat);
+    }
+
+    @Transactional
+    public FoodCategory updateCategory(Long id, CategoryRequest request) {
+        FoodCategory cat = categories.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục: " + id));
+        applyCategoryRequest(cat, request);
+        return categories.save(cat);
+    }
+
+    @Transactional
+    public void deleteCategory(Long id) {
+        FoodCategory cat = categories.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục: " + id));
+        foods.findAllByOrderByNameAsc().stream()
+                .filter(f -> cat.equals(f.getFoodCategory()))
+                .forEach(f -> { f.setFoodCategory(null); foods.save(f); });
+        categories.delete(cat);
+    }
+
+    private void applyCategoryRequest(FoodCategory cat, CategoryRequest request) {
+        if (request.name() != null && !request.name().isBlank()) cat.setName(request.name().trim());
+        if (request.description() != null) cat.setDescription(request.description().trim());
+        if (request.icon() != null) cat.setIcon(request.icon().trim());
     }
 
     @Transactional
@@ -295,7 +350,12 @@ public class NutritionService {
 
     private void applyFoodRequest(Food food, FoodRequest request) {
         food.setName(defaultText(request.name(), food.getName() == null ? "Food" : food.getName()));
-        food.setCategory(defaultText(request.category(), food.getCategory() == null ? "GENERAL" : food.getCategory()).toUpperCase());
+        if (request.categoryId() != null) {
+            FoodCategory cat = categories.findById(request.categoryId())
+                    .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy danh mục: " + request.categoryId()));
+            food.setFoodCategory(cat);
+            food.setCategory(cat.getName());
+        }
         food.setServingSize(defaultText(request.servingSize(), food.getServingSize() == null ? "1 serving" : food.getServingSize()));
         food.setCalories(Math.max(0, request.calories() == null ? food.getCalories() : request.calories()));
         food.setProteinGrams(Math.max(0, request.proteinGrams() == null ? food.getProteinGrams() : request.proteinGrams()));
@@ -303,6 +363,7 @@ public class NutritionService {
         food.setFatGrams(Math.max(0, request.fatGrams() == null ? food.getFatGrams() : request.fatGrams()));
         food.setAliases(defaultText(request.aliases(), food.getAliases() == null ? "" : food.getAliases()));
         food.setNote(defaultText(request.note(), food.getNote() == null ? "" : food.getNote()));
+        food.setImageUrl(defaultText(request.imageUrl(), food.getImageUrl() == null ? "" : food.getImageUrl()));
         food.setActive(request.active() == null || request.active());
     }
 
@@ -420,7 +481,7 @@ public class NutritionService {
 
     public record FoodRequest(
             String name,
-            String category,
+            Long categoryId,
             String servingSize,
             Integer calories,
             Integer proteinGrams,
@@ -428,8 +489,12 @@ public class NutritionService {
             Integer fatGrams,
             String aliases,
             String note,
+            String imageUrl,
             Boolean active
     ) {
+    }
+
+    public record CategoryRequest(String name, String description, String icon) {
     }
 
     public record NutritionAdminOverview(
@@ -463,5 +528,26 @@ public class NutritionService {
     }
 
     public record WaterSummary(int totalMl, List<WaterEntry> entries) {
+    }
+
+    public record DailyStats(String date, int calories, int proteinGrams, int carbsGrams, int fatGrams) {
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyStats> weeklyAnalytics(Long userId) {
+        LocalDate today = LocalDate.now();
+        List<DailyStats> result = new java.util.ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate day = today.minusDays(i);
+            List<MealEntry> dayMeals = meals.findByUserIdAndEatenAtBetween(userId, day.atStartOfDay(), day.plusDays(1).atStartOfDay());
+            result.add(new DailyStats(
+                    day.toString(),
+                    dayMeals.stream().mapToInt(MealEntry::getCalories).sum(),
+                    dayMeals.stream().mapToInt(MealEntry::getProteinGrams).sum(),
+                    dayMeals.stream().mapToInt(MealEntry::getCarbsGrams).sum(),
+                    dayMeals.stream().mapToInt(MealEntry::getFatGrams).sum()
+            ));
+        }
+        return result;
     }
 }

@@ -157,6 +157,15 @@ type FoodItem = {
   active?: boolean;
   aliases?: string;
   note?: string;
+  imageUrl?: string;
+};
+
+type DailyStats = {
+  date: string;
+  calories: number;
+  proteinGrams: number;
+  carbsGrams: number;
+  fatGrams: number;
 };
 
 type RecoverySuggestion = {
@@ -3216,6 +3225,66 @@ function ChallengesPage({ challenges, onToggle }: { challenges: Challenge[]; onT
   );
 }
 
+function CalorieRing({ consumed, goal }: { consumed: number; goal: number }) {
+  const pct = goal > 0 ? Math.min(1, consumed / goal) : 0;
+  const r = 64, cx = 80, cy = 80, stroke = 10;
+  const circ = 2 * Math.PI * r;
+  const dash = circ * pct;
+  const remaining = Math.max(0, goal - consumed);
+  return (
+    <div className="nut-ring-wrap">
+      <svg width={160} height={160} className="nut-ring-svg">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#ringGrad)" strokeWidth={stroke}
+          strokeDasharray={`${dash} ${circ - dash}`} strokeLinecap="round"
+          transform={`rotate(-90 ${cx} ${cy})`} style={{ transition: "stroke-dasharray .5s ease" }} />
+        <defs>
+          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#fb923c" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="nut-ring-center">
+        <span className="nut-ring-consumed">{consumed}</span>
+        <span className="nut-ring-label">kcal</span>
+        <span className="nut-ring-goal">/ {goal}</span>
+      </div>
+      <div className="nut-ring-remaining">{remaining > 0 ? `Còn ${remaining} kcal` : "Đã đủ mục tiêu!"}</div>
+    </div>
+  );
+}
+
+function MacroBar({ label, current, goal, color }: { label: string; current: number; goal: number; color: string }) {
+  const pct = goal > 0 ? Math.min(100, Math.round((current / goal) * 100)) : 0;
+  return (
+    <div className="nut-macro-bar">
+      <div className="nut-macro-bar-head">
+        <span>{label}</span>
+        <span style={{ color }}>{current}g <small>/ {goal}g</small></span>
+      </div>
+      <div className="nut-macro-bar-track">
+        <div className="nut-macro-bar-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function WaterDroplets({ totalMl, goalMl }: { totalMl: number; goalMl: number }) {
+  const cups = 8;
+  const mlPerCup = goalMl / cups;
+  const filledCups = Math.min(cups, Math.floor(totalMl / mlPerCup));
+  return (
+    <div className="nut-water-drops">
+      {Array.from({ length: cups }).map((_, i) => (
+        <div key={i} className={`nut-drop${i < filledCups ? " filled" : ""}`}>
+          <Droplets size={20} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activities, notify }: {
   token: string;
   userId: number;
@@ -3226,19 +3295,22 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
   activities: FitnessActivity[];
   notify: (msg: string) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"dashboard" | "diary" | "addfood" | "analytics" | "ai">("dashboard");
   const [draft, setDraft] = useState(plan);
-  const [mealType, setMealType] = useState("SNACK");
-  const [quickInput, setQuickInput] = useState("1 to pho bo");
+  const [addMealType, setAddMealType] = useState("BREAKFAST");
+  const [quickInput, setQuickInput] = useState("");
   const [foodQuery, setFoodQuery] = useState("");
   const [foods, setFoods] = useState<FoodItem[]>([]);
   const [selectedFoodId, setSelectedFoodId] = useState<number | null>(null);
   const [servings, setServings] = useState(1);
-  const [manualMeal, setManualMeal] = useState({ mealType: "SNACK", name: "Recovery smoothie", calories: 420, proteinGrams: 32, carbsGrams: 58, fatGrams: 8 });
+  const [manualMeal, setManualMeal] = useState({ mealType: "SNACK", name: "", calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0 });
   const [waterMl, setWaterMl] = useState(250);
   const [waterTotalMl, setWaterTotalMl] = useState(0);
   const [selectedActivityId, setSelectedActivityId] = useState<number | "">("");
   const [recovery, setRecovery] = useState<RecoverySuggestion | null>(null);
   const [busyMeal, setBusyMeal] = useState(false);
+  const [weeklyStats, setWeeklyStats] = useState<DailyStats[]>([]);
+  const [showPlanEditor, setShowPlanEditor] = useState(false);
 
   useEffect(() => setDraft(plan), [plan]);
 
@@ -3246,6 +3318,11 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
     if (!token || token === "demo") return;
     api<{ totalMl: number }>(`/nutrition/${userId}/water/today`, token, { totalMl: 0 }).then((r) => setWaterTotalMl(r.totalMl));
   }, [token, userId]);
+
+  useEffect(() => {
+    if (!token || token === "demo" || activeTab !== "analytics") return;
+    api<DailyStats[]>(`/nutrition/${userId}/analytics/weekly`, token, []).then(setWeeklyStats);
+  }, [token, userId, activeTab]);
 
   useEffect(() => {
     if (!token || token === "demo") return;
@@ -3259,10 +3336,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
         setSelectedFoodId((current) => current && items.some((item) => item.id === current) ? current : items[0]?.id ?? null);
       });
     }, 200);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
+    return () => { active = false; window.clearTimeout(timer); };
   }, [foodQuery, token]);
 
   const recentActivities = useMemo(() => [...activities]
@@ -3277,7 +3351,8 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
     e.preventDefault();
     const saved = await api<NutritionPlan>(`/nutrition/${userId}/plan`, token, draft, { method: "PUT", body: JSON.stringify(draft) });
     setPlan(saved);
-    notify("Da luu ke hoach dinh duong.");
+    setShowPlanEditor(false);
+    notify("Đã lưu kế hoạch dinh dưỡng.");
   }
 
   async function quickAddMeal(e: FormEvent) {
@@ -3287,32 +3362,29 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
     try {
       const created = await apiStrict<MealEntry>(`/nutrition/${userId}/meals/quick`, token, {
         method: "POST",
-        body: JSON.stringify({ query: quickInput, mealType }),
+        body: JSON.stringify({ query: quickInput, mealType: addMealType }),
       });
       setMeals([created, ...meals]);
       setQuickInput("");
-      notify(`Da tinh va them ${created.name}.`);
+      notify(`Đã thêm ${created.name}.`);
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Khong tim thay mon phu hop.");
+      notify(err instanceof Error ? err.message : "Không tìm thấy món phù hợp.");
     } finally {
       setBusyMeal(false);
     }
   }
 
-  async function addSelectedFood(e: FormEvent) {
-    e.preventDefault();
-    if (!selectedFoodId) return;
+  async function addSelectedFood(food: FoodItem) {
     setBusyMeal(true);
     try {
-      const food = foods.find((item) => item.id === selectedFoodId);
       const created = await apiStrict<MealEntry>(`/nutrition/${userId}/meals/from-food`, token, {
         method: "POST",
-        body: JSON.stringify({ foodId: selectedFoodId, mealType, servings, customName: food?.name }),
+        body: JSON.stringify({ foodId: food.id, mealType: addMealType, servings, customName: food.name }),
       });
       setMeals([created, ...meals]);
-      notify(`Da them ${created.name} vao nhat ky.`);
+      notify(`Đã thêm ${created.name} vào nhật ký.`);
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Khong the them mon an.");
+      notify(err instanceof Error ? err.message : "Không thể thêm món ăn.");
     } finally {
       setBusyMeal(false);
     }
@@ -3320,6 +3392,7 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
 
   async function addManualMeal(e: FormEvent) {
     e.preventDefault();
+    if (!manualMeal.name.trim()) return;
     setBusyMeal(true);
     try {
       const created = await apiStrict<MealEntry>("/nutrition/meals", token, {
@@ -3327,22 +3400,22 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
         body: JSON.stringify({ userId, ...manualMeal }),
       });
       setMeals([created, ...meals]);
-      notify("Da them bua an vao nhat ky.");
+      setManualMeal({ mealType: "SNACK", name: "", calories: 0, proteinGrams: 0, carbsGrams: 0, fatGrams: 0 });
+      notify("Đã thêm bữa ăn vào nhật ký.");
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Khong the them bua an.");
+      notify(err instanceof Error ? err.message : "Không thể thêm bữa ăn.");
     } finally {
       setBusyMeal(false);
     }
   }
 
-  async function logWater(e: FormEvent) {
-    e.preventDefault();
-    await api<{ amountMl: number }>(`/nutrition/${userId}/water`, token, { amountMl: waterMl }, {
+  async function logWater(amount: number) {
+    await api<{ amountMl: number }>(`/nutrition/${userId}/water`, token, { amountMl: amount }, {
       method: "POST",
-      body: JSON.stringify({ amountMl: waterMl }),
+      body: JSON.stringify({ amountMl: amount }),
     });
-    setWaterTotalMl((prev) => prev + waterMl);
-    notify(`Da ghi ${waterMl}ml nuoc uong.`);
+    setWaterTotalMl((prev) => prev + amount);
+    notify(`Đã ghi ${amount}ml nước uống.`);
   }
 
   async function requestRecoverySuggestion() {
@@ -3360,9 +3433,9 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
         }),
       });
       setRecovery(suggestion);
-      notify("Da tao goi y phuc hoi sau buoi tap.");
+      notify("Đã tạo gợi ý phục hồi sau buổi tập.");
     } catch (err) {
-      notify(err instanceof Error ? err.message : "Khong the tao goi y phuc hoi.");
+      notify(err instanceof Error ? err.message : "Không thể tạo gợi ý phục hồi.");
     }
   }
 
@@ -3371,296 +3444,395 @@ function NutritionPage({ token, userId, plan, setPlan, meals, setMeals, activiti
   const totals = todayMeals.reduce((s, m) => ({ calories: s.calories + m.calories, protein: s.protein + m.proteinGrams, carbs: s.carbs + m.carbsGrams, fat: s.fat + m.fatGrams }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
   const waterGoalMl = Math.round(plan.hydrationLiters * 1000);
   const waterPercent = waterGoalMl > 0 ? Math.min(100, Math.round((waterTotalMl / waterGoalMl) * 100)) : 0;
-  const selectedFood = foods.find((item) => item.id === selectedFoodId) ?? foods[0];
-  const selectedFoodEstimate = selectedFood ? {
-    calories: Math.round(selectedFood.calories * servings),
-    protein: Math.round(selectedFood.proteinGrams * servings),
-    carbs: Math.round(selectedFood.carbsGrams * servings),
-    fat: Math.round(selectedFood.fatGrams * servings),
-  } : null;
+  const selectedFood = foods.find((item) => item.id === selectedFoodId) ?? null;
+
+  const mealGroups: Record<string, MealEntry[]> = { BREAKFAST: [], LUNCH: [], DINNER: [], SNACK: [] };
+  todayMeals.forEach((m) => {
+    const key = m.mealType in mealGroups ? m.mealType : "SNACK";
+    mealGroups[key].push(m);
+  });
+  const mealTypeLabels: Record<string, string> = { BREAKFAST: "Sáng", LUNCH: "Trưa", DINNER: "Tối", SNACK: "Snack" };
+  const mealTypeIcons: Record<string, ReactNode> = {
+    BREAKFAST: <Zap size={16} />, LUNCH: <Utensils size={16} />, DINNER: <Salad size={16} />, SNACK: <Activity size={16} />
+  };
+
+  const chartData = weeklyStats.map((d) => ({
+    day: new Date(d.date).toLocaleDateString("vi-VN", { weekday: "short" }),
+    "Calories": d.calories,
+    "Protein": d.proteinGrams,
+    "Carb": d.carbsGrams,
+    "Fat": d.fatGrams,
+  }));
 
   return (
-    <div className="nutrition-page nutrition-page-pro">
-      <section className="page-title">
-        <span className="section-kicker">Dinh duong</span>
-        <h1>Ke hoach nap nang luong</h1>
-        <p>Theo doi calories, macro, nuoc uong va bua phuc hoi sau cac buoi chay/boi.</p>
-      </section>
+    <div className="nut-page">
+      {/* Header */}
+      <div className="nut-header">
+        <div className="nut-header-text">
+          <h1>Dinh Dưỡng</h1>
+          <p>{plan.goal}</p>
+        </div>
+        <button className="nut-plan-btn" onClick={() => setShowPlanEditor(true)}>
+          <Settings size={16} /> Mục tiêu
+        </button>
+      </div>
 
-      <section className="nutrition-summary-strip">
-        <MacroBox icon={<Flame size={18} />} label="Calories" value={`${totals.calories}/${plan.dailyCalories}`} />
-        <MacroBox icon={<Utensils size={18} />} label="Protein" value={`${totals.protein}/${plan.proteinGrams}g`} />
-        <MacroBox icon={<Activity size={18} />} label="Carb" value={`${totals.carbs}/${plan.carbsGrams}g`} />
-        <MacroBox icon={<Droplets size={18} />} label="Fat" value={`${totals.fat}/${plan.fatGrams}g`} />
-      </section>
+      {/* Tabs */}
+      <div className="nut-tabs">
+        {([
+          { key: "dashboard", label: "Tổng quan", icon: <TrendingUp size={16} /> },
+          { key: "diary", label: "Nhật ký", icon: <Utensils size={16} /> },
+          { key: "addfood", label: "Thêm món", icon: <CirclePlus size={16} /> },
+          { key: "analytics", label: "Phân tích", icon: <BarChart2 size={16} /> },
+          { key: "ai", label: "AI Phục hồi", icon: <Sparkles size={16} /> },
+        ] as { key: typeof activeTab; label: string; icon: ReactNode }[]).map((tab) => (
+          <button key={tab.key} className={`nut-tab${activeTab === tab.key ? " active" : ""}`} onClick={() => setActiveTab(tab.key)}>
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <section className="nutrition-panels nutrition-panels-pro">
-        <form className="white-panel nutrition-form" onSubmit={savePlan}>
-          <h2>Muc tieu hang ngay</h2>
-          <label>Muc tieu<input value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} /></label>
-          <div className="input-grid">
-            <NumberField label="Calories" value={draft.dailyCalories} onChange={(v) => setDraft({ ...draft, dailyCalories: v })} />
-            <NumberField label="Protein (g)" value={draft.proteinGrams} onChange={(v) => setDraft({ ...draft, proteinGrams: v })} />
-            <NumberField label="Carb (g)" value={draft.carbsGrams} onChange={(v) => setDraft({ ...draft, carbsGrams: v })} />
-            <NumberField label="Fat (g)" value={draft.fatGrams} onChange={(v) => setDraft({ ...draft, fatGrams: v })} />
-          </div>
-          <label>Nuoc/ngay (lit)<input type="number" step="0.1" value={draft.hydrationLiters} onChange={(e) => setDraft({ ...draft, hydrationLiters: Number(e.target.value) })} /></label>
-          <label>Goi y<textarea value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} /></label>
-          <button className="orange-button"><CheckCircle2 size={18} /> Luu ke hoach</button>
-        </form>
-
-        <div className="white-panel nutrition-log-panel">
-          <div className="nutrition-panel-head">
-            <h2>Nhat ky bua an</h2>
-            <select value={mealType} onChange={(e) => setMealType(e.target.value)}>
-              <option>BREAKFAST</option><option>LUNCH</option><option>DINNER</option><option>SNACK</option>
-            </select>
-          </div>
-
-          <form className="quick-food-form" onSubmit={quickAddMeal}>
-            <div className="food-search-box">
-              <Search size={17} />
-              <input value={quickInput} onChange={(e) => setQuickInput(e.target.value)} placeholder="VD: 1 to pho bo, 2 qua trung, 200g com" />
+      {/* ── Dashboard ── */}
+      {activeTab === "dashboard" && (
+        <div className="nut-tab-content">
+          <div className="nut-dashboard">
+            {/* Calorie ring */}
+            <div className="nut-card nut-card-ring">
+              <CalorieRing consumed={totals.calories} goal={plan.dailyCalories} />
+              <div className="nut-macro-bars">
+                <MacroBar label="Protein" current={totals.protein} goal={plan.proteinGrams} color="#f97316" />
+                <MacroBar label="Carb" current={totals.carbs} goal={plan.carbsGrams} color="#3b82f6" />
+                <MacroBar label="Fat" current={totals.fat} goal={plan.fatGrams} color="#a855f7" />
+              </div>
             </div>
-            <button className="orange-button" disabled={busyMeal}><Sparkles size={16} /> Tu tinh</button>
-          </form>
 
-          <div className="food-library-picker">
-            <div className="food-search-box">
-              <Search size={17} />
-              <input value={foodQuery} onChange={(e) => setFoodQuery(e.target.value)} placeholder="Tim trong database mon an" />
+            {/* Water */}
+            <div className="nut-card nut-card-water">
+              <div className="nut-card-head">
+                <span><Droplets size={18} style={{ color: "#38bdf8" }} /> Nước uống</span>
+                <strong style={{ color: "#38bdf8" }}>{waterTotalMl} / {waterGoalMl} ml</strong>
+              </div>
+              <WaterDroplets totalMl={waterTotalMl} goalMl={waterGoalMl} />
+              <div className="nut-water-bar-track">
+                <div className="nut-water-bar-fill" style={{ width: `${waterPercent}%` }} />
+              </div>
+              <div className="nut-water-btns">
+                {[150, 250, 350, 500].map((ml) => (
+                  <button key={ml} className="nut-water-btn" onClick={() => logWater(ml)}>+{ml}ml</button>
+                ))}
+              </div>
             </div>
-            <div className="food-result-list">
-              {foods.length === 0 ? (
-                <div className="empty-log compact">Chua co mon phu hop trong database.</div>
-              ) : foods.slice(0, 6).map((food) => (
-                <button key={food.id} type="button" className={`food-result${selectedFoodId === food.id ? " active" : ""}`} onClick={() => setSelectedFoodId(food.id)}>
-                  <span>
-                    <strong>{food.name}</strong>
-                    <small>{food.servingSize}</small>
-                  </span>
-                  <span>{food.calories} kcal</span>
+
+            {/* Today summary */}
+            <div className="nut-card nut-today-meals">
+              <div className="nut-card-head">
+                <span><Flame size={18} style={{ color: "#f97316" }} /> Hôm nay</span>
+                <span className="nut-meal-count">{todayMeals.length} bữa</span>
+              </div>
+              {todayMeals.length === 0 ? (
+                <div className="nut-empty"><Utensils size={36} /><p>Chưa có bữa ăn nào.</p><button className="nut-cta" onClick={() => setActiveTab("addfood")}><CirclePlus size={15} /> Thêm món</button></div>
+              ) : (
+                <div className="nut-today-list">
+                  {todayMeals.slice(0, 5).map((m) => (
+                    <div key={m.id} className="nut-today-row">
+                      <span className="nut-today-type">{mealTypeLabels[m.mealType] ?? m.mealType}</span>
+                      <span className="nut-today-name">{m.name}</span>
+                      <span className="nut-today-kcal">{m.calories} kcal</span>
+                    </div>
+                  ))}
+                  {todayMeals.length > 5 && <p className="nut-more">+{todayMeals.length - 5} bữa khác</p>}
+                </div>
+              )}
+            </div>
+
+            {/* Plan card */}
+            <div className="nut-card nut-plan-card">
+              <div className="nut-card-head"><span><CheckCircle2 size={18} style={{ color: "#22c55e" }} /> Kế hoạch</span></div>
+              <p className="nut-plan-goal">{plan.goal}</p>
+              <p className="nut-plan-guidance">{plan.guidance}</p>
+              <div className="nut-plan-targets">
+                <div><Flame size={14} /><span>{plan.dailyCalories} kcal</span></div>
+                <div><span>P {plan.proteinGrams}g</span></div>
+                <div><span>C {plan.carbsGrams}g</span></div>
+                <div><span>F {plan.fatGrams}g</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Diary ── */}
+      {activeTab === "diary" && (
+        <div className="nut-tab-content">
+          <div className="nut-diary">
+            {Object.entries(mealGroups).map(([type, groupMeals]) => (
+              <div key={type} className="nut-meal-group">
+                <div className="nut-meal-group-head">
+                  <span className="nut-meal-group-icon">{mealTypeIcons[type]}</span>
+                  <span>{mealTypeLabels[type]}</span>
+                  <span className="nut-meal-group-kcal">{groupMeals.reduce((s, m) => s + m.calories, 0)} kcal</span>
+                  <button className="nut-add-to-group" onClick={() => { setAddMealType(type); setActiveTab("addfood"); }}>
+                    <CirclePlus size={15} />
+                  </button>
+                </div>
+                {groupMeals.length === 0 ? (
+                  <div className="nut-group-empty">Chưa có bữa ăn</div>
+                ) : groupMeals.map((m) => (
+                  <div key={m.id} className="nut-diary-row">
+                    <div className="nut-diary-info">
+                      <strong>{m.name}</strong>
+                      <small>{m.servings ? `${m.servings}x ` : ""}{m.servingSize ?? ""}</small>
+                    </div>
+                    <div className="nut-diary-macros">
+                      <span>P {m.proteinGrams}g</span>
+                      <span>C {m.carbsGrams}g</span>
+                      <span>F {m.fatGrams}g</span>
+                      <strong>{m.calories} kcal</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div className="nut-diary-total">
+              <span>Tổng hôm nay</span>
+              <span>{totals.protein}g P · {totals.carbs}g C · {totals.fat}g F</span>
+              <strong>{totals.calories} kcal</strong>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Food ── */}
+      {activeTab === "addfood" && (
+        <div className="nut-tab-content">
+          <div className="nut-addfood">
+            <div className="nut-addfood-controls">
+              <div className="nut-addfood-type">
+                {Object.entries(mealTypeLabels).map(([key, label]) => (
+                  <button key={key} className={`nut-type-btn${addMealType === key ? " active" : ""}`} onClick={() => setAddMealType(key)}>
+                    {mealTypeIcons[key]} {label}
+                  </button>
+                ))}
+              </div>
+              <form className="nut-quick-form" onSubmit={quickAddMeal}>
+                <div className="nut-search-box">
+                  <Sparkles size={16} style={{ color: "#f97316" }} />
+                  <input value={quickInput} onChange={(e) => setQuickInput(e.target.value)} placeholder="VD: 1 tô phở bò, 2 quả trứng, 200g cơm..." />
+                </div>
+                <button className="nut-submit-btn" disabled={busyMeal || !quickInput.trim()}>
+                  {busyMeal ? "Đang tính..." : "Tự tính & thêm"}
                 </button>
+              </form>
+            </div>
+
+            <div className="nut-search-box" style={{ marginBottom: 12 }}>
+              <Search size={16} />
+              <input value={foodQuery} onChange={(e) => setFoodQuery(e.target.value)} placeholder="Tìm trong thư viện món ăn..." />
+            </div>
+
+            <div className="nut-food-grid">
+              {foods.length === 0 ? (
+                <div className="nut-empty" style={{ gridColumn: "1 / -1" }}><Salad size={36} /><p>Không tìm thấy món phù hợp.</p></div>
+              ) : foods.slice(0, 12).map((food) => (
+                <div key={food.id} className={`nut-food-card${selectedFoodId === food.id ? " selected" : ""}`} onClick={() => setSelectedFoodId(food.id === selectedFoodId ? null : food.id)}>
+                  <div className="nut-food-img-wrap">
+                    {food.imageUrl ? (
+                      <img src={food.imageUrl} alt={food.name} className="nut-food-img" loading="lazy" />
+                    ) : (
+                      <div className="nut-food-img-placeholder"><Salad size={28} /></div>
+                    )}
+                    <span className="nut-food-cat">{food.category}</span>
+                  </div>
+                  <div className="nut-food-body">
+                    <strong className="nut-food-name">{food.name}</strong>
+                    <span className="nut-food-serving">{food.servingSize}</span>
+                    <div className="nut-food-macros">
+                      <span>{food.calories} kcal</span>
+                      <span>P {food.proteinGrams}g</span>
+                      <span>C {food.carbsGrams}g</span>
+                    </div>
+                  </div>
+                  {selectedFoodId === food.id && (
+                    <div className="nut-food-add-row" onClick={(e) => e.stopPropagation()}>
+                      <label>
+                        <span>Khẩu phần</span>
+                        <input type="number" min="0.25" max="10" step="0.25" value={servings} onChange={(e) => setServings(Number(e.target.value))} />
+                      </label>
+                      <button className="nut-submit-btn" disabled={busyMeal} onClick={() => addSelectedFood(food)}>
+                        <CirclePlus size={15} /> Thêm
+                      </button>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
-            {selectedFood && selectedFoodEstimate && (
-              <form className="selected-food-panel" onSubmit={addSelectedFood}>
-                <div>
-                  <strong>{selectedFood.name}</strong>
-                  <p>{selectedFoodEstimate.calories} kcal | P {selectedFoodEstimate.protein}g | C {selectedFoodEstimate.carbs}g | F {selectedFoodEstimate.fat}g</p>
+
+            <details className="nut-manual-details">
+              <summary>Nhập macro thủ công</summary>
+              <form className="nut-manual-form" onSubmit={addManualMeal}>
+                <div className="nut-manual-row">
+                  <select value={manualMeal.mealType} onChange={(e) => setManualMeal({ ...manualMeal, mealType: e.target.value })}>
+                    <option value="BREAKFAST">Sáng</option><option value="LUNCH">Trưa</option>
+                    <option value="DINNER">Tối</option><option value="SNACK">Snack</option>
+                  </select>
+                  <input placeholder="Tên món ăn" value={manualMeal.name} onChange={(e) => setManualMeal({ ...manualMeal, name: e.target.value })} required />
                 </div>
-                <label>Khau phan
-                  <input type="number" min="0.25" max="10" step="0.25" value={servings} onChange={(e) => setServings(Number(e.target.value))} />
-                </label>
-                <button className="outline-button" disabled={busyMeal}><CirclePlus size={16} /> Them</button>
+                <div className="nut-manual-macros">
+                  {(["calories", "proteinGrams", "carbsGrams", "fatGrams"] as const).map((k) => (
+                    <label key={k}>
+                      <span>{{ calories: "Kcal", proteinGrams: "Protein", carbsGrams: "Carb", fatGrams: "Fat" }[k]}</span>
+                      <input type="number" min={0} value={manualMeal[k]} onChange={(e) => setManualMeal({ ...manualMeal, [k]: Number(e.target.value) })} />
+                    </label>
+                  ))}
+                </div>
+                <button className="nut-submit-btn" disabled={busyMeal || !manualMeal.name.trim()}>Thêm bữa ăn</button>
               </form>
-            )}
-          </div>
-
-          <details className="manual-meal-details">
-            <summary>Nhap macro thu cong</summary>
-            <form className="meal-form" onSubmit={addManualMeal}>
-              <select value={manualMeal.mealType} onChange={(e) => setManualMeal({ ...manualMeal, mealType: e.target.value })}>
-                <option>BREAKFAST</option><option>LUNCH</option><option>DINNER</option><option>SNACK</option>
-              </select>
-              <input value={manualMeal.name} onChange={(e) => setManualMeal({ ...manualMeal, name: e.target.value })} />
-              <NumberField label="Calories" value={manualMeal.calories} onChange={(v) => setManualMeal({ ...manualMeal, calories: v })} />
-              <NumberField label="Protein" value={manualMeal.proteinGrams} onChange={(v) => setManualMeal({ ...manualMeal, proteinGrams: v })} />
-              <NumberField label="Carb" value={manualMeal.carbsGrams} onChange={(v) => setManualMeal({ ...manualMeal, carbsGrams: v })} />
-              <NumberField label="Fat" value={manualMeal.fatGrams} onChange={(v) => setManualMeal({ ...manualMeal, fatGrams: v })} />
-              <button className="orange-button">Them bua</button>
-            </form>
-          </details>
-
-          <h3>Da an hom nay</h3>
-          <div className="meal-list">
-            {todayMeals.length === 0 ? (
-              <div className="empty-log"><Utensils size={44} /><h3>Chua co bua an</h3><p>Them bua an dau tien.</p></div>
-            ) : (
-              todayMeals.map((m) => (
-                <div key={m.id} className="meal-row meal-row-pro">
-                  <span>{m.mealType}</span>
-                  <strong>{m.name}<small>{m.servings ? ` x${m.servings}` : ""} {m.servingSize ?? ""}</small></strong>
-                  <small>{m.calories} kcal</small>
-                </div>
-              ))
-            )}
+            </details>
           </div>
         </div>
+      )}
 
-        <div className="white-panel recovery-panel">
-          <h2><Sparkles size={20} /> AI phuc hoi sau tap</h2>
-          <select value={selectedActivityId} onChange={(e) => setSelectedActivityId(Number(e.target.value))}>
-            {recentActivities.length === 0 ? <option value="">Chua co buoi tap</option> : recentActivities.map((activity) => (
-              <option key={activity.id} value={activity.id}>
-                {activity.title} - {(activity.distanceMeters / 1000).toFixed(activity.sportType === "RUN" ? 1 : 2)} km
-              </option>
-            ))}
-          </select>
-          <button className="orange-button" type="button" onClick={requestRecoverySuggestion} disabled={recentActivities.length === 0}>
-            <Sparkles size={16} /> Goi y bua phuc hoi
-          </button>
-          {recovery && (
-            <div className="recovery-result">
-              <p>{recovery.message}</p>
-              <div className="recovery-targets">
-                <span>{recovery.burnedCalories} kcal da dot</span>
-                <span>{recovery.targetCarbsGrams}g carb</span>
-                <span>{recovery.targetProteinGrams}g protein</span>
-              </div>
-              <div className="recovery-ideas">
-                {recovery.mealIdeas.map((idea) => <button type="button" key={idea} onClick={() => setQuickInput(idea)}>{idea}</button>)}
+      {/* ── Analytics ── */}
+      {activeTab === "analytics" && (
+        <div className="nut-tab-content">
+          <div className="nut-analytics">
+            <div className="nut-card">
+              <div className="nut-card-head"><span><BarChart2 size={16} /> Calories 7 ngày qua</span></div>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={chartData} barSize={24}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-2)" />
+                  <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="Calories" fill="#f97316" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="nut-card">
+              <div className="nut-card-head"><span><TrendingUp size={16} /> Macro 7 ngày qua</span></div>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-2)" />
+                  <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="Protein" stroke="#f97316" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="Carb" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="Fat" stroke="#a855f7" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="nut-chart-legend">
+                <span style={{ color: "#f97316" }}>● Protein</span>
+                <span style={{ color: "#3b82f6" }}>● Carb</span>
+                <span style={{ color: "#a855f7" }}>● Fat</span>
               </div>
             </div>
-          )}
-        </div>
-
-        <div className="white-panel water-panel">
-          <h2><Droplets size={20} /> Nuoc uong hom nay</h2>
-          <div className="water-progress-bar">
-            <div className="water-progress-fill" style={{ width: `${waterPercent}%` }} />
-          </div>
-          <p className="water-total">{waterTotalMl} ml / {waterGoalMl} ml ({waterPercent}%)</p>
-          <form className="water-form" onSubmit={logWater}>
-            <select value={waterMl} onChange={(e) => setWaterMl(Number(e.target.value))}>
-              <option value={150}>150 ml</option>
-              <option value={250}>250 ml</option>
-              <option value={350}>350 ml</option>
-              <option value={500}>500 ml</option>
-              <option value={750}>750 ml</option>
-            </select>
-            <button className="orange-button" type="submit"><Droplets size={16} /> Ghi nuoc</button>
-          </form>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function LegacyNutritionPage({ token, userId, plan, setPlan, meals, setMeals, notify }: {
-  token: string;
-  userId: number;
-  plan: NutritionPlan;
-  setPlan: (plan: NutritionPlan) => void;
-  meals: MealEntry[];
-  setMeals: (meals: MealEntry[]) => void;
-  notify: (msg: string) => void;
-}) {
-  const [draft, setDraft] = useState(plan);
-  const [meal, setMeal] = useState({ mealType: "SNACK", name: "Recovery smoothie", calories: 420, proteinGrams: 32, carbsGrams: 58, fatGrams: 8 });
-  const [waterMl, setWaterMl] = useState(250);
-  const [waterTotalMl, setWaterTotalMl] = useState(0);
-
-  useEffect(() => setDraft(plan), [plan]);
-
-  useEffect(() => {
-    if (!token || token === "demo") return;
-    api<{ totalMl: number }>(`/nutrition/${userId}/water/today`, token, { totalMl: 0 }).then((r) => setWaterTotalMl(r.totalMl));
-  }, [token, userId]);
-
-  async function savePlan(e: FormEvent) {
-    e.preventDefault();
-    const saved = await api<NutritionPlan>(`/nutrition/${userId}/plan`, token, draft, { method: "PUT", body: JSON.stringify(draft) });
-    setPlan(saved);
-    notify("Đã lưu kế hoạch dinh dưỡng.");
-  }
-
-  async function addMeal(e: FormEvent) {
-    e.preventDefault();
-    const created = await api<MealEntry>("/nutrition/meals", token, { ...meal, id: Date.now() }, {
-      method: "POST",
-      body: JSON.stringify({ userId, ...meal }),
-    });
-    setMeals([created, ...meals]);
-    notify("Đã thêm bữa ăn vào nhật ký.");
-  }
-
-  async function logWater(e: FormEvent) {
-    e.preventDefault();
-    await api<{ amountMl: number }>(`/nutrition/${userId}/water`, token, { amountMl: waterMl }, {
-      method: "POST",
-      body: JSON.stringify({ amountMl: waterMl }),
-    });
-    setWaterTotalMl((prev) => prev + waterMl);
-    notify(`Đã ghi ${waterMl}ml nước uống.`);
-  }
-
-  const totals = meals.reduce((s, m) => ({ calories: s.calories + m.calories, protein: s.protein + m.proteinGrams, carbs: s.carbs + m.carbsGrams, fat: s.fat + m.fatGrams }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
-  const waterGoalMl = Math.round(plan.hydrationLiters * 1000);
-  const waterPercent = Math.min(100, Math.round((waterTotalMl / waterGoalMl) * 100));
-
-  return (
-    <div className="nutrition-page">
-      <section className="page-title">
-        <span className="section-kicker">Dinh dưỡng</span>
-        <h1>Kế hoạch nạp năng lượng</h1>
-        <p>Theo dõi calories, macro và bữa phục hồi cho lịch chạy/bơi.</p>
-      </section>
-      <section className="nutrition-panels">
-        <form className="white-panel nutrition-form" onSubmit={savePlan}>
-          <h2>Mục tiêu hằng ngày</h2>
-          <label>Mục tiêu<input value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} /></label>
-          <div className="input-grid">
-            <NumberField label="Calories" value={draft.dailyCalories} onChange={(v) => setDraft({ ...draft, dailyCalories: v })} />
-            <NumberField label="Protein (g)" value={draft.proteinGrams} onChange={(v) => setDraft({ ...draft, proteinGrams: v })} />
-            <NumberField label="Carb (g)" value={draft.carbsGrams} onChange={(v) => setDraft({ ...draft, carbsGrams: v })} />
-            <NumberField label="Fat (g)" value={draft.fatGrams} onChange={(v) => setDraft({ ...draft, fatGrams: v })} />
-          </div>
-          <label>Nước/ngày (lít)<input type="number" step="0.1" value={draft.hydrationLiters} onChange={(e) => setDraft({ ...draft, hydrationLiters: Number(e.target.value) })} /></label>
-          <label>Gợi ý<textarea value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} /></label>
-          <button className="orange-button"><CheckCircle2 size={18} /> Lưu kế hoạch</button>
-        </form>
-        <div className="white-panel">
-          <h2>Đã ăn hôm nay</h2>
-          <div className="macro-total-grid">
-            <MacroBox icon={<Flame size={18} />} label="Calories" value={`${totals.calories}/${plan.dailyCalories}`} />
-            <MacroBox icon={<Utensils size={18} />} label="Protein" value={`${totals.protein}/${plan.proteinGrams}g`} />
-            <MacroBox icon={<Activity size={18} />} label="Carb" value={`${totals.carbs}/${plan.carbsGrams}g`} />
-            <MacroBox icon={<Droplets size={18} />} label="Fat" value={`${totals.fat}/${plan.fatGrams}g`} />
-          </div>
-          <form className="meal-form" onSubmit={addMeal}>
-            <select value={meal.mealType} onChange={(e) => setMeal({ ...meal, mealType: e.target.value })}>
-              <option>BREAKFAST</option><option>LUNCH</option><option>DINNER</option><option>SNACK</option>
-            </select>
-            <input value={meal.name} onChange={(e) => setMeal({ ...meal, name: e.target.value })} />
-            <NumberField label="Calories" value={meal.calories} onChange={(v) => setMeal({ ...meal, calories: v })} />
-            <NumberField label="Protein" value={meal.proteinGrams} onChange={(v) => setMeal({ ...meal, proteinGrams: v })} />
-            <NumberField label="Carb" value={meal.carbsGrams} onChange={(v) => setMeal({ ...meal, carbsGrams: v })} />
-            <NumberField label="Fat" value={meal.fatGrams} onChange={(v) => setMeal({ ...meal, fatGrams: v })} />
-            <button className="orange-button">Thêm bữa</button>
-          </form>
-          <div className="meal-list">
-            {meals.length === 0 ? (
-              <div className="empty-log"><Utensils size={44} /><h3>Chưa có bữa ăn</h3><p>Thêm bữa ăn đầu tiên.</p></div>
-            ) : (
-              meals.map((m) => (
-                <div key={m.id} className="meal-row">
-                  <span>{m.mealType}</span>
-                  <strong>{m.name}</strong>
-                  <small>{m.calories} kcal</small>
+            {weeklyStats.length > 0 && (
+              <div className="nut-card">
+                <div className="nut-card-head"><span>Trung bình tuần</span></div>
+                <div className="nut-avg-row">
+                  {[
+                    { label: "Calories", val: Math.round(weeklyStats.reduce((s, d) => s + d.calories, 0) / weeklyStats.length), color: "#f97316", unit: "kcal" },
+                    { label: "Protein", val: Math.round(weeklyStats.reduce((s, d) => s + d.proteinGrams, 0) / weeklyStats.length), color: "#f97316", unit: "g" },
+                    { label: "Carb", val: Math.round(weeklyStats.reduce((s, d) => s + d.carbsGrams, 0) / weeklyStats.length), color: "#3b82f6", unit: "g" },
+                    { label: "Fat", val: Math.round(weeklyStats.reduce((s, d) => s + d.fatGrams, 0) / weeklyStats.length), color: "#a855f7", unit: "g" },
+                  ].map((item) => (
+                    <div key={item.label} className="nut-avg-card">
+                      <span className="nut-avg-val" style={{ color: item.color }}>{item.val}</span>
+                      <span className="nut-avg-unit">{item.unit}</span>
+                      <span className="nut-avg-label">{item.label}</span>
+                    </div>
+                  ))}
                 </div>
-              ))
+              </div>
             )}
           </div>
         </div>
-        <div className="white-panel water-panel">
-          <h2><Droplets size={20} /> Nước uống hôm nay</h2>
-          <div className="water-progress-bar">
-            <div className="water-progress-fill" style={{ width: `${waterPercent}%` }} />
+      )}
+
+      {/* ── AI Recovery ── */}
+      {activeTab === "ai" && (
+        <div className="nut-tab-content">
+          <div className="nut-ai">
+            <div className="nut-ai-header">
+              <Sparkles size={32} style={{ color: "#f97316" }} />
+              <h2>AI Gợi ý phục hồi</h2>
+              <p>Chọn buổi tập để nhận gợi ý dinh dưỡng phù hợp.</p>
+            </div>
+            <div className="nut-card">
+              <div className="nut-card-head"><span>Chọn buổi tập</span></div>
+              {recentActivities.length === 0 ? (
+                <p style={{ color: "var(--text-2)", padding: "12px 0" }}>Chưa có buổi tập nào. Hãy ghi lại hoạt động trước.</p>
+              ) : (
+                <div className="nut-ai-activities">
+                  {recentActivities.map((activity) => (
+                    <div key={activity.id}
+                      className={`nut-ai-activity${selectedActivityId === activity.id ? " selected" : ""}`}
+                      onClick={() => setSelectedActivityId(activity.id)}>
+                      <div className="nut-ai-sport">{activity.sportType === "RUN" ? <Footprints size={18} /> : <Waves size={18} />}</div>
+                      <div>
+                        <strong>{activity.title}</strong>
+                        <small>{(activity.distanceMeters / 1000).toFixed(1)} km · {activity.durationMinutes} phút</small>
+                      </div>
+                      {selectedActivityId === activity.id && <CheckCircle2 size={16} style={{ color: "#22c55e", marginLeft: "auto" }} />}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="nut-submit-btn" style={{ marginTop: 12 }} onClick={requestRecoverySuggestion} disabled={recentActivities.length === 0}>
+                <Sparkles size={16} /> Tạo gợi ý phục hồi
+              </button>
+            </div>
+
+            {recovery && (
+              <div className="nut-recovery-card">
+                <div className="nut-recovery-head"><Sparkles size={18} style={{ color: "#f97316" }} /><strong>Gợi ý phục hồi</strong></div>
+                <p className="nut-recovery-msg">{recovery.message}</p>
+                <div className="nut-recovery-targets">
+                  <div className="nut-rec-stat"><Flame size={16} /><span>{recovery.burnedCalories}</span><small>kcal đã đốt</small></div>
+                  <div className="nut-rec-stat"><span>🎯</span><span>{recovery.targetCalories}</span><small>kcal cần nạp</small></div>
+                  <div className="nut-rec-stat"><span>🥩</span><span>{recovery.targetProteinGrams}g</span><small>protein</small></div>
+                  <div className="nut-rec-stat"><span>🍚</span><span>{recovery.targetCarbsGrams}g</span><small>carb</small></div>
+                </div>
+                <div className="nut-recovery-ideas">
+                  <p>Gợi ý bữa ăn:</p>
+                  {recovery.mealIdeas.map((idea) => (
+                    <button key={idea} className="nut-idea-btn" onClick={() => { setQuickInput(idea); setActiveTab("addfood"); }}>
+                      <CirclePlus size={14} /> {idea}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-          <p className="water-total">{waterTotalMl} ml / {waterGoalMl} ml ({waterPercent}%)</p>
-          <form className="water-form" onSubmit={logWater}>
-            <select value={waterMl} onChange={(e) => setWaterMl(Number(e.target.value))}>
-              <option value={150}>150 ml (cốc nhỏ)</option>
-              <option value={250}>250 ml (cốc thường)</option>
-              <option value={350}>350 ml (chai nhỏ)</option>
-              <option value={500}>500 ml (chai lớn)</option>
-              <option value={750}>750 ml (bình nước)</option>
-            </select>
-            <button className="orange-button" type="submit"><Droplets size={16} /> Ghi nước</button>
-          </form>
         </div>
-      </section>
+      )}
+
+      {/* Plan editor modal */}
+      {showPlanEditor && createPortal(
+        <div className="nut-modal-backdrop" onClick={() => setShowPlanEditor(false)}>
+          <form className="nut-modal-card" onClick={(e) => e.stopPropagation()} onSubmit={savePlan}>
+            <div className="nut-modal-head">
+              <h3>Kế hoạch dinh dưỡng</h3>
+              <button type="button" className="icon-button" onClick={() => setShowPlanEditor(false)}><X size={16} /></button>
+            </div>
+            <label>Mục tiêu<input value={draft.goal} onChange={(e) => setDraft({ ...draft, goal: e.target.value })} /></label>
+            <div className="nut-modal-grid">
+              <NumberField label="Calories" value={draft.dailyCalories} onChange={(v) => setDraft({ ...draft, dailyCalories: v })} />
+              <NumberField label="Protein (g)" value={draft.proteinGrams} onChange={(v) => setDraft({ ...draft, proteinGrams: v })} />
+              <NumberField label="Carb (g)" value={draft.carbsGrams} onChange={(v) => setDraft({ ...draft, carbsGrams: v })} />
+              <NumberField label="Fat (g)" value={draft.fatGrams} onChange={(v) => setDraft({ ...draft, fatGrams: v })} />
+            </div>
+            <label>Nước/ngày (lít)<input type="number" step="0.1" value={draft.hydrationLiters} onChange={(e) => setDraft({ ...draft, hydrationLiters: Number(e.target.value) })} /></label>
+            <label>Hướng dẫn<textarea value={draft.guidance} onChange={(e) => setDraft({ ...draft, guidance: e.target.value })} /></label>
+            <div className="nut-modal-actions">
+              <button type="button" className="outline-button" onClick={() => setShowPlanEditor(false)}>Hủy</button>
+              <button type="submit" className="orange-button"><CheckCircle2 size={16} /> Lưu kế hoạch</button>
+            </div>
+          </form>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -4899,6 +5071,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [onboardingSession, setOnboardingSession] = useState<Session | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
@@ -4920,6 +5093,44 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
   const isOnboardingOnly = onboardingSession !== null;
   const steps = isOnboardingOnly ? ["Cá nhân", "Mục tiêu"] : ["Tài khoản", "Cá nhân", "Mục tiêu"];
   const currentStep = isOnboardingOnly ? step + 1 : step;
+
+  function validateStep(cs: number): Record<string, string> {
+    const errs: Record<string, string> = {};
+    if (cs === 0) {
+      if (!form.fullName.trim()) errs.fullName = "Vui lòng nhập họ và tên";
+      if (!form.email.trim()) errs.email = "Vui lòng nhập email";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errs.email = "Email không hợp lệ";
+      if (!form.password) errs.password = "Vui lòng nhập mật khẩu";
+      else if (form.password.length < 6) errs.password = "Mật khẩu tối thiểu 6 ký tự";
+    }
+    if (cs === 1) {
+      if (!form.gender) errs.gender = "Vui lòng chọn giới tính";
+      if (!form.dateOfBirth) errs.dateOfBirth = "Vui lòng nhập ngày sinh";
+      if (!form.heightCm || form.heightCm <= 0) errs.heightCm = "Vui lòng nhập chiều cao hợp lệ";
+      if (!form.weightKg || form.weightKg <= 0) errs.weightKg = "Vui lòng nhập cân nặng hợp lệ";
+      if (!form.city) errs.city = "Vui lòng chọn thành phố";
+    }
+    if (cs === 2) {
+      if (!form.primaryGoal) errs.primaryGoal = "Vui lòng chọn mục tiêu chính";
+      if (!form.weeklyRunGoalKm || form.weeklyRunGoalKm <= 0) errs.weeklyRunGoalKm = "Vui lòng nhập km chạy mục tiêu (> 0)";
+      if (!form.weeklySwimGoalMeters || form.weeklySwimGoalMeters <= 0) errs.weeklySwimGoalMeters = "Vui lòng nhập mét bơi mục tiêu (> 0)";
+      if (!form.nutritionFocus) errs.nutritionFocus = "Vui lòng chọn trọng tâm dinh dưỡng";
+    }
+    return errs;
+  }
+
+  function validateLogin(): Record<string, string> {
+    const errs: Record<string, string> = {};
+    if (!form.email.trim()) errs.email = "Vui lòng nhập email";
+    if (!form.password) errs.password = "Vui lòng nhập mật khẩu";
+    return errs;
+  }
+
+  function goNextStep() {
+    setFieldErrors({});
+    setAuthError("");
+    setStep(s => s + 1);
+  }
 
   async function withRetry<T>(operation: () => Promise<T>, attempts = 10, delayMs = 1000): Promise<T> {
     let lastError: unknown;
@@ -4943,11 +5154,15 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    setAuthError("");
+
+    // ── Onboarding-only path (logged in but profile incomplete) ──
     if (isOnboardingOnly) {
-      if (step < steps.length - 1) { setStep(step + 1); return; }
+      const errs = validateStep(currentStep);
+      if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+      if (step < steps.length - 1) { goNextStep(); return; }
       if (!onboardingSession) return;
       setLoading(true);
-      setAuthError("");
       try {
         await completeOnboarding(onboardingSession);
         onDone({ ...onboardingSession, onboardingCompleted: true });
@@ -4959,10 +5174,22 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       return;
     }
 
-    if (step < steps.length - 1 && mode === "signup") { setStep(step + 1); return; }
+    // ── Login ──
+    if (mode === "login") {
+      const errs = validateLogin();
+      if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+      setFieldErrors({});
+    }
+
+    // ── Signup: advance or validate final step ──
+    if (mode === "signup") {
+      const errs = validateStep(currentStep);
+      if (Object.keys(errs).length > 0) { setFieldErrors(errs); return; }
+      if (step < steps.length - 1) { goNextStep(); return; }
+      setFieldErrors({});
+    }
 
     setLoading(true);
-    setAuthError("");
     const authPath = mode === "login" ? "/auth/login" : "/auth/register";
     const authBody = mode === "login"
       ? { email: form.email, password: form.password }
@@ -5061,14 +5288,14 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
               <button
                 type="button"
                 className={`op-tab${mode === "login" ? " active" : ""}`}
-                onClick={() => { setMode("login"); setStep(0); setAuthError(""); }}
+                onClick={() => { setMode("login"); setStep(0); setAuthError(""); setFieldErrors({}); }}
               >
                 Đăng nhập
               </button>
               <button
                 type="button"
                 className={`op-tab${mode === "signup" ? " active" : ""}`}
-                onClick={() => { setMode("signup"); setStep(0); setAuthError(""); }}
+                onClick={() => { setMode("signup"); setStep(0); setAuthError(""); setFieldErrors({}); }}
               >
                 Tạo tài khoản
               </button>
@@ -5110,46 +5337,49 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
               <>
                 {mode === "signup" && (
                   <div className="op-field">
-                    <label>Họ và tên</label>
-                    <div className="op-input-wrap">
+                    <label>Họ và tên <span className="op-required">*</span></label>
+                    <div className={`op-input-wrap${fieldErrors.fullName ? " op-input-err" : ""}`}>
                       <input
                         value={form.fullName}
-                        onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                        onChange={(e) => { setForm({ ...form, fullName: e.target.value }); if (fieldErrors.fullName) setFieldErrors(p => ({ ...p, fullName: "" })); }}
                         autoComplete="name"
-                        required
+                        placeholder="Nguyễn Văn A"
                       />
                     </div>
+                    {fieldErrors.fullName && <div className="op-field-err">{fieldErrors.fullName}</div>}
                   </div>
                 )}
                 <div className="op-field">
-                  <label>Email</label>
-                  <div className="op-input-wrap">
+                  <label>Email <span className="op-required">*</span></label>
+                  <div className={`op-input-wrap${fieldErrors.email ? " op-input-err" : ""}`}>
                     <input
                       type="email"
                       value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                      onChange={(e) => { setForm({ ...form, email: e.target.value }); if (fieldErrors.email) setFieldErrors(p => ({ ...p, email: "" })); }}
                       autoComplete="email"
-                      required
+                      placeholder="example@email.com"
                     />
                   </div>
+                  {fieldErrors.email && <div className="op-field-err">{fieldErrors.email}</div>}
                 </div>
                 <div className="op-field">
                   <div className="op-label-row">
-                    <label>Mật khẩu</label>
+                    <label>Mật khẩu <span className="op-required">*</span></label>
                     {mode === "login" && <button type="button" className="op-forgot">Quên mật khẩu?</button>}
                   </div>
-                  <div className="op-input-wrap">
+                  <div className={`op-input-wrap${fieldErrors.password ? " op-input-err" : ""}`}>
                     <input
                       type={showPassword ? "text" : "password"}
                       value={form.password}
-                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      onChange={(e) => { setForm({ ...form, password: e.target.value }); if (fieldErrors.password) setFieldErrors(p => ({ ...p, password: "" })); }}
                       autoComplete={mode === "login" ? "current-password" : "new-password"}
-                      required
+                      placeholder={mode === "signup" ? "Tối thiểu 6 ký tự" : "••••••••"}
                     />
                     <button type="button" className="op-eye" onClick={() => setShowPassword(!showPassword)}>
                       {showPassword ? <X size={15} /> : <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)" }}>Hiện</span>}
                     </button>
                   </div>
+                  {fieldErrors.password && <div className="op-field-err">{fieldErrors.password}</div>}
                 </div>
               </>
             )}
@@ -5159,38 +5389,43 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
               <>
                 <div className="op-field-row">
                   <div className="op-field">
-                    <label>Giới tính</label>
-                    <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+                    <label>Giới tính <span className="op-required">*</span></label>
+                    <select className={fieldErrors.gender ? "op-select-err" : ""} value={form.gender} onChange={(e) => { setForm({ ...form, gender: e.target.value }); if (fieldErrors.gender) setFieldErrors(p => ({ ...p, gender: "" })); }}>
                       <option value="">-- Chọn --</option>
                       <option value="Nam">Nam</option>
                       <option value="Nữ">Nữ</option>
                       <option value="Khác">Khác</option>
                     </select>
+                    {fieldErrors.gender && <div className="op-field-err">{fieldErrors.gender}</div>}
                   </div>
                   <div className="op-field">
-                    <label>Ngày sinh</label>
-                    <input type="date" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} />
+                    <label>Ngày sinh <span className="op-required">*</span></label>
+                    <input className={fieldErrors.dateOfBirth ? "op-select-err" : ""} type="date" value={form.dateOfBirth} onChange={(e) => { setForm({ ...form, dateOfBirth: e.target.value }); if (fieldErrors.dateOfBirth) setFieldErrors(p => ({ ...p, dateOfBirth: "" })); }} />
+                    {fieldErrors.dateOfBirth && <div className="op-field-err">{fieldErrors.dateOfBirth}</div>}
                   </div>
                 </div>
                 <div className="op-field-row">
                   <div className="op-field">
-                    <label>Chiều cao (cm)</label>
-                    <input type="number" min={0} max={250} value={form.heightCm || ""} onChange={(e) => setForm({ ...form, heightCm: parseInt(e.target.value) || 0 })} />
+                    <label>Chiều cao (cm) <span className="op-required">*</span></label>
+                    <input className={fieldErrors.heightCm ? "op-select-err" : ""} type="number" min={1} max={250} value={form.heightCm || ""} placeholder="VD: 170" onChange={(e) => { setForm({ ...form, heightCm: parseInt(e.target.value) || 0 }); if (fieldErrors.heightCm) setFieldErrors(p => ({ ...p, heightCm: "" })); }} />
+                    {fieldErrors.heightCm && <div className="op-field-err">{fieldErrors.heightCm}</div>}
                   </div>
                   <div className="op-field">
-                    <label>Cân nặng (kg)</label>
-                    <input type="number" min={0} max={300} step={0.1} value={form.weightKg || ""} onChange={(e) => setForm({ ...form, weightKg: parseFloat(e.target.value) || 0 })} />
+                    <label>Cân nặng (kg) <span className="op-required">*</span></label>
+                    <input className={fieldErrors.weightKg ? "op-select-err" : ""} type="number" min={1} max={300} step={0.1} value={form.weightKg || ""} placeholder="VD: 65" onChange={(e) => { setForm({ ...form, weightKg: parseFloat(e.target.value) || 0 }); if (fieldErrors.weightKg) setFieldErrors(p => ({ ...p, weightKg: "" })); }} />
+                    {fieldErrors.weightKg && <div className="op-field-err">{fieldErrors.weightKg}</div>}
                   </div>
                 </div>
                 <div className="op-field">
-                  <label>Thành phố</label>
-                  <select value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}>
+                  <label>Thành phố <span className="op-required">*</span></label>
+                  <select className={fieldErrors.city ? "op-select-err" : ""} value={form.city} onChange={(e) => { setForm({ ...form, city: e.target.value }); if (fieldErrors.city) setFieldErrors(p => ({ ...p, city: "" })); }}>
                     <option value="">-- Chọn thành phố --</option>
                     {VIETNAMESE_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  {fieldErrors.city && <div className="op-field-err">{fieldErrors.city}</div>}
                 </div>
                 <div className="op-field">
-                  <label>Trình độ luyện tập</label>
+                  <label>Trình độ luyện tập <span className="op-required">*</span></label>
                   <div className="op-level-grid">
                     {[
                       { val: "BEGINNER", label: "Mới bắt đầu", icon: "🌱" },
@@ -5220,8 +5455,8 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
                   <div className="op-sport-badge swim"><Waves size={18} /> Bơi lội</div>
                 </div>
                 <div className="op-field">
-                  <label>Mục tiêu chính</label>
-                  <select value={form.primaryGoal} onChange={(e) => setForm({ ...form, primaryGoal: e.target.value })}>
+                  <label>Mục tiêu chính <span className="op-required">*</span></label>
+                  <select className={fieldErrors.primaryGoal ? "op-select-err" : ""} value={form.primaryGoal} onChange={(e) => { setForm({ ...form, primaryGoal: e.target.value }); if (fieldErrors.primaryGoal) setFieldErrors(p => ({ ...p, primaryGoal: "" })); }}>
                     <option value="">-- Chọn mục tiêu --</option>
                     <option value="Giảm cân">Giảm cân &amp; cải thiện vóc dáng</option>
                     <option value="Cải thiện tốc độ">Cải thiện tốc độ &amp; hiệu suất</option>
@@ -5229,23 +5464,27 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
                     <option value="Luyện tập cho vui">Luyện tập cho vui &amp; thư giãn</option>
                     <option value="Mục tiêu cá nhân">Mục tiêu cá nhân</option>
                   </select>
+                  {fieldErrors.primaryGoal && <div className="op-field-err">{fieldErrors.primaryGoal}</div>}
                 </div>
                 <div className="op-field-row">
                   <div className="op-field">
-                    <label>Km chạy / tuần</label>
-                    <input type="number" min={0} step={1} value={form.weeklyRunGoalKm || ""} onChange={(e) => setForm({ ...form, weeklyRunGoalKm: Number(e.target.value) })} />
+                    <label>Km chạy / tuần <span className="op-required">*</span></label>
+                    <input className={fieldErrors.weeklyRunGoalKm ? "op-select-err" : ""} type="number" min={1} step={1} value={form.weeklyRunGoalKm || ""} placeholder="VD: 20" onChange={(e) => { setForm({ ...form, weeklyRunGoalKm: Number(e.target.value) }); if (fieldErrors.weeklyRunGoalKm) setFieldErrors(p => ({ ...p, weeklyRunGoalKm: "" })); }} />
+                    {fieldErrors.weeklyRunGoalKm && <div className="op-field-err">{fieldErrors.weeklyRunGoalKm}</div>}
                   </div>
                   <div className="op-field">
-                    <label>Mét bơi / tuần</label>
-                    <input type="number" min={0} step={100} value={form.weeklySwimGoalMeters || ""} onChange={(e) => setForm({ ...form, weeklySwimGoalMeters: Number(e.target.value) })} />
+                    <label>Mét bơi / tuần <span className="op-required">*</span></label>
+                    <input className={fieldErrors.weeklySwimGoalMeters ? "op-select-err" : ""} type="number" min={100} step={100} value={form.weeklySwimGoalMeters || ""} placeholder="VD: 2000" onChange={(e) => { setForm({ ...form, weeklySwimGoalMeters: Number(e.target.value) }); if (fieldErrors.weeklySwimGoalMeters) setFieldErrors(p => ({ ...p, weeklySwimGoalMeters: "" })); }} />
+                    {fieldErrors.weeklySwimGoalMeters && <div className="op-field-err">{fieldErrors.weeklySwimGoalMeters}</div>}
                   </div>
                 </div>
                 <div className="op-field">
-                  <label>Trọng tâm dinh dưỡng</label>
-                  <select value={form.nutritionFocus} onChange={(e) => setForm({ ...form, nutritionFocus: e.target.value })}>
+                  <label>Trọng tâm dinh dưỡng <span className="op-required">*</span></label>
+                  <select className={fieldErrors.nutritionFocus ? "op-select-err" : ""} value={form.nutritionFocus} onChange={(e) => { setForm({ ...form, nutritionFocus: e.target.value }); if (fieldErrors.nutritionFocus) setFieldErrors(p => ({ ...p, nutritionFocus: "" })); }}>
                     <option value="">-- Chọn trọng tâm --</option>
                     {NUTRITION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
+                  {fieldErrors.nutritionFocus && <div className="op-field-err">{fieldErrors.nutritionFocus}</div>}
                 </div>
               </>
             )}
@@ -5259,7 +5498,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
 
             <div className="op-btn-row">
               {step > 0 && mode !== "login" && (
-                <button type="button" className="op-back-btn" onClick={() => { setStep(step - 1); setAuthError(""); }}>
+                <button type="button" className="op-back-btn" onClick={() => { setStep(step - 1); setAuthError(""); setFieldErrors({}); }}>
                   Quay lại
                 </button>
               )}
@@ -5276,8 +5515,8 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
           {!isOnboardingOnly && (
             <p className="op-switch-hint">
               {mode === "login"
-                ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("signup"); setStep(0); setAuthError(""); }}>Tham gia miễn phí</button></>
-                : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setStep(0); setAuthError(""); }}>Đăng nhập</button></>
+                ? <>Chưa có tài khoản? <button type="button" onClick={() => { setMode("signup"); setStep(0); setAuthError(""); setFieldErrors({}); }}>Tham gia miễn phí</button></>
+                : <>Đã có tài khoản? <button type="button" onClick={() => { setMode("login"); setStep(0); setAuthError(""); setFieldErrors({}); }}>Đăng nhập</button></>
               }
             </p>
           )}

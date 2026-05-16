@@ -1,14 +1,17 @@
 package com.tuan.nutritionservice.controller;
 
 import com.tuan.nutritionservice.entity.Food;
+import com.tuan.nutritionservice.entity.FoodCategory;
 import com.tuan.nutritionservice.entity.MealEntry;
 import com.tuan.nutritionservice.entity.NutritionPlan;
 import com.tuan.nutritionservice.entity.WaterEntry;
 import com.tuan.nutritionservice.service.NutritionService;
+import com.tuan.nutritionservice.service.NutritionService.CategoryRequest;
 import com.tuan.nutritionservice.service.NutritionService.FoodMealRequest;
 import com.tuan.nutritionservice.service.NutritionService.FoodRequest;
 import com.tuan.nutritionservice.service.NutritionService.FoodSuggestion;
 import com.tuan.nutritionservice.service.NutritionService.MealEntryRequest;
+import com.tuan.nutritionservice.service.NutritionService.DailyStats;
 import com.tuan.nutritionservice.service.NutritionService.NutritionAdminOverview;
 import com.tuan.nutritionservice.service.NutritionService.NutritionPlanRequest;
 import com.tuan.nutritionservice.service.NutritionService.NutritionSummary;
@@ -102,6 +105,11 @@ public class NutritionController {
         return nutritionService.waterToday(userId);
     }
 
+    @GetMapping("/{userId}/analytics/weekly")
+    List<DailyStats> weeklyAnalytics(@PathVariable Long userId) {
+        return nutritionService.weeklyAnalytics(userId);
+    }
+
     @GetMapping("/admin/overview")
     ResponseEntity<NutritionAdminOverview> adminOverview(
             @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
@@ -152,6 +160,17 @@ public class NutritionController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/admin/foods/{foodId}/permanent")
+    ResponseEntity<Void> permanentDeleteFood(
+            @PathVariable Long foodId,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        nutritionService.deleteFood(foodId);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/admin/meals/recent")
     ResponseEntity<List<MealEntry>> recentMeals(
             @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
@@ -159,6 +178,39 @@ public class NutritionController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.ok(nutritionService.recentMeals());
+    }
+
+    @GetMapping("/admin/categories")
+    ResponseEntity<List<FoodCategory>> adminCategories(
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(nutritionService.listCategories());
+    }
+
+    @PostMapping("/admin/categories")
+    ResponseEntity<FoodCategory> createCategory(
+            @RequestBody CategoryRequest request,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(nutritionService.createCategory(request));
+    }
+
+    @PutMapping("/admin/categories/{catId}")
+    ResponseEntity<FoodCategory> updateCategory(
+            @PathVariable Long catId,
+            @RequestBody CategoryRequest request,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(nutritionService.updateCategory(catId, request));
+    }
+
+    @DeleteMapping("/admin/categories/{catId}")
+    ResponseEntity<Void> deleteCategory(
+            @PathVariable Long catId,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        nutritionService.deleteCategory(catId);
+        return ResponseEntity.noContent().build();
     }
 
     private boolean isAdmin(String requesterRole) {

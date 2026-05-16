@@ -28,15 +28,15 @@ public class AdminController {
 
     @GetMapping("/users")
     public ResponseEntity<List<UserSummary>> getUsers(
-            @RequestHeader(value = "X-User-Id", required = false) Long requesterId) {
-        if (!isAdmin(requesterId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(adminService.getAllUsers());
     }
 
     @GetMapping("/stats")
     public ResponseEntity<DashboardStats> getStats(
-            @RequestHeader(value = "X-User-Id", required = false) Long requesterId) {
-        if (!isAdmin(requesterId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(adminService.getStats());
     }
 
@@ -44,13 +44,13 @@ public class AdminController {
     public ResponseEntity<UserSummary> updateUser(
             @PathVariable Long userId,
             @RequestBody UpdateUserRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) Long requesterId) {
-        if (!isAdmin(requesterId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         return ResponseEntity.ok(adminService.updateUser(userId, request));
     }
 
-    private boolean isAdmin(Long userId) {
-        return userId != null && adminService.isAdmin(userId);
+    private boolean isAdmin(String requesterRole) {
+        return requesterRole != null && requesterRole.equalsIgnoreCase("ADMIN");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

@@ -2,9 +2,12 @@ package com.tuan.nutritionservice.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -21,12 +24,19 @@ public class Food {
     private String name;
 
     private String category;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "category_id")
+    private FoodCategory foodCategory;
+
     private String servingSize;
     private int calories;
     private int proteinGrams;
     private int carbsGrams;
     private int fatGrams;
     private boolean active = true;
+
+    private String imageUrl;
 
     @Column(length = 800)
     private String aliases;
@@ -68,6 +78,9 @@ public class Food {
     public void setCategory(String category) {
         this.category = category;
     }
+
+    public FoodCategory getFoodCategory() { return foodCategory; }
+    public void setFoodCategory(FoodCategory foodCategory) { this.foodCategory = foodCategory; }
 
     public String getServingSize() {
         return servingSize;
@@ -115,6 +128,14 @@ public class Food {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public String getAliases() {

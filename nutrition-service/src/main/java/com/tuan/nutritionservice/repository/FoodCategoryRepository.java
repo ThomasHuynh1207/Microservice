@@ -1,0 +1,11 @@
+package com.tuan.nutritionservice.repository;
+
+import com.tuan.nutritionservice.entity.FoodCategory;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface FoodCategoryRepository extends JpaRepository<FoodCategory, Long> {
+    Optional<FoodCategory> findByNameIgnoreCase(String name);
+    List<FoodCategory> findAllByOrderByNameAsc();
+}

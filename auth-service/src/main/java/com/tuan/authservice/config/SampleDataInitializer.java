@@ -13,28 +13,25 @@ public class SampleDataInitializer {
     @Bean
     CommandLineRunner seedAuthUsers(UserAccountRepository users, PasswordEncoder encoder) {
         return args -> {
-            if (!users.existsByEmailIgnoreCase("runner@example.com")) {
-                UserAccount demo = new UserAccount();
-                demo.setFullName("Demo Runner");
-                demo.setEmail("runner@example.com");
-                demo.setPasswordHash(encoder.encode("RunSwim123"));
-                demo.setPreferredSports("RUN,SWIM");
-                demo.setOnboardingCompleted(true);
-                demo.setActive(true);
-                demo.setPremiumActive(true);
-                users.save(demo);
-            }
-            List<UserAccount> sampleUsers = List.of(
-                    user("Linh Tran", "linh.tran@example.com", encoder.encode("RunSwim123"), true, false),
-                    user("Minh Pham", "minh.pham@example.com", encoder.encode("RunSwim123"), true, true),
-                    user("Hang Thu", "hang.thu@example.com", encoder.encode("RunSwim123"), true, false),
-                    user("An Nguyen", "an.nguyen@example.com", encoder.encode("RunSwim123"), true, true)
+            // 10 regular users seeded first so IDs are 1-10
+            List<UserAccount> regularUsers = List.of(
+                user("Demo Runner",  "runner@example.com",     encoder.encode("RunSwim123"), true,  true),
+                user("Linh Tran",    "linh.tran@example.com",  encoder.encode("RunSwim123"), true,  false),
+                user("Minh Pham",    "minh.pham@example.com",  encoder.encode("RunSwim123"), true,  true),
+                user("Hang Thu",     "hang.thu@example.com",   encoder.encode("RunSwim123"), true,  false),
+                user("An Nguyen",    "an.nguyen@example.com",  encoder.encode("RunSwim123"), true,  true),
+                user("Duc Nguyen",   "duc.nguyen@example.com", encoder.encode("RunSwim123"), true,  false),
+                user("Trang Le",     "trang.le@example.com",   encoder.encode("RunSwim123"), true,  true),
+                user("Khoa Bui",     "khoa.bui@example.com",   encoder.encode("RunSwim123"), true,  false),
+                user("Mai Hoang",    "mai.hoang@example.com",  encoder.encode("RunSwim123"), true,  true),
+                user("Tien Vo",      "tien.vo@example.com",    encoder.encode("RunSwim123"), true,  false)
             );
-            for (UserAccount sample : sampleUsers) {
-                if (!users.existsByEmailIgnoreCase(sample.getEmail())) {
-                    users.save(sample);
+            for (UserAccount u : regularUsers) {
+                if (!users.existsByEmailIgnoreCase(u.getEmail())) {
+                    users.save(u);
                 }
             }
+            // Admin seeded last → gets ID 11
             if (!users.existsByEmailIgnoreCase("admin@runswim.local")) {
                 UserAccount admin = new UserAccount();
                 admin.setFullName("Admin");
