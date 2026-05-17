@@ -466,8 +466,16 @@ export default function App() {
   }
 
   async function loadDashboard(current: Session) {
+    const fetchProfile = async (): Promise<AthleteProfile> => {
+      const data = await api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile);
+      if (data.userId === 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        return api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile);
+      }
+      return data;
+    };
     const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, sportDefsData] = await Promise.all([
-      api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile),
+      fetchProfile(),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
       api<NutritionPlan>(`/nutrition/${current.userId}/plan`, current.token, fallbackPlan),
@@ -547,7 +555,10 @@ export default function App() {
   }
 
   if (!session) {
-    return <Onboarding onDone={setSession} />;
+    return <Onboarding onDone={(s, p?) => {
+      if (p) setProfile((prev) => ({ ...prev, ...p }));
+      setSession(s);
+    }} />;
   }
 
   return (
@@ -4393,9 +4404,11 @@ function AnalyticsPage({ activities, stats, isPremium, onTrial }: {
 
 function InfoRow({ label, value, empty = "Chưa cập nhật" }: { label: string; value?: string | number | null; empty?: string }) {
   return (
-    <div className="prf-info-row">
-      <span className="prf-info-label">{label}</span>
-      <strong className={!value ? "prf-empty" : ""}>{value || empty}</strong>
+    <div className="flex items-start justify-between py-2.5 border-b border-[var(--border)] last:border-0 gap-4">
+      <span className="text-sm shrink-0" style={{ color: "var(--muted)" }}>{label}</span>
+      <span className={`text-sm text-right ${value ? "font-medium" : "italic"}`} style={{ color: value ? "var(--text)" : "var(--muted)" }}>
+        {value || empty}
+      </span>
     </div>
   );
 }
@@ -4411,7 +4424,6 @@ function ProfilePage({
   notify: (msg: string) => void;
   onAddActivity: () => void;
 }) {
-  const [tab, setTab] = useState<"profile" | "goals" | "badges" | "history">("profile");
   const [editing, setEditing] = useState<null | "basic" | "physical" | "goals">(null);
   const [draft, setDraft] = useState({ ...profile });
   const [saving, setSaving] = useState(false);
@@ -4420,15 +4432,13 @@ function ProfilePage({
 
   useEffect(() => { setDraft({ ...profile }); }, [profile]);
 
-  const bmiDraft = draft.heightCm && draft.weightKg
-    ? draft.weightKg / ((draft.heightCm / 100) ** 2) : null;
+  const bmiDraft = draft.heightCm && draft.weightKg ? draft.weightKg / ((draft.heightCm / 100) ** 2) : null;
   const bmiLabelDraft = bmiDraft == null ? "" : bmiDraft < 18.5 ? "Thiếu cân" : bmiDraft < 25 ? "Bình thường" : bmiDraft < 30 ? "Thừa cân" : "Béo phì";
-  const bmiClassDraft = bmiDraft == null ? "" : bmiDraft < 18.5 ? "bmi-low" : bmiDraft < 25 ? "bmi-normal" : "bmi-high";
+  const bmiColorDraft = bmiDraft == null ? "" : bmiDraft < 18.5 ? "text-blue-500" : bmiDraft < 25 ? "text-emerald-600" : "text-orange-500";
 
-  const bmi = profile.heightCm && profile.weightKg
-    ? profile.weightKg / ((profile.heightCm / 100) ** 2) : null;
+  const bmi = profile.heightCm && profile.weightKg ? profile.weightKg / ((profile.heightCm / 100) ** 2) : null;
   const bmiLabel = bmi == null ? "" : bmi < 18.5 ? "Thiếu cân" : bmi < 25 ? "Bình thường" : bmi < 30 ? "Thừa cân" : "Béo phì";
-  const bmiClass = bmi == null ? "" : bmi < 18.5 ? "bmi-low" : bmi < 25 ? "bmi-normal" : "bmi-high";
+  const bmiColor = bmi == null ? "" : bmi < 18.5 ? "text-blue-500" : bmi < 25 ? "text-emerald-600" : "text-orange-500";
 
   const totalRunKm = activities.filter((a) => a.sportType === "RUN").reduce((s, a) => s + a.distanceMeters / 1000, 0);
   const totalSwimM = activities.filter((a) => a.sportType === "SWIM").reduce((s, a) => s + a.distanceMeters, 0);
@@ -4437,10 +4447,10 @@ function ProfilePage({
   const earnedBadges = badges.filter((b) => b.earned);
   const runPct = Math.min(100, (stats.weeklyRunKm / Math.max(1, profile.weeklyRunGoalKm)) * 100);
   const swimPct = Math.min(100, (stats.weeklySwimMeters / Math.max(1, profile.weeklySwimGoalMeters)) * 100);
+  const recentActivities = activities.slice(0, 8);
 
   const expMap: Record<string, string> = {
-    BEGINNER: "Mới bắt đầu", INTERMEDIATE: "Trung bình",
-    ADVANCED: "Nâng cao", ELITE: "Đỉnh cao",
+    BEGINNER: "Mới bắt đầu", INTERMEDIATE: "Trung bình", ADVANCED: "Nâng cao", ELITE: "Đỉnh cao",
   };
 
   function buildPayload(d: AthleteProfile) {
@@ -4489,177 +4499,220 @@ function ProfilePage({
   }
 
   function cancelEdit() { setDraft({ ...profile }); setEditing(null); }
-  function switchTab(t: typeof tab) { setTab(t); setEditing(null); setDraft({ ...profile }); }
 
-  const tabs: Array<{ id: typeof tab; label: string }> = [
-    { id: "profile", label: "Hồ sơ cá nhân" },
-    { id: "goals", label: "Mục tiêu luyện tập" },
-    { id: "badges", label: "Thành tích" },
-    { id: "history", label: "Lịch sử hoạt động" },
-  ];
+  const inputCls = "border border-[var(--border)] rounded-md px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors w-full font-[inherit]";
 
   function SectionActions({ section }: { section: "basic" | "physical" | "goals" }) {
     return editing === section ? (
-      <div className="prf-edit-btns">
-        <button className="prf-save-btn" onClick={saveSection} disabled={saving}>
+      <div className="flex gap-2">
+        <button
+          className="px-4 py-1.5 rounded text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 transition-colors"
+          onClick={saveSection} disabled={saving}>
           {saving ? "Đang lưu..." : "Lưu thay đổi"}
         </button>
-        <button className="prf-cancel-btn" onClick={cancelEdit}>Hủy</button>
+        <button
+          className="px-3 py-1.5 rounded text-sm font-medium border border-[var(--border)] hover:border-[var(--text)] transition-colors"
+          style={{ color: "var(--muted)" }} onClick={cancelEdit}>Hủy</button>
       </div>
     ) : (
-      <button className="prf-edit-btn" onClick={() => setEditing(section)}>
-        <Settings size={14} /> Chỉnh sửa
+      <button
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border border-[var(--border)] hover:text-blue-600 hover:border-blue-400 transition-colors"
+        style={{ color: "var(--muted)" }} onClick={() => setEditing(section)}>
+        <Settings size={13} /> Chỉnh sửa
       </button>
     );
   }
 
+  const cardCls = "rounded-lg border border-[var(--border)] shadow-sm overflow-hidden";
+  const cardHeadCls = "flex items-center justify-between px-6 py-4 border-b border-[var(--border)]";
+  const cardTitleCls = "flex items-center gap-2";
+
   return (
-    <div className="prf-page">
-      <div className="prf-header">
-        <div className="prf-cover" />
-        <div className="prf-header-body">
-          <div className="prf-header-left">
-            <div className="prf-avatar-wrap">
-              {profile.avatarUrl
-                ? <img src={profile.avatarUrl} alt={profile.displayName} className="prf-avatar-img" />
-                : <div className="prf-avatar-initials">{initials(profile.displayName)}</div>
-              }
-              <button className="prf-avatar-cam" onClick={() => fileRef.current?.click()}
-                disabled={uploadingAvatar} title={uploadingAvatar ? "Đang tải..." : "Đổi ảnh"}>
-                <Camera size={13} />
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarFile} />
-            </div>
-            <div className="prf-header-info">
-              <h1>{profile.displayName || "—"}</h1>
-              <p>
-                {profile.city
-                  ? <><MapPin size={13} style={{ display: "inline", verticalAlign: "middle" }} /> {profile.city}</>
-                  : <span className="prf-empty">Chưa cập nhật thành phố</span>
+    <div className="max-w-[1200px] mx-auto px-4 pb-12">
+
+      {/* ── Hero ── */}
+      <div className={`${cardCls} mb-6`} style={{ background: "var(--card)" }}>
+        <div className="h-44 bg-gradient-to-br from-slate-800 via-slate-700 to-gray-900" />
+        <div className="px-6 sm:px-8">
+          <div className="flex flex-wrap items-end justify-between gap-4 -mt-12 mb-1">
+            <div className="flex items-end gap-4 sm:gap-5">
+              <div className="relative shrink-0">
+                {profile.avatarUrl
+                  ? <img src={profile.avatarUrl} alt={profile.displayName} className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover shadow-md" style={{ border: "4px solid var(--card)" }} />
+                  : <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full shadow-md bg-gradient-to-br from-blue-600 to-blue-900 flex items-center justify-center text-white text-2xl font-bold" style={{ border: "4px solid var(--card)" }}>{initials(profile.displayName)}</div>
                 }
-              </p>
-              {profile.primaryGoal && <span className="prf-goal-chip">{profile.primaryGoal}</span>}
+                <button
+                  className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-700 border-2 text-white flex items-center justify-center transition-colors disabled:opacity-60"
+                  style={{ borderColor: "var(--card)" }}
+                  onClick={() => fileRef.current?.click()} disabled={uploadingAvatar}
+                  title={uploadingAvatar ? "Đang tải..." : "Đổi ảnh"}>
+                  <Camera size={12} />
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
+              </div>
+              <div className="pb-2">
+                <h1 className="text-xl font-bold text-white drop-shadow">{profile.displayName || "—"}</h1>
+                <p className="text-sm flex items-center gap-1 mt-0.5 text-slate-300">
+                  <MapPin size={12} />
+                  {profile.city || "Chưa cập nhật thành phố"}
+                </p>
+                {profile.primaryGoal && (
+                  <span className="mt-2 inline-block text-xs font-semibold px-3 py-1 rounded bg-white/20 text-white border border-white/30">
+                    {profile.primaryGoal}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div className="prf-stats-bar">
-            <div className="prf-stat"><strong>{activities.length}</strong><span>Hoạt động</span></div>
-            <div className="prf-stat"><strong>{totalRunKm.toFixed(0)} km</strong><span>Tổng chạy</span></div>
-            <div className="prf-stat"><strong>{(totalSwimM / 1000).toFixed(1)} km</strong><span>Tổng bơi</span></div>
-            <div className="prf-stat"><strong>{Math.round(totalMinutes / 60)} h</strong><span>Thời gian</span></div>
-            <div className="prf-stat"><strong>{earnedBadges.length}/{badges.length}</strong><span>Huy hiệu</span></div>
-          </div>
+        </div>
+        <div className="grid grid-cols-5 border-t border-[var(--border)] divide-x divide-[var(--border)]">
+          {[
+            { value: activities.length, label: "Hoạt động" },
+            { value: `${totalRunKm.toFixed(0)} km`, label: "Tổng chạy" },
+            { value: `${(totalSwimM / 1000).toFixed(1)} km`, label: "Tổng bơi" },
+            { value: `${Math.round(totalMinutes / 60)} h`, label: "Thời gian" },
+            { value: `${earnedBadges.length}/${badges.length}`, label: "Huy hiệu" },
+          ].map((s) => (
+            <div key={s.label} className="flex flex-col items-center py-4 px-2">
+              <span className="text-base sm:text-lg font-bold" style={{ color: "var(--text)" }}>{s.value}</span>
+              <span className="text-xs mt-0.5 text-center" style={{ color: "var(--muted)" }}>{s.label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="prf-tab-bar">
-        {tabs.map((t) => (
-          <button key={t.id} className={tab === t.id ? "active" : ""} onClick={() => switchTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* ── Main 2-column grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-      <div className="prf-tab-content">
+        {/* ── Left column ── */}
+        <div className="space-y-5">
 
-        {tab === "profile" && (
-          <div className="prf-sections">
-            <div className="prf-section-card">
-              <div className="prf-section-head">
-                <h2>Thông tin cơ bản</h2>
-                <SectionActions section="basic" />
+          {/* Basic info */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <User size={15} className="text-slate-400" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Thông tin cơ bản</h2>
               </div>
+              <SectionActions section="basic" />
+            </div>
+            <div className="px-6 py-1">
               {editing === "basic" ? (
-                <div className="prf-edit-form">
-                  <div className="prf-field-row">
-                    <label>Tên hiển thị</label>
-                    <input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
+                <div className="py-4 flex flex-col gap-3" style={{ color: "var(--text)", background: "var(--bg)" }}>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Tên hiển thị</label>
+                    <input className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                      value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
                   </div>
-                  <div className="prf-field-row">
-                    <label>Thành phố</label>
-                    <select value={draft.city ?? ""} onChange={(e) => setDraft({ ...draft, city: e.target.value })}>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Thành phố</label>
+                    <select className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                      value={draft.city ?? ""} onChange={(e) => setDraft({ ...draft, city: e.target.value })}>
                       <option value="">— Chọn —</option>
                       {VIETNAMESE_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
-                  <div className="prf-field-row prf-field-full">
-                    <label>Giới thiệu bản thân</label>
-                    <textarea rows={3} value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} placeholder="Mô tả ngắn về bạn..." />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Giới thiệu</label>
+                    <textarea className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))", resize: "none" }}
+                      rows={3} value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} placeholder="Mô tả ngắn về bạn..." />
                   </div>
                 </div>
               ) : (
-                <div className="prf-info-list">
+                <>
                   <InfoRow label="Tên hiển thị" value={profile.displayName} />
                   <InfoRow label="Thành phố" value={profile.city} />
                   <InfoRow label="Giới thiệu" value={profile.bio} />
-                </div>
+                </>
               )}
             </div>
+          </div>
 
-            <div className="prf-section-card">
-              <div className="prf-section-head">
-                <h2>Thông tin thể chất</h2>
-                <SectionActions section="physical" />
+          {/* Physical info */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <Heart size={15} className="text-rose-500" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Thông tin thể chất</h2>
               </div>
+              <SectionActions section="physical" />
+            </div>
+            <div className="px-6 py-1">
               {editing === "physical" ? (
-                <div className="prf-edit-form">
-                  <div className="prf-field-row">
-                    <label>Giới tính</label>
-                    <select value={draft.gender ?? ""} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
-                      <option value="">— Chọn —</option>
-                      <option value="Nam">Nam</option>
-                      <option value="Nu">Nữ</option>
-                      <option value="Khac">Khác</option>
-                    </select>
+                <div className="py-4 flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Giới tính</label>
+                      <select className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.gender ?? ""} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
+                        <option value="">— Chọn —</option>
+                        <option value="Nam">Nam</option>
+                        <option value="Nu">Nữ</option>
+                        <option value="Khac">Khác</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Ngày sinh</label>
+                      <input type="date" className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Chiều cao (cm)</label>
+                      <input type="number" className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.heightCm ?? ""} min={100} max={250} onChange={(e) => setDraft({ ...draft, heightCm: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Cân nặng (kg)</label>
+                      <input type="number" step="0.1" className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.weightKg ?? ""} min={30} max={200} onChange={(e) => setDraft({ ...draft, weightKg: parseFloat(e.target.value) || 0 })} />
+                    </div>
                   </div>
-                  <div className="prf-field-row">
-                    <label>Ngày sinh</label>
-                    <input type="date" value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} />
-                  </div>
-                  <div className="prf-field-row">
-                    <label>Chiều cao (cm)</label>
-                    <input type="number" value={draft.heightCm ?? ""} onChange={(e) => setDraft({ ...draft, heightCm: parseFloat(e.target.value) || 0 })} min={100} max={250} />
-                  </div>
-                  <div className="prf-field-row">
-                    <label>Cân nặng (kg)</label>
-                    <input type="number" value={draft.weightKg ?? ""} step="0.1" onChange={(e) => setDraft({ ...draft, weightKg: parseFloat(e.target.value) || 0 })} min={30} max={200} />
-                  </div>
-                  {bmiDraft && <div className="prf-bmi-live">BMI: <strong className={bmiClassDraft}>{bmiDraft.toFixed(1)}</strong> — {bmiLabelDraft}</div>}
+                  {bmiDraft && (
+                    <div className="rounded-md bg-slate-50 border border-slate-200 px-4 py-3 text-sm" style={{ color: "var(--muted)" }}>
+                      BMI: <strong className={bmiColorDraft}>{bmiDraft.toFixed(1)}</strong> — {bmiLabelDraft}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="prf-info-list">
+                <>
                   <InfoRow label="Giới tính" value={profile.gender} />
                   <InfoRow label="Ngày sinh" value={profile.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString("vi-VN") : null} />
                   <InfoRow label="Chiều cao" value={profile.heightCm ? `${profile.heightCm} cm` : null} />
                   <InfoRow label="Cân nặng" value={profile.weightKg ? `${profile.weightKg} kg` : null} />
-                  <div className="prf-info-row">
-                    <span className="prf-info-label">Chỉ số BMI</span>
+                  <div className="flex items-center justify-between py-2.5">
+                    <span className="text-sm" style={{ color: "var(--muted)" }}>Chỉ số BMI</span>
                     {bmi
-                      ? <strong className={bmiClass}>{bmi.toFixed(1)} <small>({bmiLabel})</small></strong>
-                      : <strong className="prf-empty">Chưa cập nhật</strong>
+                      ? <span className={`text-sm font-semibold ${bmiColor}`}>{bmi.toFixed(1)} <span className="font-normal text-xs">({bmiLabel})</span></span>
+                      : <span className="text-sm italic" style={{ color: "var(--muted)" }}>Chưa cập nhật</span>
                     }
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
-        )}
 
-        {tab === "goals" && (
-          <div className="prf-sections">
-            <div className="prf-section-card">
-              <div className="prf-section-head">
-                <h2>Mục tiêu & Luyện tập</h2>
-                <SectionActions section="goals" />
+          {/* Goals */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <TrendingUp size={15} className="text-blue-500" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Mục tiêu luyện tập</h2>
               </div>
+              <SectionActions section="goals" />
+            </div>
+            <div className="px-6 py-1">
               {editing === "goals" ? (
-                <div className="prf-edit-form">
-                  <div className="prf-field-row prf-field-full">
-                    <label>Mục tiêu chính</label>
-                    <input value={draft.primaryGoal ?? ""} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })} placeholder="VD: Chạy half-marathon, giảm cân..." />
+                <div className="py-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Mục tiêu chính</label>
+                    <input className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                      value={draft.primaryGoal ?? ""} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })}
+                      placeholder="VD: Chạy half-marathon, giảm cân..." />
                   </div>
-                  <div className="prf-field-row">
-                    <label>Trình độ</label>
-                    <select value={draft.experienceLevel ?? ""} onChange={(e) => setDraft({ ...draft, experienceLevel: e.target.value })}>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Trình độ</label>
+                    <select className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                      value={draft.experienceLevel ?? ""} onChange={(e) => setDraft({ ...draft, experienceLevel: e.target.value })}>
                       <option value="">— Chọn —</option>
                       <option value="BEGINNER">Mới bắt đầu</option>
                       <option value="INTERMEDIATE">Trung bình</option>
@@ -4667,111 +4720,147 @@ function ProfilePage({
                       <option value="ELITE">Đỉnh cao</option>
                     </select>
                   </div>
-                  <div className="prf-field-row">
-                    <label>Km chạy/tuần</label>
-                    <input type="number" value={draft.weeklyRunGoalKm} onChange={(e) => setDraft({ ...draft, weeklyRunGoalKm: parseFloat(e.target.value) || 0 })} min={0} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Km chạy/tuần</label>
+                      <input type="number" className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.weeklyRunGoalKm} min={0} onChange={(e) => setDraft({ ...draft, weeklyRunGoalKm: parseFloat(e.target.value) || 0 })} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Mét bơi/tuần</label>
+                      <input type="number" className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                        value={draft.weeklySwimGoalMeters} min={0} onChange={(e) => setDraft({ ...draft, weeklySwimGoalMeters: parseInt(e.target.value) || 0 })} />
+                    </div>
                   </div>
-                  <div className="prf-field-row">
-                    <label>Mét bơi/tuần</label>
-                    <input type="number" value={draft.weeklySwimGoalMeters} onChange={(e) => setDraft({ ...draft, weeklySwimGoalMeters: parseInt(e.target.value) || 0 })} min={0} />
-                  </div>
-                  <div className="prf-field-row prf-field-full">
-                    <label>Trọng tâm dinh dưỡng</label>
-                    <select value={draft.nutritionFocus ?? ""} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })}>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--muted)" }}>Trọng tâm dinh dưỡng</label>
+                    <select className={inputCls} style={{ color: "var(--text)", background: "var(--input-bg, var(--bg))" }}
+                      value={draft.nutritionFocus ?? ""} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })}>
                       <option value="">— Chọn —</option>
                       {NUTRITION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   </div>
                 </div>
               ) : (
-                <div className="prf-info-list">
+                <>
                   <InfoRow label="Mục tiêu chính" value={profile.primaryGoal} />
                   <InfoRow label="Trình độ" value={expMap[profile.experienceLevel ?? ""] ?? profile.experienceLevel} />
-                  <InfoRow label="Km chạy mục tiêu/tuần" value={`${profile.weeklyRunGoalKm} km`} />
-                  <InfoRow label="Mét bơi mục tiêu/tuần" value={`${profile.weeklySwimGoalMeters} m`} />
-                  <InfoRow label="Trọng tâm dinh dưỡng" value={profile.nutritionFocus} />
-                </div>
+                  <InfoRow label="Km chạy/tuần" value={`${profile.weeklyRunGoalKm} km`} />
+                  <InfoRow label="Mét bơi/tuần" value={`${profile.weeklySwimGoalMeters} m`} />
+                  <InfoRow label="Dinh dưỡng" value={profile.nutritionFocus} />
+                </>
               )}
             </div>
+          </div>
+        </div>
 
-            <div className="prf-section-card">
-              <div className="prf-section-head"><h2>Tiến độ tuần này</h2></div>
-              <div className="prf-goal-progress">
-                <div className="prf-goal-item">
-                  <div className="prf-goal-label">
-                    <Flame size={15} color="var(--orange)" />
-                    <span>Chạy bộ</span>
-                    <strong>{stats.weeklyRunKm.toFixed(1)} / {profile.weeklyRunGoalKm} km</strong>
-                  </div>
-                  <div className="progress-line"><span style={{ width: `${runPct}%` }} /></div>
-                </div>
-                <div className="prf-goal-item">
-                  <div className="prf-goal-label">
-                    <Waves size={15} color="var(--blue)" />
-                    <span>Bơi lội</span>
-                    <strong>{stats.weeklySwimMeters} / {profile.weeklySwimGoalMeters} m</strong>
-                  </div>
-                  <div className="progress-line"><span style={{ width: `${swimPct}%` }} /></div>
-                </div>
+        {/* ── Right column ── */}
+        <div className="lg:col-span-2 space-y-5">
+
+          {/* Weekly progress */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <Zap size={15} className="text-blue-500" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Tiến độ tuần này</h2>
               </div>
             </div>
+            <div className="px-6 py-5 grid sm:grid-cols-2 gap-6">
+              {[
+                { icon: <Flame size={14} className="text-blue-600" />, label: "Chạy bộ", current: stats.weeklyRunKm.toFixed(1), goal: profile.weeklyRunGoalKm, unit: "km", pct: runPct, bar: "from-blue-500 to-blue-600" },
+                { icon: <Waves size={14} className="text-sky-500" />, label: "Bơi lội", current: stats.weeklySwimMeters, goal: profile.weeklySwimGoalMeters, unit: "m", pct: swimPct, bar: "from-sky-400 to-sky-500" },
+              ].map((item) => (
+                <div key={item.label}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {item.icon}
+                      <span className="text-sm font-medium" style={{ color: "var(--text)" }}>{item.label}</span>
+                    </div>
+                    <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>{item.current} / {item.goal} {item.unit}</span>
+                  </div>
+                  <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--border)" }}>
+                    <div className={`h-full rounded-full bg-gradient-to-r ${item.bar} transition-all duration-500`} style={{ width: `${item.pct}%` }} />
+                  </div>
+                  <p className="text-xs mt-1.5 text-right" style={{ color: "var(--muted)" }}>{item.pct.toFixed(0)}% mục tiêu</p>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
 
-        {tab === "badges" && (
-          <div className="prf-sections">
-            <div className="prf-section-card">
-              <div className="prf-section-head">
-                <h2>Huy hiệu & Thành tích</h2>
-                <span className="prf-badge-count">{earnedBadges.length}/{badges.length} đạt được</span>
+          {/* Recent activities */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <Activity size={15} className="text-emerald-500" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Hoạt động gần đây</h2>
               </div>
-              <div className="badges-grid">
-                {badges.map((b) => (
-                  <div key={b.id} className={b.earned ? "badge-item earned" : "badge-item"}>
-                    <span className="badge-icon">{b.icon}</span>
-                    <strong>{b.title}</strong>
-                    <small>{b.description}</small>
+              <button
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium border border-[var(--border)] hover:text-blue-600 hover:border-blue-400 transition-colors"
+                style={{ color: "var(--muted)" }} onClick={onAddActivity}>
+                <CirclePlus size={13} /> Thêm mới
+              </button>
+            </div>
+            {recentActivities.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3" style={{ color: "var(--muted)" }}>
+                <Activity size={36} className="opacity-30" />
+                <p className="text-sm">Chưa có hoạt động nào</p>
+                <button className="px-4 py-2 rounded text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors" onClick={onAddActivity}>
+                  Ghi hoạt động đầu tiên
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--border)]">
+                {recentActivities.map((a) => (
+                  <div key={a.id} className="flex items-center gap-3 px-6 py-3.5 transition-colors hover:bg-[var(--bg)]">
+                    <div className={`w-9 h-9 rounded-md flex items-center justify-center shrink-0 ${a.sportType === "RUN" ? "bg-blue-50" : "bg-sky-50"}`}>
+                      {a.sportType === "RUN"
+                        ? <Footprints size={16} className="text-blue-600" />
+                        : <Waves size={16} className="text-sky-500" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>{a.title}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{new Date(a.startedAt).toLocaleDateString("vi-VN")}</p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 text-sm">
+                      <span className="font-medium" style={{ color: "var(--text)" }}>{formatDistance(a)}</span>
+                      <span style={{ color: "var(--muted)" }}>{a.durationMinutes} ph</span>
+                      {a.averageHeartRate && (
+                        <span className="flex items-center gap-0.5 text-rose-500">
+                          <Heart size={11} />{a.averageHeartRate}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
-        )}
 
-        {tab === "history" && (
-          <div className="prf-sections">
-            <div className="prf-section-card">
-              <div className="prf-section-head">
-                <h2>Lịch sử hoạt động</h2>
-                <button className="outline-button" onClick={onAddActivity}><CirclePlus size={15} /> Thêm mới</button>
+          {/* Badges */}
+          <div className={cardCls} style={{ background: "var(--card)" }}>
+            <div className={cardHeadCls}>
+              <div className={cardTitleCls}>
+                <Award size={15} className="text-yellow-500" />
+                <h2 className="text-sm font-bold" style={{ color: "var(--text)" }}>Thành tích & Huy hiệu</h2>
               </div>
-              {activities.length === 0 ? (
-                <div className="empty-log" style={{ minHeight: "180px" }}>
-                  <Activity size={36} />
-                  <h3>Chưa có hoạt động</h3>
-                  <p>Ghi buổi tập đầu tiên để bắt đầu xây dựng hồ sơ.</p>
-                  <button className="orange-button" onClick={onAddActivity}>Ghi hoạt động</button>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded border border-[var(--border)]" style={{ color: "var(--muted)", background: "var(--bg)" }}>
+                {earnedBadges.length}/{badges.length} đạt được
+              </span>
+            </div>
+            <div className="p-5 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {badges.map((b) => (
+                <div key={b.id} className={`flex flex-col items-center gap-1.5 p-3 rounded-md border text-center transition-all ${
+                  b.earned ? "border-blue-200 bg-blue-50" : "border-[var(--border)] opacity-40 grayscale"
+                }`} style={b.earned ? {} : { background: "var(--bg)" }}>
+                  <span className="text-2xl">{b.icon}</span>
+                  <strong className="text-xs font-semibold leading-tight" style={{ color: "var(--text)" }}>{b.title}</strong>
+                  <small className="leading-tight" style={{ fontSize: "10px", color: "var(--muted)" }}>{b.description}</small>
                 </div>
-              ) : (
-                <div className="activity-table">
-                  {activities.map((a) => (
-                    <div key={a.id} className="activity-row">
-                      <SportPill sport={a.sportType} />
-                      <div>
-                        <strong>{a.title}</strong>
-                        <span>{new Date(a.startedAt).toLocaleDateString("vi-VN")}</span>
-                      </div>
-                      <span>{formatDistance(a)}</span>
-                      <span>{a.durationMinutes} phút</span>
-                      <span>{a.averageHeartRate ?? "--"} bpm</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              ))}
             </div>
           </div>
-        )}
 
+        </div>
       </div>
     </div>
   );
@@ -5139,7 +5228,7 @@ const NUTRITION_OPTIONS = [
   "Chế độ ăn đặc biệt (low-carb, keto, ...)",
 ];
 
-function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
+function Onboarding({ onDone }: { onDone: (session: Session, profile?: AthleteProfile) => void }) {
   const [mode, setMode] = useState<"signup" | "login">("signup");
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -5237,8 +5326,8 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       if (!onboardingSession) return;
       setLoading(true);
       try {
-        await completeOnboarding(onboardingSession);
-        onDone({ ...onboardingSession, onboardingCompleted: true });
+        const savedProfile = await completeOnboarding(onboardingSession);
+        onDone({ ...onboardingSession, onboardingCompleted: true }, savedProfile);
       } catch (err) {
         setAuthError(err instanceof Error ? err.message : "Không thể hoàn tất. Hãy thử lại.");
       } finally {
@@ -5271,8 +5360,8 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       const auth = await withRetry(() => apiStrict<Session>(authPath, "", { method: "POST", body: JSON.stringify(authBody) }));
       if (mode === "signup") {
         try {
-          await completeOnboarding(auth);
-          onDone({ ...auth, onboardingCompleted: true });
+          const savedProfile = await completeOnboarding(auth);
+          onDone({ ...auth, onboardingCompleted: true }, savedProfile);
         } catch (onboardingErr) {
           setOnboardingSession(auth);
           setStep(0);
@@ -5297,8 +5386,8 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
     }
   }
 
-  async function completeOnboarding(auth: Session) {
-    await withRetry(() => apiStrict(`/athletes/${auth.userId}/onboarding`, auth.token, {
+  async function completeOnboarding(auth: Session): Promise<AthleteProfile> {
+    const saved = await withRetry(() => apiStrict<AthleteProfile>(`/athletes/${auth.userId}/onboarding`, auth.token, {
       method: "POST",
       body: JSON.stringify({
         displayName: form.fullName || undefined,
@@ -5317,6 +5406,7 @@ function Onboarding({ onDone }: { onDone: (session: Session) => void }) {
       }),
     }));
     await withRetry(() => apiStrict(`/auth/users/${auth.userId}/onboarding-complete`, auth.token, { method: "PATCH" }));
+    return saved;
   }
 
   return (

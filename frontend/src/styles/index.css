@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 * {
   box-sizing: border-box;
 }
@@ -21,6 +23,14 @@
   --radius-sm: 9px;
   --font-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-display: "Space Grotesk", "Plus Jakarta Sans", system-ui, sans-serif;
+
+  /* theme tokens used by components */
+  --card: #ffffff;
+  --border: #d6dde6;
+  --text: #0b1220;
+  --text-2: #5a6779;
+  --bg: #f7f9fc;
+  --input-bg: #ffffff;
 }
 
 html {
