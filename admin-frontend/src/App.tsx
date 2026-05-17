@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Search,
   Activity,
-  MessageSquare,
   Salad,
   Utensils,
   Flame,
@@ -38,7 +37,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "community" | "nutrition/foods" | "nutrition/categories" | "training" | "sports" | "onboarding";
+type Page = "dashboard" | "users" | "activities" | "routes" | "nutrition/foods" | "nutrition/categories" | "training" | "sports" | "onboarding";
 type NutPage = "foods" | "categories";
 
 type AdminSession = {
@@ -70,17 +69,6 @@ type ActivityItem = {
 type RouteItem = {
   id: number; name: string; sportType: "RUN" | "SWIM"; place: string;
   distanceMeters: number; note: string; createdAt: string;
-};
-
-type CommunityPostItem = {
-  id: number; userId: number; athleteName: string; title?: string; content: string;
-  sportType?: "RUN" | "SWIM"; distanceMeters?: number; durationMinutes?: number;
-  calories?: number; routeName?: string; createdAt: string;
-  likeCount: number; commentCount: number; likedByMe: boolean;
-};
-
-type CommunityOverview = {
-  totalPosts: number; totalComments: number; totalLikes: number; activeAuthors: number;
 };
 
 type FoodCategory = { id: number; name: string; description?: string; icon?: string; };
@@ -280,9 +268,7 @@ const NAV_ITEMS_TOP: { id: Page; label: string; icon: ReactNode }[] = [
   { id: "training",   label: "Cài đặt tập luyện",    icon: <Dumbbell size={16} /> },
 ];
 
-const NAV_ITEMS_BOTTOM: { id: Page; label: string; icon: ReactNode }[] = [
-  { id: "community",  label: "Cộng đồng",             icon: <MessageSquare size={16} /> },
-];
+const NAV_ITEMS_BOTTOM: { id: Page; label: string; icon: ReactNode }[] = [];
 
 const NUT_SUB_ITEMS: { id: Page; label: string }[] = [
   { id: "nutrition/categories", label: "Danh mục" },
@@ -1038,128 +1024,6 @@ function RoutesPage({ session }: { session: AdminSession }) {
 }
 
 // ─── Challenges Page ──────────────────────────────────────────────────────────
-
-function CommunityAdminPage({ session }: { session: AdminSession }) {
-  const [overview, setOverview] = useState<CommunityOverview | null>(null);
-  const [posts, setPosts] = useState<CommunityPostItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [search, setSearch] = useState("");
-  const [sportFilter, setSportFilter] = useState<"ALL" | "RUN" | "SWIM">("ALL");
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const [ov, p] = await Promise.all([
-        get<CommunityOverview>(session.token, "/api/community/admin/overview"),
-        get<CommunityPostItem[]>(session.token, "/api/community/admin/posts"),
-      ]);
-      setOverview(ov);
-      setPosts(p);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Lỗi tải cộng đồng");
-    } finally {
-      setLoading(false);
-    }
-  }, [session.token]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function removePost(id: number) {
-    if (!confirm("Xoá bài viết cộng đồng này?")) return;
-    setDeleting(id);
-    try {
-      await del(session.token, `/api/community/admin/posts/${id}`);
-      setPosts(prev => prev.filter(p => p.id !== id));
-      setOverview(prev => prev ? { ...prev, totalPosts: Math.max(0, prev.totalPosts - 1) } : prev);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Lỗi xoá bài viết");
-    } finally {
-      setDeleting(null);
-    }
-  }
-
-  const filtered = posts.filter(post => {
-    const q = search.toLowerCase();
-    const matchesSearch = `${post.athleteName} ${post.title ?? ""} ${post.content} ${post.routeName ?? ""}`.toLowerCase().includes(q);
-    const matchesSport = sportFilter === "ALL" || post.sportType === sportFilter;
-    return matchesSearch && matchesSport;
-  });
-
-  return (
-    <>
-      <PageHeader title="Cộng đồng" sub="Quản lý bài đăng, tương tác và nội dung người dùng chia sẻ" />
-      <div className="al-content">
-        {overview && (
-          <div className="al-stats-row">
-            {[
-              { label: "Bài viết", value: overview.totalPosts, color: "#3b82f6" },
-              { label: "Bình luận", value: overview.totalComments, color: "#22c55e" },
-              { label: "Lượt thích", value: overview.totalLikes, color: "#eab308" },
-              { label: "Người đăng", value: overview.activeAuthors, color: "#f97316" },
-            ].map(card => (
-              <div key={card.label} className="al-stat-card">
-                <div className="al-stat-value" style={{ color: card.color }}>{card.value}</div>
-                <div className="al-stat-label">{card.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="al-controls">
-          <div className="al-search-wrap">
-            <Search size={14} className="al-search-icon" />
-            <input className="al-search" placeholder="Tìm tác giả, nội dung, lộ trình..." value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <div className="al-tabs">
-            {(["ALL", "RUN", "SWIM"] as const).map(s => (
-              <button key={s} className={`al-tab${sportFilter === s ? " active" : ""}`} onClick={() => setSportFilter(s)}>
-                {s === "ALL" ? "Tất cả" : s === "RUN" ? "Chạy" : "Bơi"}
-              </button>
-            ))}
-          </div>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
-        </div>
-
-        <div className="al-community-grid">
-          {loading ? <div className="al-loading">Đang tải...</div>
-            : error ? <ErrMsg msg={error} />
-            : filtered.length === 0 ? <div className="al-empty">Không có bài viết phù hợp</div>
-            : filtered.map(post => (
-              <article key={post.id} className="al-community-card">
-                <div className="al-community-card-head">
-                  <div className="al-user-cell">
-                    <div className="al-avatar" style={{ background: avatarColor(post.userId) }}>{initials(post.athleteName)}</div>
-                    <div>
-                      <div className="al-uname">{post.athleteName}</div>
-                      <div className="al-uemail">User ID {post.userId} · {fmtDate(post.createdAt)}</div>
-                    </div>
-                  </div>
-                  <button className="al-icon-del" disabled={deleting === post.id} onClick={() => removePost(post.id)} title="Xoá">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-                {post.title && (
-                  <div className="al-community-activity">
-                    <span className={`al-badge ${post.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>{post.sportType === "RUN" ? "Chạy" : "Bơi"}</span>
-                    <strong>{post.title}</strong>
-                    <span>{post.distanceMeters ? fmtDist(post.distanceMeters) : "—"} · {post.durationMinutes ?? "—"} phút</span>
-                  </div>
-                )}
-                <p>{post.content}</p>
-                <div className="al-community-metrics">
-                  <span>{post.likeCount} thích</span>
-                  <span>{post.commentCount} bình luận</span>
-                  {post.routeName && <span>{post.routeName}</span>}
-                </div>
-              </article>
-            ))}
-        </div>
-      </div>
-    </>
-  );
-}
 
 function ChallengesPage({ session }: { session: AdminSession }) {
   const [challenges, setChallenges] = useState<ChallengeItem[]>([]);
@@ -2458,7 +2322,6 @@ export default function App() {
         {page === "users"                  && <UsersManagementPage session={session} />}
         {page === "activities"             && <ActivitiesPage session={session} />}
         {page === "routes"                 && <RoutesPage session={session} />}
-        {page === "community"              && <CommunityAdminPage session={session} />}
         {page.startsWith("nutrition/")     && <NutritionAdminPage session={session} nutPage={page.split("/")[1] as NutPage} />}
         {page === "training"               && <TrainingPage session={session} />}
         {page === "sports"                 && <SportsManagementPage session={session} />}

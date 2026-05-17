@@ -3,19 +3,13 @@ package com.tuan.activityservice.config;
 import com.tuan.activityservice.entity.Activity;
 import com.tuan.activityservice.entity.ChallengeDefinition;
 import com.tuan.activityservice.entity.ChallengeParticipant;
-import com.tuan.activityservice.entity.CommunityPost;
 import com.tuan.activityservice.entity.Notification;
-import com.tuan.activityservice.entity.PostComment;
-import com.tuan.activityservice.entity.PostLike;
 import com.tuan.activityservice.entity.SportDefinition;
 import com.tuan.activityservice.entity.SportType;
 import com.tuan.activityservice.repository.ActivityRepository;
 import com.tuan.activityservice.repository.ChallengeParticipantRepository;
 import com.tuan.activityservice.repository.ChallengeRepository;
-import com.tuan.activityservice.repository.CommunityPostRepository;
 import com.tuan.activityservice.repository.NotificationRepository;
-import com.tuan.activityservice.repository.PostCommentRepository;
-import com.tuan.activityservice.repository.PostLikeRepository;
 import com.tuan.activityservice.repository.SportDefinitionRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,9 +27,6 @@ public class SampleDataInitializer {
             ActivityRepository activities,
             ChallengeRepository challenges,
             ChallengeParticipantRepository participants,
-            CommunityPostRepository posts,
-            PostCommentRepository comments,
-            PostLikeRepository likes,
             NotificationRepository notifications,
             SportDefinitionRepository sportDefs) {
         return args -> {
@@ -144,72 +135,16 @@ public class SampleDataInitializer {
                 }
             }
 
-            // 4. Community posts — seeded per user via natural key
-            if (posts.count() == 0) {
-                posts.saveAll(List.of(
-                    post(1L,  "Demo Runner", "Tempo 7K",              "Giữ nhịp đều suốt 20 phút tempo, cảm giác rất ổn.",           SportType.RUN,  7200,  42,  460, "Saigon River Loop"),
-                    post(2L,  "Linh Tran",   "Bridge repeats",        "6 lần leo cầu, chân hơi mỏi nhưng form tốt.",                  SportType.RUN,  9800,  58,  690, "Saigon Bridge"),
-                    post(3L,  "Minh Pham",   "Smooth 2K swim",        "Tập trung sải dài và thở nhịp 3 xuyên suốt.",                  SportType.SWIM, 2050,  48,  560, "District Pool"),
-                    post(4L,  "Hang Thu",    "Recovery run",          "5 km nhẹ sau ngày tập chân, nhịp tim ổn.",                     SportType.RUN,  5000,  34,  310, "Gia Dinh Park"),
-                    post(5L,  "An Nguyen",   "Morning endurance",     "4x300m chính và thả lỏng 400m, vai tốt hơn tuần trước.",        SportType.SWIM, 1600,  40,  430, "City Pool"),
-                    post(6L,  "Duc Nguyen",  "Marathon pace 15K",     "Giữ đúng pace mục tiêu marathon, cảm giác kiểm soát tốt.",     SportType.RUN,  15000, 90,  980, "Hue Riverside"),
-                    post(7L,  "Trang Le",    "Speed set 8x50m",       "Tốc độ cải thiện, thở kịp sau 6 lần sprint đầu.",              SportType.SWIM, 800,   22,  340, "Hai Phong Pool"),
-                    post(8L,  "Khoa Bui",    "Brick 20K+5K",          "Chạy ngay sau xe đạp, chân nặng nhưng hoàn thành đúng pace.",  SportType.RUN,  5000,  32,  380, "HCM Velodrome"),
-                    post(9L,  "Mai Hoang",   "Trail ridge 18K",       "Cung đường núi đẹp, độ cao 850m, cảm giác tuyệt vời.",         SportType.RUN,  18000, 130, 1480,"Da Lat Ridge"),
-                    post(10L, "Tien Vo",     "Beachside run 5K",      "Chạy ven biển buổi sáng, gió mát, bầu trời trong.",            SportType.RUN,  5000,  35,  360, "Vung Tau Beach")
-                ));
-            }
-
-            // 5. Comments
-            if (comments.count() == 0) {
-                List<CommunityPost> feed = posts.findTop30ByOrderByCreatedAtDesc();
-                if (feed.size() >= 5) {
-                    comments.saveAll(List.of(
-                        comment(feed.get(0),  2L,  "Linh Tran",  "Tempo đều quá, cố lên!"),
-                        comment(feed.get(0),  3L,  "Minh Pham",  "Pace đẹp đó."),
-                        comment(feed.get(1),  1L,  "Demo Runner","Form leo cầu rất tốt!"),
-                        comment(feed.get(2),  5L,  "An Nguyen",  "Nhịp thở 3 ổn định là nền tảng tốt."),
-                        comment(feed.get(3),  6L,  "Duc Nguyen", "Recovery run mà vẫn gọn, nice!"),
-                        comment(feed.get(4),  7L,  "Trang Le",   "Vai tốt hơn là dấu hiệu tích cực."),
-                        comment(feed.get(5),  1L,  "Demo Runner","15K marathon pace rất ấn tượng!"),
-                        comment(feed.get(6),  3L,  "Minh Pham",  "Tốc độ sprint ổn định rồi đó."),
-                        comment(feed.get(7),  9L,  "Mai Hoang",  "Chạy brick là nền tảng tốt cho tri."),
-                        comment(feed.get(8),  6L,  "Duc Nguyen", "Đường núi đó đẹp lắm, muốn thử quá!")
-                    ));
-                }
-            }
-
-            // 6. Likes
-            if (likes.count() == 0) {
-                List<CommunityPost> feed = posts.findTop30ByOrderByCreatedAtDesc();
-                if (feed.size() >= 5) {
-                    likes.saveAll(List.of(
-                        like(feed.get(0),  2L), like(feed.get(0),  3L), like(feed.get(0),  6L),
-                        like(feed.get(1),  1L), like(feed.get(1),  4L),
-                        like(feed.get(2),  1L), like(feed.get(2),  5L), like(feed.get(2),  7L),
-                        like(feed.get(3),  5L), like(feed.get(3),  2L),
-                        like(feed.get(4),  2L), like(feed.get(4),  8L),
-                        like(feed.get(5),  2L), like(feed.get(5),  9L), like(feed.get(5), 10L),
-                        like(feed.get(6),  3L), like(feed.get(6),  5L),
-                        like(feed.get(7),  1L), like(feed.get(7),  6L),
-                        like(feed.get(8),  1L), like(feed.get(8),  6L), like(feed.get(8), 10L)
-                    ));
-                }
-            }
-
-            // 7. Notifications — per-user
+            // 4. Notifications — per-user
             Set<Long> notifUsers = notifications.findAll().stream()
                     .map(Notification::getUserId).collect(Collectors.toSet());
             List<Notification> notifs = new ArrayList<>();
             if (!notifUsers.contains(1L)) {
                 notifs.add(notification(1L, "Weekly reminder", "You have 2 run sessions planned this week.", "REMINDER"));
                 notifs.add(notification(1L, "New challenge",   "Try the Run 30K in a week challenge.",        "CHALLENGE"));
-                notifs.add(notification(1L, "Community",       "Linh Tran liked your latest activity.",       "COMMUNITY"));
             }
             if (!notifUsers.contains(2L))
                 notifs.add(notification(2L, "Challenge joined", "You joined the Run 30K challenge. Good luck!", "CHALLENGE"));
-            if (!notifUsers.contains(6L))
-                notifs.add(notification(6L, "New follower", "Linh Tran is now following you.", "COMMUNITY"));
             if (!notifUsers.contains(9L))
                 notifs.add(notification(9L, "Weekly reminder", "Trail session scheduled for this weekend.", "REMINDER"));
             if (!notifs.isEmpty()) notifications.saveAll(notifs);
@@ -280,28 +215,6 @@ public class SampleDataInitializer {
         ChallengeParticipant p = new ChallengeParticipant();
         p.setUserId(userId); p.setChallenge(challenge);
         return p;
-    }
-
-    private CommunityPost post(Long userId, String name, String title, String content,
-                                SportType sport, double dist, int dur, int cal, String route) {
-        CommunityPost p = new CommunityPost();
-        p.setUserId(userId); p.setAthleteName(name); p.setTitle(title);
-        p.setContent(content); p.setSportType(sport);
-        p.setDistanceMeters(dist); p.setDurationMinutes(dur);
-        p.setCalories(cal); p.setRouteName(route); p.setVisibility("PUBLIC");
-        return p;
-    }
-
-    private PostComment comment(CommunityPost post, Long userId, String name, String content) {
-        PostComment c = new PostComment();
-        c.setPost(post); c.setUserId(userId); c.setDisplayName(name); c.setContent(content);
-        return c;
-    }
-
-    private PostLike like(CommunityPost post, Long userId) {
-        PostLike l = new PostLike();
-        l.setPost(post); l.setUserId(userId);
-        return l;
     }
 
     private Notification notification(Long userId, String title, String message, String type) {
