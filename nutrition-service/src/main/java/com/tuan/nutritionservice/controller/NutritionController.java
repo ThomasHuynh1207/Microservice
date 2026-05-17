@@ -1,5 +1,6 @@
 package com.tuan.nutritionservice.controller;
 
+import com.tuan.nutritionservice.entity.DailyNutritionAnalysis;
 import com.tuan.nutritionservice.entity.Food;
 import com.tuan.nutritionservice.entity.FoodCategory;
 import com.tuan.nutritionservice.entity.MealEntry;
@@ -119,10 +120,20 @@ public class NutritionController {
     }
 
     @GetMapping("/{userId}/recommendation")
-    NutritionRecommendation recommendation(
+    NutritionRecommendation recommendation(@PathVariable Long userId) {
+        return nutritionService.recommendation(userId);
+    }
+
+    @GetMapping("/{userId}/history")
+    List<DailyNutritionAnalysis> history(
             @PathVariable Long userId,
-            @RequestParam(defaultValue = "0") int caloriesBurned) {
-        return nutritionService.recommendation(userId, caloriesBurned);
+            @RequestParam(defaultValue = "7") int days) {
+        return nutritionService.getHistory(userId, days);
+    }
+
+    @PostMapping("/{userId}/analysis/snapshot")
+    DailyNutritionAnalysis snapshot(@PathVariable Long userId) {
+        return nutritionService.snapshotToday(userId);
     }
 
     @DeleteMapping("/{userId}/meals/{mealId}")

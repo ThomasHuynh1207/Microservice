@@ -16,6 +16,7 @@ import com.tuan.activityservice.repository.RouteRepository;
 import com.tuan.activityservice.repository.SavedRouteRepository;
 import com.tuan.activityservice.repository.SportDefinitionRepository;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,6 +101,17 @@ public class ActivityService {
     @Transactional(readOnly = true)
     public List<Activity> userActivities(Long userId) {
         return activities.findByUserIdOrderByStartedAtDesc(userId);
+    }
+
+    @Transactional(readOnly = true)
+    public TodaySummary todayStats(Long userId) {
+        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime endOfDay = LocalDate.now().plusDays(1).atStartOfDay();
+        List<Activity> todayList = activities.findByUserIdAndStartedAtBetween(userId, startOfDay, endOfDay);
+        int totalCalories = todayList.stream()
+                .mapToInt(a -> a.getCalories() == null ? 0 : a.getCalories())
+                .sum();
+        return new TodaySummary(totalCalories, todayList.size());
     }
 
     @Transactional(readOnly = true)
@@ -672,5 +684,8 @@ public class ActivityService {
         }
 
         public record ActivityFinishResult(Activity activity, Route route) {
+        }
+
+        public record TodaySummary(int totalCaloriesBurned, int activityCount) {
         }
 }

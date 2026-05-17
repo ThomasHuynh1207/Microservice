@@ -192,9 +192,24 @@ type NutritionRecommendation = {
   remainingFat: number;
   caloriesBurned: number;
   netCaloriesTarget: number;
+  recoveryScore: number;
   completionPercent: number;
   alerts: string[];
   suggestedFoods: FoodItem[];
+};
+
+type DailyNutritionAnalysis = {
+  id: number;
+  userId: number;
+  date: string;
+  caloriesTarget: number;
+  caloriesConsumed: number;
+  caloriesBurned: number;
+  proteinConsumed: number;
+  carbConsumed: number;
+  fatConsumed: number;
+  recoveryScore: number;
+  nutritionSummary: string;
 };
 
 type TrainingDay = {
@@ -3317,7 +3332,7 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
   activities: FitnessActivity[];
   notify: (msg: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "diary" | "addfood" | "analytics" | "ai">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "diary" | "addfood" | "analytics" | "ai" | "history">("dashboard");
   const [draft, setDraft] = useState(plan);
   const [addMealType, setAddMealType] = useState("BREAKFAST");
   const [quickInput, setQuickInput] = useState("");
@@ -3335,22 +3350,15 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
   const [showPlanEditor, setShowPlanEditor] = useState(false);
   const [recommendation, setRecommendation] = useState<NutritionRecommendation | null>(null);
   const [autoCalcBusy, setAutoCalcBusy] = useState(false);
+  const [history, setHistory] = useState<DailyNutritionAnalysis[]>([]);
 
   useEffect(() => setDraft(plan), [plan]);
 
   const todayKey = new Date().toDateString();
-  const todayBurnedCalories = useMemo(() =>
-    activities
-      .filter((a) => a.startedAt && new Date(a.startedAt).toDateString() === todayKey)
-      .reduce((sum, a) => sum + (a.calories ?? 0), 0),
-    [activities, todayKey]
-  );
 
-  const loadRecommendation = (burned?: number) => {
+  const loadRecommendation = () => {
     if (!token || token === "demo") return;
-    const kcal = burned !== undefined ? burned : todayBurnedCalories;
-    const url = `/nutrition/${userId}/recommendation${kcal > 0 ? `?caloriesBurned=${kcal}` : ""}`;
-    api<NutritionRecommendation>(url, token, null as unknown as NutritionRecommendation)
+    api<NutritionRecommendation>(`/nutrition/${userId}/recommendation`, token, null as unknown as NutritionRecommendation)
       .then((r) => { if (r && r.targetCalories) setRecommendation(r); });
   };
 
@@ -3360,12 +3368,17 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
   }, [token, userId]);
 
   useEffect(() => {
-    loadRecommendation(todayBurnedCalories);
-  }, [token, userId, todayBurnedCalories]);
+    loadRecommendation();
+  }, [token, userId]);
 
   useEffect(() => {
     if (!token || token === "demo" || activeTab !== "analytics") return;
     api<DailyStats[]>(`/nutrition/${userId}/analytics/weekly`, token, []).then(setWeeklyStats);
+  }, [token, userId, activeTab]);
+
+  useEffect(() => {
+    if (!token || token === "demo" || activeTab !== "history") return;
+    api<DailyNutritionAnalysis[]>(`/nutrition/${userId}/history?days=14`, token, []).then(setHistory);
   }, [token, userId, activeTab]);
 
   useEffect(() => {
@@ -3411,7 +3424,7 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
       setMeals([created, ...meals]);
       setQuickInput("");
       notify(`Đã thêm ${created.name}.`);
-      loadRecommendation(todayBurnedCalories);
+      loadRecommendation();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Không tìm thấy món phù hợp.");
     } finally {
@@ -3549,56 +3562,74 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
     "Fat": d.fatGrams,
   }));
 
+  const navItems = [
+    { key: "dashboard", label: "Tổng quan",   icon: <TrendingUp size={16} /> },
+    { key: "diary",     label: "Nhật ký",      icon: <Utensils size={16} /> },
+    { key: "addfood",   label: "Thêm món",     icon: <CirclePlus size={16} /> },
+    { key: "analytics", label: "Phân tích",    icon: <BarChart2 size={16} /> },
+    { key: "history",   label: "Lịch sử",      icon: <CalendarDays size={16} /> },
+    { key: "ai",        label: "AI Phục hồi",  icon: <Sparkles size={16} /> },
+  ] as { key: typeof activeTab; label: string; icon: ReactNode }[];
+
   return (
     <div className="nut-page">
-      {/* Header */}
-      <div className="nut-header">
-        <div className="nut-header-text">
-          <h1>Dinh Dưỡng</h1>
-          <p>{plan.goal}</p>
+      {/* ── Sidebar navigation ── */}
+      <aside className="nut-sidenav">
+        <div className="nut-nav-brand">
+          <Salad size={20} style={{ color: "#f97316" }} />
+          <span>Dinh dưỡng</span>
         </div>
-        <button className="nut-plan-btn" onClick={() => setShowPlanEditor(true)}>
-          <Settings size={16} /> Mục tiêu
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="nut-tabs">
-        {([
-          { key: "dashboard", label: "Tổng quan", icon: <TrendingUp size={16} /> },
-          { key: "diary", label: "Nhật ký", icon: <Utensils size={16} /> },
-          { key: "addfood", label: "Thêm món", icon: <CirclePlus size={16} /> },
-          { key: "analytics", label: "Phân tích", icon: <BarChart2 size={16} /> },
-          { key: "ai", label: "AI Phục hồi", icon: <Sparkles size={16} /> },
-        ] as { key: typeof activeTab; label: string; icon: ReactNode }[]).map((tab) => (
-          <button key={tab.key} className={`nut-tab${activeTab === tab.key ? " active" : ""}`} onClick={() => setActiveTab(tab.key)}>
-            {tab.icon} {tab.label}
+        <p className="nut-nav-date">
+          {new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "long" })}
+        </p>
+        <nav className="nut-nav-links">
+          {navItems.map((tab) => (
+            <button key={tab.key} className={`nut-nav-tab${activeTab === tab.key ? " active" : ""}`}
+              onClick={() => setActiveTab(tab.key)}>
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </nav>
+        <div className="nut-nav-bottom">
+          <div className="nut-nav-plan-summary">
+            <div className="nut-nav-plan-label">Mục tiêu hôm nay</div>
+            <div className="nut-nav-plan-kcal">{plan.dailyCalories} kcal</div>
+            <div className="nut-nav-plan-macro">P {plan.proteinGrams}g · C {plan.carbsGrams}g · F {plan.fatGrams}g</div>
+          </div>
+          <button className="nut-plan-btn nut-plan-btn-full" onClick={() => setShowPlanEditor(true)}>
+            <Settings size={15} /> Chỉnh mục tiêu
           </button>
-        ))}
-      </div>
+        </div>
+      </aside>
+
+      {/* ── Main content ── */}
+      <main className="nut-main">
 
       {/* ── Dashboard ── */}
       {activeTab === "dashboard" && (
-        <div className="nut-tab-content">
-          <div className="nut-dashboard">
-            {/* Calorie ring */}
-            <div className="nut-card nut-card-ring">
+        <div className="nut-dashboard-web">
+
+          {/* ── LEFT column: metrics ── */}
+          <div className="nut-col-left">
+            <div className="nut-card">
+              <div className="nut-card-head"><span><Flame size={16} style={{ color: "#f97316" }} /> Calo hôm nay</span>
+                <span style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>{plan.dailyCalories} kcal mục tiêu</span>
+              </div>
               <CalorieRing consumed={totals.calories} goal={plan.dailyCalories} />
-              <div className="nut-macro-bars">
+              <div className="nut-macro-bars" style={{ marginTop: 16 }}>
                 <MacroBar label="Protein" current={totals.protein} goal={plan.proteinGrams} color="#f97316" />
                 <MacroBar label="Carb" current={totals.carbs} goal={plan.carbsGrams} color="#3b82f6" />
                 <MacroBar label="Fat" current={totals.fat} goal={plan.fatGrams} color="#a855f7" />
               </div>
             </div>
 
-            {/* Water */}
-            <div className="nut-card nut-card-water">
+            <div className="nut-card">
               <div className="nut-card-head">
-                <span><Droplets size={18} style={{ color: "#38bdf8" }} /> Nước uống</span>
-                <strong style={{ color: "#38bdf8" }}>{waterTotalMl} / {waterGoalMl} ml</strong>
+                <span><Droplets size={16} style={{ color: "#38bdf8" }} /> Nước uống</span>
+                <strong style={{ color: "#38bdf8", fontSize: "0.82rem" }}>{waterTotalMl}/{waterGoalMl} ml</strong>
               </div>
               <WaterDroplets totalMl={waterTotalMl} goalMl={waterGoalMl} />
-              <div className="nut-water-bar-track">
+              <div className="nut-water-bar-track" style={{ margin: "8px 0" }}>
                 <div className="nut-water-bar-fill" style={{ width: `${waterPercent}%` }} />
               </div>
               <div className="nut-water-btns">
@@ -3608,145 +3639,205 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
               </div>
             </div>
 
-            {/* Today summary */}
-            <div className="nut-card nut-today-meals">
-              <div className="nut-card-head">
-                <span><Flame size={18} style={{ color: "#f97316" }} /> Hôm nay</span>
-                <span className="nut-meal-count">{todayMeals.length} bữa</span>
-              </div>
-              {todayMeals.length === 0 ? (
-                <div className="nut-empty"><Utensils size={36} /><p>Chưa có bữa ăn nào.</p><button className="nut-cta" onClick={() => setActiveTab("addfood")}><CirclePlus size={15} /> Thêm món</button></div>
-              ) : (
-                <div className="nut-today-list">
-                  {todayMeals.slice(0, 5).map((m) => (
-                    <div key={m.id} className="nut-today-row">
-                      <span className="nut-today-type">{mealTypeLabels[m.mealType] ?? m.mealType}</span>
-                      <span className="nut-today-name">{m.name}</span>
-                      <span className="nut-today-kcal">{m.calories} kcal</span>
-                    </div>
-                  ))}
-                  {todayMeals.length > 5 && <p className="nut-more">+{todayMeals.length - 5} bữa khác</p>}
-                </div>
-              )}
-            </div>
-
-            {/* Plan card */}
-            <div className="nut-card nut-plan-card">
-              <div className="nut-card-head"><span><CheckCircle2 size={18} style={{ color: "#22c55e" }} /> Kế hoạch</span></div>
-              <p className="nut-plan-goal">{plan.goal}</p>
-              <p className="nut-plan-guidance">{plan.guidance}</p>
-              <div className="nut-plan-targets">
-                <div><Flame size={14} /><span>{plan.dailyCalories} kcal</span></div>
-                <div><span>P {plan.proteinGrams}g</span></div>
-                <div><span>C {plan.carbsGrams}g</span></div>
-                <div><span>F {plan.fatGrams}g</span></div>
-              </div>
-            </div>
-
-            {/* BMI card */}
             {profile.heightCm && profile.weightKg && (() => {
               const bmi = profile.weightKg / Math.pow(profile.heightCm / 100, 2);
               const bmiLabel = bmi < 18.5 ? "Thiếu cân" : bmi < 25 ? "Bình thường" : bmi < 30 ? "Thừa cân" : "Béo phì";
               const bmiColor = bmi < 18.5 ? "#3b82f6" : bmi < 25 ? "#22c55e" : bmi < 30 ? "#f59e0b" : "#ef4444";
               const bmiPct = Math.min(100, Math.max(5, ((bmi - 10) / 30) * 100));
               return (
-                <div className="nut-card nut-bmi-card">
-                  <div className="nut-card-head"><span>📊 Chỉ số BMI</span></div>
+                <div className="nut-card">
+                  <div className="nut-card-head"><span>📊 BMI</span>
+                    <span style={{ fontSize: "0.8rem", fontWeight: 700, color: bmiColor }}>{bmiLabel}</span>
+                  </div>
                   <div className="nut-bmi-main">
                     <span className="nut-bmi-value" style={{ color: bmiColor }}>{bmi.toFixed(1)}</span>
-                    <span className="nut-bmi-label" style={{ color: bmiColor }}>{bmiLabel}</span>
+                    <span style={{ fontSize: "0.78rem", color: "var(--text-2)" }}>kg/m²</span>
                   </div>
                   <div className="nut-bmi-bar-track">
                     <div className="nut-bmi-bar-fill" style={{ width: `${bmiPct}%`, background: bmiColor }} />
                   </div>
                   <div className="nut-bmi-ranges">
-                    <span style={{ color: "#3b82f6" }}>Thiếu &lt;18.5</span>
-                    <span style={{ color: "#22c55e" }}>Bình thường 18.5–25</span>
-                    <span style={{ color: "#f59e0b" }}>Thừa 25–30</span>
+                    <span style={{ color: "#3b82f6" }}>&lt;18.5</span>
+                    <span style={{ color: "#22c55e" }}>18.5–25</span>
+                    <span style={{ color: "#f59e0b" }}>25–30</span>
+                    <span style={{ color: "#ef4444" }}>&gt;30</span>
                   </div>
                 </div>
               );
             })()}
 
-            {/* Activity energy card */}
-            {todayBurnedCalories > 0 && (
-              <div className="nut-card nut-activity-card">
-                <div className="nut-card-head"><span><Flame size={18} style={{ color: "#f97316" }} /> Vận động hôm nay</span></div>
+            {(recommendation?.caloriesBurned ?? 0) > 0 && (
+              <div className="nut-card">
+                <div className="nut-card-head"><span><Flame size={16} style={{ color: "#f97316" }} /> Vận động</span></div>
                 <div className="nut-activity-row">
                   <div className="nut-activity-stat">
-                    <span className="nut-activity-val" style={{ color: "#f97316" }}>{todayBurnedCalories}</span>
-                    <span className="nut-activity-label">kcal đã đốt</span>
+                    <span className="nut-activity-val" style={{ color: "#f97316", fontSize: "1.35rem" }}>{recommendation!.caloriesBurned}</span>
+                    <span className="nut-activity-label">kcal đốt</span>
                   </div>
                   <div className="nut-activity-sep" />
                   <div className="nut-activity-stat">
-                    <span className="nut-activity-val" style={{ color: "#22c55e" }}>{totals.calories}</span>
-                    <span className="nut-activity-label">kcal đã ăn</span>
-                  </div>
-                  <div className="nut-activity-sep" />
-                  <div className="nut-activity-stat">
-                    <span className="nut-activity-val" style={{ color: recommendation ? (recommendation.remainingCalories > 0 ? "#3b82f6" : "#ef4444") : "#6b7280" }}>
-                      {recommendation ? Math.max(0, recommendation.remainingCalories) : plan.dailyCalories + todayBurnedCalories - totals.calories}
+                    <span className="nut-activity-val" style={{ color: recommendation ? (recommendation.remainingCalories > 0 ? "#3b82f6" : "#ef4444") : "#6b7280", fontSize: "1.35rem" }}>
+                      {recommendation ? Math.max(0, recommendation.remainingCalories) : plan.dailyCalories - totals.calories}
                     </span>
                     <span className="nut-activity-label">kcal còn cần</span>
                   </div>
                 </div>
-                {todayBurnedCalories >= 400 && (
-                  <div className="nut-activity-tip">
-                    💪 Hôm nay vận động nhiều — hãy bổ sung đủ protein và carb phục hồi!
-                  </div>
+                {(recommendation?.caloriesBurned ?? 0) >= 400 && (
+                  <div className="nut-activity-tip">💪 Vận động nhiều — bổ sung đủ protein & carb!</div>
                 )}
               </div>
             )}
+          </div>
 
-            {/* Recommendation card */}
+          {/* ── CENTER column: suggestions + progress ── */}
+          <div className="nut-col-center">
             {recommendation ? (
-              <div className="nut-card nut-rec-card">
-                <div className="nut-card-head">
-                  <span><Sparkles size={18} style={{ color: "#f97316" }} /> Gợi ý hôm nay</span>
-                  <span className="nut-rec-pct">{Math.round(recommendation.completionPercent)}% mục tiêu</span>
-                </div>
-                {recommendation.alerts.length > 0 && (
-                  <div className="nut-rec-alerts">
-                    {recommendation.alerts.map((alert, i) => (
-                      <div key={i} className="nut-rec-alert">💡 {alert}</div>
-                    ))}
-                  </div>
-                )}
-                <div className="nut-rec-remaining">
-                  <div className="nut-rec-macro"><span>Còn lại</span><strong style={{ color: recommendation.remainingCalories > 0 ? "#22c55e" : "#ef4444" }}>{Math.max(0, recommendation.remainingCalories)} kcal</strong></div>
-                  <div className="nut-rec-macro"><span>Protein</span><strong>{Math.max(0, recommendation.remainingProtein)}g</strong></div>
-                  <div className="nut-rec-macro"><span>Carb</span><strong>{Math.max(0, recommendation.remainingCarbs)}g</strong></div>
-                  <div className="nut-rec-macro"><span>Fat</span><strong>{Math.max(0, recommendation.remainingFat)}g</strong></div>
-                </div>
-                {recommendation.suggestedFoods.length > 0 && (
-                  <div className="nut-rec-suggest">
-                    <p>Gợi ý món ăn phù hợp:</p>
-                    <div className="nut-rec-foods">
+              <>
+                {recommendation.suggestedFoods.length > 0 ? (
+                  <div className="nut-card">
+                    <div className="nut-card-head">
+                      <span><Sparkles size={17} style={{ color: "#f97316" }} /> Gợi ý món ăn cho bạn</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-2)" }}>Bấm để thêm vào nhật ký</span>
+                    </div>
+                    <div className="nut-suggest-grid">
                       {recommendation.suggestedFoods.map((food) => (
-                        <button key={food.id} className="nut-rec-food-btn" onClick={() => { setFoodQuery(food.name); setActiveTab("addfood"); }}>
-                          <span className="nut-rec-food-name">{food.name}</span>
-                          <span className="nut-rec-food-meta">P {food.proteinGrams}g · {food.calories} kcal</span>
+                        <button key={food.id} className="nut-suggest-card"
+                          onClick={() => { setFoodQuery(food.name); setActiveTab("addfood"); }}>
+                          <div className="nut-suggest-name">{food.name}</div>
+                          <div className="nut-suggest-kcal">{food.calories}<span> kcal</span></div>
+                          <div className="nut-suggest-macros">
+                            <span style={{ color: "#f97316" }}>P {food.proteinGrams}g</span>
+                            <span style={{ color: "#3b82f6" }}>C {food.carbsGrams}g</span>
+                            <span style={{ color: "#a855f7" }}>F {food.fatGrams}g</span>
+                          </div>
                         </button>
                       ))}
                     </div>
                   </div>
-                )}
-                {recommendation.suggestedFoods.length === 0 && recommendation.remainingCalories <= 0 && (
-                  <div className="nut-rec-complete">
-                    <CheckCircle2 size={20} style={{ color: "#22c55e" }} /> Bạn đã đạt mục tiêu calo hôm nay!
+                ) : recommendation.remainingCalories <= 0 ? (
+                  <div className="nut-card" style={{ background: "linear-gradient(135deg,#f0fdf4,#dcfce7)", border: "1.5px solid #86efac" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 0" }}>
+                      <CheckCircle2 size={32} style={{ color: "#22c55e", flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#16a34a", fontSize: "1.05rem" }}>Hoàn thành mục tiêu hôm nay!</div>
+                        <div style={{ fontSize: "0.83rem", color: "#15803d", marginTop: 2 }}>Bạn đã đạt đủ calo. Duy trì phong độ nhé!</div>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+                ) : null}
+
+                <div className="nut-card">
+                  <div className="nut-card-head">
+                    <span><TrendingUp size={16} style={{ color: "#f97316" }} /> Tiến độ hôm nay</span>
+                    <span className="nut-rec-pct">{Math.round(recommendation.completionPercent)}% mục tiêu</span>
+                  </div>
+                  <div className="nut-recovery-score-row">
+                    <span>Điểm phục hồi</span>
+                    <div className="nut-recovery-score-bar">
+                      <div style={{
+                        width: `${recommendation.recoveryScore}%`,
+                        background: recommendation.recoveryScore >= 70 ? "#22c55e" : recommendation.recoveryScore >= 40 ? "#f59e0b" : "#ef4444"
+                      }} />
+                    </div>
+                    <strong style={{ color: recommendation.recoveryScore >= 70 ? "#22c55e" : recommendation.recoveryScore >= 40 ? "#f59e0b" : "#ef4444", whiteSpace: "nowrap" }}>
+                      {recommendation.recoveryScore}/100
+                    </strong>
+                  </div>
+                  <div className="nut-rec-remaining" style={{ marginTop: 14 }}>
+                    <div className="nut-rec-macro">
+                      <span>Còn lại</span>
+                      <strong style={{ color: recommendation.remainingCalories > 0 ? "#22c55e" : "#ef4444" }}>
+                        {Math.max(0, recommendation.remainingCalories)} kcal
+                      </strong>
+                    </div>
+                    <div className="nut-rec-macro"><span>Protein</span><strong>{Math.max(0, recommendation.remainingProtein)}g</strong></div>
+                    <div className="nut-rec-macro"><span>Carb</span><strong>{Math.max(0, recommendation.remainingCarbs)}g</strong></div>
+                    <div className="nut-rec-macro"><span>Fat</span><strong>{Math.max(0, recommendation.remainingFat)}g</strong></div>
+                  </div>
+                  {recommendation.alerts.length > 0 && (
+                    <div className="nut-rec-alerts" style={{ marginTop: 12 }}>
+                      {recommendation.alerts.map((alert, i) => (
+                        <div key={i} className="nut-rec-alert">💡 {alert}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
-              <div className="nut-card nut-rec-card nut-rec-loading">
-                <div className="nut-card-head"><span><Sparkles size={18} style={{ color: "#f97316" }} /> Gợi ý hôm nay</span></div>
-                <p style={{ color: "var(--text-2)", fontSize: "0.88rem" }}>Đang tải gợi ý dinh dưỡng...</p>
-                <button className="nut-auto-calc-btn" style={{ marginTop: 8 }} onClick={() => loadRecommendation()}>
+              <div className="nut-card">
+                <div className="nut-card-head"><span><Sparkles size={17} style={{ color: "#f97316" }} /> Gợi ý hôm nay</span></div>
+                <p style={{ color: "var(--text-2)", fontSize: "0.88rem", margin: "8px 0" }}>Đang tải gợi ý dinh dưỡng...</p>
+                <button className="nut-auto-calc-btn" onClick={() => loadRecommendation()}>
                   <Sparkles size={15} /> Tải lại gợi ý
                 </button>
               </div>
             )}
+
+            <div className="nut-card nut-plan-card">
+              <div className="nut-card-head"><span><CheckCircle2 size={16} style={{ color: "#22c55e" }} /> Kế hoạch của bạn</span></div>
+              <p className="nut-plan-goal">{plan.goal}</p>
+              <p className="nut-plan-guidance">{plan.guidance}</p>
+            </div>
           </div>
+
+          {/* ── RIGHT column: diary ── */}
+          <div className="nut-col-right">
+            <div className="nut-card nut-diary-side">
+              <div className="nut-card-head">
+                <span><Utensils size={16} style={{ color: "#f97316" }} /> Hôm nay</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span className="nut-meal-count">{todayMeals.length} bữa</span>
+                  <button className="nut-add-inline" onClick={() => setActiveTab("addfood")}>
+                    <CirclePlus size={13} /> Thêm
+                  </button>
+                </div>
+              </div>
+              {todayMeals.length === 0 ? (
+                <div className="nut-empty">
+                  <Utensils size={32} />
+                  <p>Chưa có bữa ăn nào.</p>
+                  <button className="nut-cta" onClick={() => setActiveTab("addfood")}><CirclePlus size={14} /> Thêm món</button>
+                </div>
+              ) : (
+                <>
+                  <div className="nut-today-list">
+                    {todayMeals.slice(0, 10).map((m) => (
+                      <div key={m.id} className="nut-today-row">
+                        <span className="nut-today-type">{mealTypeLabels[m.mealType] ?? m.mealType}</span>
+                        <span className="nut-today-name">{m.name}</span>
+                        <span className="nut-today-kcal">{m.calories} kcal</span>
+                      </div>
+                    ))}
+                    {todayMeals.length > 10 && <p className="nut-more">+{todayMeals.length - 10} bữa khác</p>}
+                  </div>
+                  <div className="nut-diary-total" style={{ margin: "8px 0 0" }}>
+                    <span>Tổng</span>
+                    <span style={{ flex: 1, fontSize: "0.78rem", color: "var(--text-2)" }}>{totals.protein}g P · {totals.carbs}g C</span>
+                    <strong>{totals.calories} kcal</strong>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="nut-card" style={{ marginTop: 0 }}>
+              <div className="nut-card-head"><span>🎯 Phân bổ macro</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Calories", val: `${totals.calories}/${plan.dailyCalories}`, unit: "kcal", color: "#f97316" },
+                  { label: "Protein",  val: `${totals.protein}/${plan.proteinGrams}`,   unit: "g",    color: "#f97316" },
+                  { label: "Carb",     val: `${totals.carbs}/${plan.carbsGrams}`,       unit: "g",    color: "#3b82f6" },
+                  { label: "Fat",      val: `${totals.fat}/${plan.fatGrams}`,           unit: "g",    color: "#a855f7" },
+                ].map(({ label, val, unit, color }) => (
+                  <div key={label} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px" }}>
+                    <div style={{ fontSize: "0.72rem", color: "var(--text-2)", marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontWeight: 800, fontSize: "0.95rem", color }}>{val}</div>
+                    <div style={{ fontSize: "0.68rem", color: "var(--text-2)" }}>{unit}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 
@@ -3997,6 +4088,88 @@ function NutritionPage({ token, userId, profile, plan, setPlan, meals, setMeals,
           </div>
         </div>
       )}
+
+      {/* ── History ── */}
+      {activeTab === "history" && (
+        <div className="nut-tab-content">
+          <div className="nut-analytics">
+            <div className="nut-card" style={{ marginBottom: 12 }}>
+              <div className="nut-card-head">
+                <span><CalendarDays size={18} style={{ color: "#f97316" }} /> Lịch sử dinh dưỡng 14 ngày</span>
+                <button className="nut-auto-calc-btn" style={{ padding: "4px 10px", fontSize: "0.8rem" }}
+                  onClick={() => {
+                    api<DailyNutritionAnalysis>(`/nutrition/${userId}/analysis/snapshot`, token, null as unknown as DailyNutritionAnalysis, { method: "POST" })
+                      .then(() => api<DailyNutritionAnalysis[]>(`/nutrition/${userId}/history?days=14`, token, []).then(setHistory));
+                  }}>
+                  Chụp nhanh hôm nay
+                </button>
+              </div>
+              {history.length === 0 ? (
+                <p style={{ color: "var(--text-2)", padding: "16px 0", fontSize: "0.9rem" }}>
+                  Chưa có dữ liệu lịch sử. Hệ thống tự động lưu vào 23:55 hàng ngày, hoặc bấm "Chụp nhanh hôm nay".
+                </p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--text-2)" }}>
+                        <th style={{ padding: "8px 6px", textAlign: "left" }}>Ngày</th>
+                        <th style={{ padding: "8px 6px", textAlign: "right" }}>Đã ăn</th>
+                        <th style={{ padding: "8px 6px", textAlign: "right" }}>Mục tiêu</th>
+                        <th style={{ padding: "8px 6px", textAlign: "right" }}>Đốt</th>
+                        <th style={{ padding: "8px 6px", textAlign: "right" }}>Protein</th>
+                        <th style={{ padding: "8px 6px", textAlign: "right" }}>Điểm PH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((h) => {
+                        const scoreColor = h.recoveryScore >= 70 ? "#22c55e" : h.recoveryScore >= 40 ? "#f59e0b" : "#ef4444";
+                        const pct = h.caloriesTarget > 0 ? Math.round(h.caloriesConsumed * 100 / h.caloriesTarget) : 0;
+                        return (
+                          <tr key={h.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                            <td style={{ padding: "8px 6px" }}>{h.date}</td>
+                            <td style={{ padding: "8px 6px", textAlign: "right" }}>
+                              <span style={{ color: pct > 110 ? "#ef4444" : pct >= 90 ? "#22c55e" : "inherit" }}>{h.caloriesConsumed}</span>
+                              <small style={{ color: "var(--text-2)", marginLeft: 3 }}>kcal</small>
+                            </td>
+                            <td style={{ padding: "8px 6px", textAlign: "right", color: "var(--text-2)" }}>{h.caloriesTarget}</td>
+                            <td style={{ padding: "8px 6px", textAlign: "right", color: "#f97316" }}>{h.caloriesBurned > 0 ? `${h.caloriesBurned}` : "—"}</td>
+                            <td style={{ padding: "8px 6px", textAlign: "right" }}>{h.proteinConsumed}g</td>
+                            <td style={{ padding: "8px 6px", textAlign: "right" }}>
+                              <span style={{ fontWeight: 700, color: scoreColor }}>{h.recoveryScore}</span>
+                              <span style={{ color: "var(--text-2)", fontSize: "0.78rem" }}>/100</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            {history.length > 0 && (
+              <div className="nut-card">
+                <div className="nut-card-head"><span>Xu hướng điểm phục hồi</span></div>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80, padding: "8px 0" }}>
+                  {[...history].reverse().map((h) => {
+                    const pct = h.recoveryScore;
+                    const color = pct >= 70 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444";
+                    return (
+                      <div key={h.id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                        <span style={{ fontSize: "0.65rem", color: "var(--text-2)" }}>{pct}</span>
+                        <div style={{ width: "100%", background: color, borderRadius: 3, height: `${Math.max(4, pct * 0.7)}px`, transition: "height 0.3s" }} />
+                        <span style={{ fontSize: "0.6rem", color: "var(--text-2)", whiteSpace: "nowrap" }}>{h.date.slice(5)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      </main>
 
       {/* Plan editor modal */}
       {showPlanEditor && createPortal(

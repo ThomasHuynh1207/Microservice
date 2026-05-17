@@ -5551,32 +5551,98 @@ label {
    NUTRITION MODULE — Modern fitness UI
    ══════════════════════════════════════════════════ */
 
+/* ── Page shell ── */
 .nut-page {
-  padding: 20px 24px 40px;
-  max-width: 900px;
-  margin: 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  flex-direction: row;
+  min-height: calc(100vh - 56px);
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.nut-header {
+/* ── Sidebar ── */
+.nut-sidenav {
+  width: 210px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 20px 12px 24px;
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
 }
-.nut-header-text h1 {
-  font-size: 1.6rem;
+.nut-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.05rem;
   font-weight: 800;
   color: var(--ink);
-  margin: 0 0 4px;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
 }
-.nut-header-text p {
-  font-size: 0.88rem;
+.nut-nav-date {
+  font-size: 0.72rem;
   color: var(--text-2);
-  margin: 0;
+  padding: 0 4px;
+  margin: 0 0 10px;
 }
+.nut-nav-links { display: flex; flex-direction: column; gap: 2px; }
+.nut-nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+  width: 100%;
+}
+.nut-nav-tab:hover { background: var(--surface-2); color: var(--ink); }
+.nut-nav-tab.active {
+  background: #fff7ed;
+  color: var(--orange);
+  font-weight: 700;
+}
+.nut-nav-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.nut-nav-plan-summary { display: flex; flex-direction: column; gap: 3px; padding: 0 4px; }
+.nut-nav-plan-label { font-size: 0.7rem; color: var(--text-2); }
+.nut-nav-plan-kcal { font-size: 1rem; font-weight: 800; color: var(--ink); }
+.nut-nav-plan-macro { font-size: 0.72rem; color: var(--text-2); }
+.nut-plan-btn-full { width: 100%; justify-content: center; font-size: 0.83rem; }
+
+/* ── Main content area ── */
+.nut-main {
+  flex: 1;
+  min-width: 0;
+  padding: 24px 28px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  animation: nutFadeIn 0.2s ease;
+}
+@keyframes nutFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ── Kept for backward compat (diary/addfood/analytics/ai tabs) ── */
+.nut-tab-content { animation: nutFadeIn 0.2s ease; }
 .nut-plan-btn {
   display: flex;
   align-items: center;
@@ -5593,16 +5659,8 @@ label {
 }
 .nut-plan-btn:hover { border-color: var(--orange); color: var(--orange); }
 
-.nut-tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--surface-2);
-  border-radius: 14px;
-  padding: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.nut-tabs::-webkit-scrollbar { display: none; }
+/* old horizontal tabs — hidden in web layout, kept for mobile fallback */
+.nut-tabs { display: none; }
 .nut-tab {
   display: flex;
   align-items: center;
@@ -5652,6 +5710,89 @@ label {
   gap: 6px;
 }
 
+/* 3-column web dashboard */
+.nut-dashboard-web {
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  gap: 16px;
+  align-items: start;
+}
+.nut-col-left  { display: flex; flex-direction: column; gap: 14px; }
+.nut-col-center { display: flex; flex-direction: column; gap: 14px; }
+.nut-col-right  { display: flex; flex-direction: column; gap: 14px; }
+
+/* Food suggestion grid — 2×2 */
+.nut-suggest-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+.nut-suggest-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: var(--surface);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.nut-suggest-card:hover {
+  border-color: var(--orange);
+  background: #fff7ed;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(249,115,22,.12);
+}
+.nut-suggest-name { font-size: 0.92rem; font-weight: 700; color: var(--ink); }
+.nut-suggest-kcal { font-size: 1.35rem; font-weight: 800; color: var(--orange); line-height: 1; }
+.nut-suggest-kcal span { font-size: 0.72rem; font-weight: 500; color: var(--text-2); }
+.nut-suggest-macros { display: flex; gap: 8px; font-size: 0.75rem; font-weight: 600; margin-top: 2px; }
+
+/* Recovery score row */
+.nut-recovery-score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-2);
+}
+.nut-recovery-score-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.nut-recovery-score-bar div {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+/* Diary side card */
+.nut-diary-side { flex: 1; }
+
+/* Inline add button */
+.nut-add-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: 1.5px solid var(--orange);
+  background: #fff7ed;
+  color: var(--orange);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.nut-add-inline:hover { background: var(--orange); color: #fff; }
+
+/* Legacy single-column dashboard (kept for mobile) */
 .nut-dashboard {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -6194,14 +6335,41 @@ label {
 .nut-auto-calc-btn:hover { background: var(--orange); color: #fff; }
 .nut-auto-calc-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-@media (max-width: 600px) {
-  .nut-page { padding: 14px 12px 32px; }
-  .nut-dashboard { grid-template-columns: 1fr; }
-  .nut-card-ring { flex-direction: column; align-items: flex-start; }
-  .nut-food-grid { grid-template-columns: repeat(2, 1fr); }
+/* ── Tablet breakpoint (1024px) ── */
+@media (max-width: 1024px) {
+  .nut-dashboard-web {
+    grid-template-columns: 240px 1fr;
+  }
+  .nut-col-right { grid-column: 1 / -1; }
+}
+
+/* ── Mobile breakpoint ── */
+@media (max-width: 768px) {
+  .nut-page { flex-direction: column; }
+  .nut-sidenav {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 12px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .nut-nav-brand, .nut-nav-date, .nut-nav-bottom { display: none; }
+  .nut-nav-links { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 4px; }
+  .nut-nav-tab { padding: 7px 12px; font-size: 0.8rem; white-space: nowrap; }
+  .nut-main { padding: 14px 12px 32px; }
+  .nut-dashboard-web { grid-template-columns: 1fr; }
+  .nut-suggest-grid { grid-template-columns: 1fr 1fr; }
   .nut-recovery-targets { grid-template-columns: repeat(2, 1fr); }
   .nut-avg-row { grid-template-columns: repeat(2, 1fr); }
   .nut-manual-macros { grid-template-columns: repeat(2, 1fr); }
   .nut-modal-grid { grid-template-columns: 1fr; }
   .nut-rec-remaining { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .nut-suggest-grid { grid-template-columns: 1fr; }
 }

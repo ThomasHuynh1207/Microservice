@@ -11,6 +11,8 @@ public interface ActivityRepository extends JpaRepository<Activity, Long> {
 
     List<Activity> findByUserIdAndStartedAtAfter(Long userId, LocalDateTime startedAt);
 
+    List<Activity> findByUserIdAndStartedAtBetween(Long userId, LocalDateTime from, LocalDateTime to);
+
     List<Activity> findAllByOrderByStartedAtDesc();
 
     long countBySportType(SportType sportType);

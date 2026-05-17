@@ -44,6 +44,12 @@ public class Food {
     @Column(length = 800)
     private String note;
 
+    @Column(length = 300)
+    private String tags;
+
+    private String goalType;
+    private String mealType;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -153,6 +159,13 @@ public class Food {
     public void setNote(String note) {
         this.note = note;
     }
+
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+    public String getGoalType() { return goalType; }
+    public void setGoalType(String goalType) { this.goalType = goalType; }
+    public String getMealType() { return mealType; }
+    public void setMealType(String mealType) { this.mealType = mealType; }
 
     public Instant getCreatedAt() {
         return createdAt;

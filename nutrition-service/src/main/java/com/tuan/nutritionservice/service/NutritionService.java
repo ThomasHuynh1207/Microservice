@@ -5,6 +5,8 @@ import com.tuan.nutritionservice.entity.FoodCategory;
 import com.tuan.nutritionservice.entity.MealEntry;
 import com.tuan.nutritionservice.entity.NutritionPlan;
 import com.tuan.nutritionservice.entity.WaterEntry;
+import com.tuan.nutritionservice.entity.DailyNutritionAnalysis;
+import com.tuan.nutritionservice.repository.DailyNutritionAnalysisRepository;
 import com.tuan.nutritionservice.repository.FoodCategoryRepository;
 import com.tuan.nutritionservice.repository.FoodRepository;
 import com.tuan.nutritionservice.repository.MealEntryRepository;
@@ -17,10 +19,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,17 +34,23 @@ public class NutritionService {
     private final WaterEntryRepository waterEntries;
     private final FoodRepository foods;
     private final FoodCategoryRepository categories;
+    private final DailyNutritionAnalysisRepository analysisRepo;
+    private final ActivityClient activityClient;
 
     public NutritionService(NutritionPlanRepository plans,
                             MealEntryRepository meals,
                             WaterEntryRepository waterEntries,
                             FoodRepository foods,
-                            FoodCategoryRepository categories) {
+                            FoodCategoryRepository categories,
+                            DailyNutritionAnalysisRepository analysisRepo,
+                            ActivityClient activityClient) {
         this.plans = plans;
         this.meals = meals;
         this.waterEntries = waterEntries;
         this.foods = foods;
         this.categories = categories;
+        this.analysisRepo = analysisRepo;
+        this.activityClient = activityClient;
     }
 
     @Transactional(readOnly = true)
@@ -286,17 +292,25 @@ public class NutritionService {
     }
 
     @Transactional
-    public NutritionRecommendation recommendation(Long userId, int caloriesBurned) {
+    public NutritionRecommendation recommendation(Long userId) {
         NutritionPlan plan = getOrCreatePlan(userId);
         NutritionSummary today = summary(userId);
 
+        int caloriesBurned = activityClient.fetchTodayCaloriesBurned(userId);
+
         // Net target increases by calories burned (need to eat back exercise calories)
         int netTarget = plan.getDailyCalories() + Math.max(0, caloriesBurned);
-        int remCal  = netTarget         - today.calories();
+        int remCal  = netTarget               - today.calories();
         int remPro  = plan.getProteinGrams()  - today.proteinGrams();
         int remCarb = plan.getCarbsGrams()    - today.carbsGrams();
         int remFat  = plan.getFatGrams()      - today.fatGrams();
         double pct  = netTarget > 0 ? Math.min(100, today.calories() * 100.0 / netTarget) : 0;
+
+        // Recovery score (0-100)
+        int recoveryScore = computeRecoveryScore(
+                plan.getProteinGrams(), today.proteinGrams(),
+                netTarget, today.calories(),
+                caloriesBurned);
 
         List<String> alerts = new ArrayList<>();
 
@@ -320,12 +334,69 @@ public class NutritionService {
         if (remPro > 25)  alerts.add("Thiếu " + remPro + "g protein — gợi ý: ức gà, trứng luộc, đậu hũ.");
         if (remCarb > 60 && remCal > 0) alerts.add("Thiếu " + remCarb + "g carb — gợi ý: cơm trắng, chuối, yến mạch.");
 
-        List<Food> suggestions = suggestFoods(remPro, remCarb, remCal, caloriesBurned);
+        List<Food> suggestions = suggestFoods(remPro, remCarb, remCal, caloriesBurned, plan.getGoal());
 
         return new NutritionRecommendation(
                 plan.getDailyCalories(), plan.getProteinGrams(), plan.getCarbsGrams(), plan.getFatGrams(),
                 today.calories(), today.proteinGrams(), today.carbsGrams(), today.fatGrams(),
-                remCal, remPro, remCarb, remFat, caloriesBurned, netTarget, pct, alerts, suggestions);
+                remCal, remPro, remCarb, remFat, caloriesBurned, netTarget,
+                recoveryScore, pct, alerts, suggestions);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyNutritionAnalysis> getHistory(Long userId, int days) {
+        LocalDate from = LocalDate.now().minusDays(days - 1);
+        LocalDate to = LocalDate.now();
+        return analysisRepo.findByUserIdAndDateBetweenOrderByDateDesc(userId, from, to);
+    }
+
+    @Transactional
+    public DailyNutritionAnalysis snapshotToday(Long userId) {
+        LocalDate today = LocalDate.now();
+        NutritionPlan plan = getOrCreatePlan(userId);
+        NutritionSummary todayNutrition = summary(userId);
+        int caloriesBurned = activityClient.fetchTodayCaloriesBurned(userId);
+        int recoveryScore = computeRecoveryScore(
+                plan.getProteinGrams(), todayNutrition.proteinGrams(),
+                plan.getDailyCalories() + caloriesBurned, todayNutrition.calories(),
+                caloriesBurned);
+
+        DailyNutritionAnalysis record = analysisRepo.findByUserIdAndDate(userId, today)
+                .orElseGet(() -> { DailyNutritionAnalysis r = new DailyNutritionAnalysis(); r.setUserId(userId); r.setDate(today); return r; });
+        record.setCaloriesTarget(plan.getDailyCalories());
+        record.setCaloriesConsumed(todayNutrition.calories());
+        record.setCaloriesBurned(caloriesBurned);
+        record.setProteinConsumed(todayNutrition.proteinGrams());
+        record.setCarbConsumed(todayNutrition.carbsGrams());
+        record.setFatConsumed(todayNutrition.fatGrams());
+        record.setRecoveryScore(recoveryScore);
+        record.setNutritionSummary(String.format(
+                "Ăn %d/%d kcal, đốt %d kcal, protein %d/%dg, điểm phục hồi %d/100",
+                todayNutrition.calories(), plan.getDailyCalories(), caloriesBurned,
+                todayNutrition.proteinGrams(), plan.getProteinGrams(), recoveryScore));
+        return analysisRepo.save(record);
+    }
+
+    private int computeRecoveryScore(int targetProtein, int consumedProtein,
+                                      int netCalTarget, int consumedCal,
+                                      int caloriesBurned) {
+        // Protein adequacy 0-40
+        int proteinScore = targetProtein > 0
+                ? Math.min(40, consumedProtein * 40 / targetProtein)
+                : 0;
+        // Calorie balance 0-40: penalise both under-eating and heavy over-eating
+        int calScore = 0;
+        if (netCalTarget > 0) {
+            double ratio = (double) consumedCal / netCalTarget;
+            if (ratio <= 1.0) {
+                calScore = (int) (ratio * 40);
+            } else {
+                calScore = Math.max(0, (int) (40 - (ratio - 1) * 40));
+            }
+        }
+        // Activity bonus 0-20
+        int activityBonus = Math.min(20, caloriesBurned / 30);
+        return Math.min(100, proteinScore + calScore + activityBonus);
     }
 
     @Transactional
@@ -337,16 +408,26 @@ public class NutritionService {
         meals.deleteById(mealId);
     }
 
-    private List<Food> suggestFoods(int remPro, int remCarb, int remCal, int caloriesBurned) {
+    private List<Food> suggestFoods(int remPro, int remCarb, int remCal, int caloriesBurned, String planGoal) {
         if (remCal <= 0) return List.of();
         int calCap = Math.max(200, Math.min(remCal, 900));
         boolean highActivity = caloriesBurned >= 400;
+        String goalLower = planGoal == null ? "" : planGoal.toLowerCase();
+        boolean weightLoss = goalLower.contains("gi") && goalLower.contains("m");
+        boolean muscleGain = goalLower.contains("t") && goalLower.contains("ng c");
+
         return foods.findAllByActiveTrueOrderByNameAsc().stream()
                 .filter(f -> f.getCalories() > 0 && f.getCalories() <= calCap)
                 .sorted(Comparator.comparingDouble((Food f) -> {
                     double score = 0;
-                    if (remPro  > 20 || highActivity) score += f.getProteinGrams() * 3.5;
-                    if (remCarb > 40 || highActivity) score += f.getCarbsGrams()   * 1.8;
+                    if (remPro  > 20 || highActivity || muscleGain) score += f.getProteinGrams() * 3.5;
+                    if (remCarb > 40 || highActivity) score += f.getCarbsGrams() * 1.8;
+                    if (weightLoss) score -= f.getFatGrams() * 0.5;
+                    // Tag-based bonus
+                    String tags = f.getTags() == null ? "" : f.getTags();
+                    if (highActivity && tags.contains("post-workout")) score += 15;
+                    if (muscleGain  && tags.contains("high-protein"))  score += 10;
+                    if (weightLoss  && tags.contains("low-fat"))        score += 8;
                     score += f.getCalories() * 0.03;
                     return -score;
                 }))
@@ -507,6 +588,9 @@ public class NutritionService {
         food.setNote(defaultText(request.note(), food.getNote() == null ? "" : food.getNote()));
         food.setImageUrl(defaultText(request.imageUrl(), food.getImageUrl() == null ? "" : food.getImageUrl()));
         food.setActive(request.active() == null || request.active());
+        if (request.tags() != null) food.setTags(request.tags());
+        if (request.goalType() != null) food.setGoalType(request.goalType());
+        if (request.mealType() != null) food.setMealType(request.mealType());
     }
 
     private NutritionPlan defaultPlan(Long userId) {
@@ -632,7 +716,10 @@ public class NutritionService {
             String aliases,
             String note,
             String imageUrl,
-            Boolean active
+            Boolean active,
+            String tags,
+            String goalType,
+            String mealType
     ) {
     }
 
@@ -654,6 +741,7 @@ public class NutritionService {
             int remainingCalories, int remainingProtein, int remainingCarbs, int remainingFat,
             int caloriesBurned,
             int netCaloriesTarget,
+            int recoveryScore,
             double completionPercent,
             List<String> alerts,
             List<Food> suggestedFoods

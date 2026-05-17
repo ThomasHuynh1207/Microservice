@@ -65,6 +65,27 @@ public class SampleDataInitializer {
             fixFoodName(foods, "Hat hanh nhan",   "Hạt hạnh nhân");
 
             // 4. Seed foods
+            applyFoodMeta(foods, "Phở bò",          "high-carb,post-workout",   "ENDURANCE",    "DINNER");
+            applyFoodMeta(foods, "Cơm tấm sườn",    "high-carb,high-protein",    "ENDURANCE",    "LUNCH");
+            applyFoodMeta(foods, "Bún bò Huế",       "high-carb",                 "ENDURANCE",    "LUNCH");
+            applyFoodMeta(foods, "Bánh mì trứng",    "balanced",                  "MAINTENANCE",  "BREAKFAST");
+            applyFoodMeta(foods, "Cơm gà xé",        "high-protein,post-workout", "MUSCLE_GAIN",  "LUNCH");
+            applyFoodMeta(foods, "Trứng gà luộc",    "high-protein,low-fat",      "MUSCLE_GAIN",  "SNACK");
+            applyFoodMeta(foods, "Whey protein",     "high-protein,post-workout", "MUSCLE_GAIN",  "POST_WORKOUT");
+            applyFoodMeta(foods, "Ức gà nướng",      "high-protein,low-fat",      "MUSCLE_GAIN",  "LUNCH");
+            applyFoodMeta(foods, "Sữa chua Hy Lạp",  "high-protein,probiotic",    "MUSCLE_GAIN",  "SNACK");
+            applyFoodMeta(foods, "Cá hồi nướng",     "high-protein,omega3",       "MUSCLE_GAIN",  "DINNER");
+            applyFoodMeta(foods, "Đậu hũ xào",       "high-protein,low-fat",      "WEIGHT_LOSS",  "DINNER");
+            applyFoodMeta(foods, "Cơm trắng",        "high-carb,pre-workout",     "ENDURANCE",    "LUNCH");
+            applyFoodMeta(foods, "Chuối",             "high-carb,pre-workout",     "ENDURANCE",    "PRE_WORKOUT");
+            applyFoodMeta(foods, "Yến mạch",          "high-carb,slow-release",    "ENDURANCE",    "BREAKFAST");
+            applyFoodMeta(foods, "Khoai lang",        "high-carb,low-gi",          "WEIGHT_LOSS",  "DINNER");
+            applyFoodMeta(foods, "Bánh mì đen",       "high-carb,high-fiber",      "MAINTENANCE",  "BREAKFAST");
+            applyFoodMeta(foods, "Hạt hạnh nhân",     "healthy-fat,high-protein",  "MAINTENANCE",  "SNACK");
+            applyFoodMeta(foods, "Thanh năng lượng",  "high-carb,pre-workout",     "ENDURANCE",    "PRE_WORKOUT");
+            applyFoodMeta(foods, "Sữa tươi ít béo",   "high-protein,post-workout", "MUSCLE_GAIN",  "POST_WORKOUT");
+            applyFoodMeta(foods, "Nước dừa tươi",     "electrolyte,low-calorie",   "ENDURANCE",    "POST_WORKOUT");
+
             seedFood(foods, food("Phở bò",          buaChinhCat, "1 tô",       520, 28, 65, 16,
                 "pho bo beef noodle soup", "Bổ sung carb và protein sau buổi chạy dài.",
                 "https://images.unsplash.com/photo-1555126634-323283e090fa?w=400&q=80"));
@@ -214,6 +235,19 @@ public class SampleDataInitializer {
             cat.setName(name); cat.setDescription(desc); cat.setIcon(icon);
             return cats.save(cat);
         });
+    }
+
+    private void applyFoodMeta(FoodRepository foods, String name, String tags, String goalType, String mealType) {
+        foods.findAllByOrderByNameAsc().stream()
+                .filter(f -> f.getName().equalsIgnoreCase(name))
+                .findFirst()
+                .ifPresent(f -> {
+                    boolean changed = false;
+                    if (f.getTags() == null || f.getTags().isBlank()) { f.setTags(tags); changed = true; }
+                    if (f.getGoalType() == null || f.getGoalType().isBlank()) { f.setGoalType(goalType); changed = true; }
+                    if (f.getMealType() == null || f.getMealType().isBlank()) { f.setMealType(mealType); changed = true; }
+                    if (changed) foods.save(f);
+                });
     }
 
     private void fixFoodName(FoodRepository foods, String oldName, String newName) {

@@ -12,6 +12,7 @@ import com.tuan.activityservice.service.ActivityService.ChallengeView;
 import com.tuan.activityservice.service.ActivityService.LeaderboardEntry;
 import com.tuan.activityservice.service.ActivityService.ActivityFinishResult;
 import com.tuan.activityservice.service.ActivityService.FinishActivityRequest;
+import com.tuan.activityservice.service.ActivityService.TodaySummary;
 import com.tuan.activityservice.service.ActivityService.GpsPointRequest;
 import com.tuan.activityservice.service.ActivityService.RouteCreateRequest;
 import com.tuan.activityservice.service.ActivityService.StartActivityRequest;
@@ -42,6 +43,11 @@ public class ActivityController {
     @GetMapping("/user/{userId}")
     List<Activity> userActivities(@PathVariable Long userId) {
         return activityService.userActivities(userId);
+    }
+
+    @GetMapping("/today/{userId}")
+    TodaySummary todayStats(@PathVariable Long userId) {
+        return activityService.todayStats(userId);
     }
 
     @GetMapping("/{id}")
