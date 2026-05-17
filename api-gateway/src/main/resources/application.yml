@@ -45,10 +45,10 @@ spring:
             - Path=/api/ai/**
           filters:
             - JwtAuthenticationFilter
-        - id: community-service
-          uri: lb://community-service
+        - id: notification-service
+          uri: lb://notification-service
           predicates:
-            - Path=/api/community/**
+            - Path=/api/notifications/**
           filters:
             - JwtAuthenticationFilter
         - id: payment-service

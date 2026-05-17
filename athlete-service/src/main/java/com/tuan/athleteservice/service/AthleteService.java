@@ -106,6 +106,7 @@ public class AthleteService {
         if (request.dateOfBirth() != null) profile.setDateOfBirth(request.dateOfBirth());
         if (request.heightCm() != null) profile.setHeightCm(request.heightCm());
         if (request.weightKg() != null) profile.setWeightKg(request.weightKg());
+        if (request.avatarUrl() != null && !request.avatarUrl().isBlank()) profile.setAvatarUrl(request.avatarUrl());
         if (complete) {
             profile.setCompletedOnboarding(true);
         }
@@ -138,7 +139,8 @@ public class AthleteService {
             String gender,
             String dateOfBirth,
             Integer heightCm,
-            Double weightKg
+            Double weightKg,
+            String avatarUrl
     ) {
     }
 

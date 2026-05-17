@@ -6,6 +6,7 @@ import {
   Bike,
   Bot,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronDown,
   CirclePlus,
@@ -56,10 +57,21 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import type { ReactNode } from "react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-type Page = "dashboard" | "training" | "maps" | "nutrition" | "community" | "ai" | "admin";
+type Page = "dashboard" | "training" | "maps" | "nutrition" | "ai" | "admin" | "profile";
+
+type AppNotification = {
+  id: number;
+  userId: number;
+  type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  actionUrl: string | null;
+  createdAt: string;
+};
 type Sport = "RUN" | "SWIM";
 type ActivityMode = "RUN" | "TRAIL" | "WALK" | "HIKE" | "BIKE" | "MTB" | "SWIM" | "GYM" | "YOGA" | "OTHER";
 type ChallengeSport = Sport | "MIXED";
@@ -89,6 +101,7 @@ type AthleteProfile = {
   dateOfBirth?: string;
   heightCm?: number;
   weightKg?: number;
+  avatarUrl?: string;
 };
 
 type FitnessActivity = {
@@ -253,39 +266,6 @@ type Challenge = {
   joined: boolean;
 };
 
-type Post = {
-  id: number;
-  userId: number;
-  authorName: string;
-  title?: string;
-  content: string;
-  sportType?: Sport;
-  distanceMeters?: number;
-  durationMinutes?: number;
-  calories?: number;
-  routeName?: string;
-  likes: number;
-  liked: boolean;
-  comments: PostComment[];
-  commentCount: number;
-  createdAt: string;
-};
-
-type PostComment = {
-  id: number;
-  userId?: number;
-  authorName: string;
-  content: string;
-  createdAt: string;
-};
-
-type FollowSummary = {
-  userId: number;
-  displayName: string;
-  city?: string;
-  primaryGoal?: string;
-  experienceLevel?: string;
-};
 
 type Badge = {
   id: string;
@@ -421,18 +401,17 @@ export default function App() {
   const [routes, setRoutes] = useState<RouteItem[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<number[]>([]);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [following, setFollowing] = useState<number[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isPremium, setIsPremium] = useState(() => {
     const stored = readStorage<Session | null>("runswim-session", null);
     return stored?.premiumActive ?? false;
   });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast] = useState("");
   const [connectedDevices, setConnectedDevices] = useState<string[]>(() => readStorage("runswim-devices", []));
   const [trainingPlan, setTrainingPlan] = useState<TrainingDay[]>(() => readStorage("runswim-plan", []));
@@ -442,6 +421,9 @@ export default function App() {
     if (!session) return;
     localStorage.setItem("runswim-session", JSON.stringify(session));
     void loadDashboard(session);
+    void fetchNotifications(session);
+    const interval = window.setInterval(() => void fetchNotifications(session), 30_000);
+    return () => window.clearInterval(interval);
   }, [session]);
 
   useEffect(() => localStorage.setItem("runswim-devices", JSON.stringify(connectedDevices)), [connectedDevices]);
@@ -452,23 +434,39 @@ export default function App() {
     window.setTimeout(() => setToast(""), 2500);
   }
 
-  type PostApiView = {
-    id: number; userId: number; athleteName: string; title?: string; content: string;
-    sportType?: Sport; distanceMeters?: number; durationMinutes?: number; calories?: number;
-    routeName?: string; createdAt: string; likeCount: number; commentCount: number; likedByMe: boolean;
-  };
+  async function fetchNotifications(current: Session) {
+    const [data, countData] = await Promise.all([
+      api<AppNotification[]>("/notifications", current.token, []),
+      api<{ count: number }>("/notifications/unread-count", current.token, { count: 0 }),
+    ]);
+    setNotifications(Array.isArray(data) ? data : []);
+    setUnreadCount(countData?.count ?? 0);
+  }
 
-  function mapPost(v: PostApiView): Post {
-    return {
-      id: v.id, userId: v.userId, authorName: v.athleteName, title: v.title,
-      content: v.content, sportType: v.sportType, distanceMeters: v.distanceMeters,
-      durationMinutes: v.durationMinutes, calories: v.calories, routeName: v.routeName, createdAt: v.createdAt,
-      likes: v.likeCount, liked: v.likedByMe, commentCount: v.commentCount, comments: [],
-    };
+  async function handleMarkRead(id: number) {
+    if (!session) return;
+    await api<AppNotification>(`/notifications/${id}/read`, session.token, null as unknown as AppNotification, { method: "PUT" });
+    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+  }
+
+  async function handleMarkAllRead() {
+    if (!session) return;
+    await api<unknown>("/notifications/read-all", session.token, null, { method: "PUT" });
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
+  }
+
+  async function handleDeleteNotification(id: number) {
+    if (!session) return;
+    const wasUnread = notifications.find((n) => n.id === id)?.read === false;
+    await api<unknown>(`/notifications/${id}`, session.token, null, { method: "DELETE" });
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (wasUnread) setUnreadCount((prev) => Math.max(0, prev - 1));
   }
 
   async function loadDashboard(current: Session) {
-    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, postData, followingData, sportDefsData] = await Promise.all([
+    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, sportDefsData] = await Promise.all([
       api<AthleteProfile>(`/athletes/${current.userId}`, current.token, fallbackProfile),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
@@ -477,8 +475,6 @@ export default function App() {
       api<RouteItem[]>("/activities/routes", current.token, []),
       api<number[]>(`/activities/routes/saved/${current.userId}`, current.token, []),
       api<Challenge[]>(`/activities/challenges/user/${current.userId}`, current.token, []),
-      api<PostApiView[]>(`/community/posts?userId=${current.userId}`, current.token, []),
-      api<FollowSummary[]>(`/athletes/${current.userId}/following`, current.token, []),
       api<SportDef[]>("/activities/sports", current.token, []),
     ]);
     const safeActivities = Array.isArray(activityData) ? activityData : [];
@@ -490,8 +486,6 @@ export default function App() {
     setRoutes(Array.isArray(routesData) ? routesData : []);
     setSavedRoutes(Array.isArray(savedRouteData) ? savedRouteData : []);
     setChallenges(Array.isArray(challengeData) ? challengeData : []);
-    setPosts(Array.isArray(postData) ? postData.map(mapPost) : []);
-    setFollowing(Array.isArray(followingData) ? followingData.map((item) => item.userId) : []);
     if (Array.isArray(sportDefsData) && sportDefsData.length > 0) setSportDefs(sportDefsData);
   }
 
@@ -547,130 +541,6 @@ export default function App() {
     setChallenges(refreshed);
   }
 
-  async function likePost(postId: number) {
-    if (!session) return;
-    setPosts((prev) => prev.map((p) =>
-      p.id === postId ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p
-    ));
-    try {
-      const res = await apiStrict<{ liked: boolean; likeCount: number }>(
-        `/community/posts/${postId}/likes/${session.userId}`, session.token, { method: "POST" }
-      );
-      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, liked: res.liked, likes: res.likeCount } : p));
-    } catch { /* keep optimistic */ }
-  }
-
-  async function addComment(postId: number, content: string) {
-    if (!session) return;
-    const optimistic: PostComment = { id: Date.now(), userId: session.userId, authorName: profile.displayName, content, createdAt: new Date().toISOString() };
-    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: [...p.comments, optimistic], commentCount: p.commentCount + 1 } : p));
-    try {
-      const saved = await apiStrict<{ id: number; userId: number; displayName: string; content: string; createdAt: string }>(
-        `/community/posts/${postId}/comments`, session.token,
-        { method: "POST", body: JSON.stringify({ userId: session.userId, displayName: profile.displayName, content }) }
-      );
-      const mapped: PostComment = { id: saved.id, userId: saved.userId, authorName: saved.displayName, content: saved.content, createdAt: saved.createdAt };
-      setPosts((prev) => prev.map((p) =>
-        p.id === postId ? { ...p, comments: [...p.comments.filter((c) => c.id !== optimistic.id), mapped] } : p
-      ));
-    } catch { /* keep optimistic */ }
-  }
-
-  async function toggleFollow(userId: number) {
-    if (!session) return;
-    const isFollowing = following.includes(userId);
-    setFollowing((prev) => isFollowing ? prev.filter((id) => id !== userId) : [...prev, userId]);
-    notify(isFollowing ? "Đã bỏ theo dõi." : "Đã theo dõi người dùng.");
-    try {
-      const path = `/athletes/${session.userId}/follow/${userId}`;
-      await apiStrict(path, session.token, { method: isFollowing ? "DELETE" : "POST" });
-    } catch { /* keep optimistic */ }
-  }
-
-  async function createCommunityPost(content: string, activityId?: number) {
-    if (!session) return;
-    const linkedActivity = activityId ? activities.find((activity) => activity.id === activityId) : undefined;
-    const cleanContent = content.trim();
-    if (!cleanContent && !linkedActivity) return;
-    const optimistic: Post = {
-      id: Date.now(),
-      userId: session.userId,
-      authorName: profile.displayName,
-      title: linkedActivity?.title,
-      content: cleanContent || `Vừa hoàn thành ${linkedActivity?.title}.`,
-      sportType: linkedActivity?.sportType,
-      distanceMeters: linkedActivity?.distanceMeters,
-      durationMinutes: linkedActivity?.durationMinutes,
-      calories: linkedActivity?.calories,
-      routeName: linkedActivity?.routeName,
-      likes: 0,
-      liked: false,
-      comments: [],
-      commentCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setPosts((prev) => [optimistic, ...prev]);
-    notify(linkedActivity ? "Đã đăng bài kèm hoạt động." : "Đã đăng bài lên cộng đồng.");
-    try {
-      const saved = await apiStrict<PostApiView>("/community/posts", session.token, {
-        method: "POST",
-        body: JSON.stringify({
-          userId: session.userId,
-          athleteName: profile.displayName,
-          title: linkedActivity?.title,
-          content: optimistic.content,
-          sportType: linkedActivity?.sportType,
-          distanceMeters: linkedActivity?.distanceMeters,
-          durationMinutes: linkedActivity?.durationMinutes,
-          calories: linkedActivity?.calories,
-          routeName: linkedActivity?.routeName,
-          visibility: "PUBLIC",
-        }),
-      });
-      setPosts((prev) => [mapPost(saved), ...prev.filter((p) => p.id !== optimistic.id)]);
-    } catch {
-      notify("Đang giữ bài viết tạm thời, chưa đồng bộ được với máy chủ.");
-    }
-  }
-
-  async function shareActivity(activity: FitnessActivity) {
-    if (!session) return;
-    const optimistic: Post = {
-      id: Date.now(),
-      userId: session.userId,
-      authorName: profile.displayName,
-      title: activity.title,
-      content: `Vừa hoàn thành ${activity.title}! ${formatDistance(activity)} trong ${activity.durationMinutes} phút.`,
-      sportType: activity.sportType,
-      distanceMeters: activity.distanceMeters,
-      durationMinutes: activity.durationMinutes,
-      routeName: activity.routeName,
-      likes: 0, liked: false, comments: [], commentCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setPosts((prev) => [optimistic, ...prev]);
-    setPage("community");
-    notify("Đã chia sẻ hoạt động lên cộng đồng.");
-    try {
-      const saved = await apiStrict<PostApiView>("/community/posts", session.token, {
-        method: "POST",
-        body: JSON.stringify({
-          userId: session.userId,
-          athleteName: profile.displayName,
-          title: activity.title,
-          content: optimistic.content,
-          sportType: activity.sportType,
-          distanceMeters: activity.distanceMeters,
-          durationMinutes: activity.durationMinutes,
-          calories: activity.calories,
-          routeName: activity.routeName,
-          visibility: "PUBLIC",
-        }),
-      });
-      setPosts((prev) => [mapPost(saved), ...prev.filter((p) => p.id !== optimistic.id)]);
-    } catch { /* keep optimistic */ }
-  }
-
   function logout() {
     localStorage.removeItem("runswim-session");
     setSession(null);
@@ -690,12 +560,16 @@ export default function App() {
         routes={routes}
         profileMenuOpen={profileMenuOpen}
         notificationsOpen={notificationsOpen}
+        notifications={notifications}
+        unreadCount={unreadCount}
         onAdd={() => setShowActivityModal(true)}
         onTrial={() => setShowPremiumModal(true)}
         onProfileMenu={() => setProfileMenuOpen(!profileMenuOpen)}
         onNotifications={() => setNotificationsOpen(!notificationsOpen)}
-        onEditProfile={() => { setShowProfileModal(true); setProfileMenuOpen(false); }}
         onLogout={logout}
+        onMarkRead={handleMarkRead}
+        onMarkAllRead={handleMarkAllRead}
+        onDeleteNotification={handleDeleteNotification}
       />
 
       <section className={`strava-main${page === "maps" ? " maps-fullscreen" : ""}${page === "training" ? " training-page" : ""}`}>
@@ -704,13 +578,12 @@ export default function App() {
             profile={profile}
             stats={stats}
             activities={activities}
-            connectedDevices={connectedDevices}
             trainingPlan={trainingPlan}
             nutritionPlan={nutritionPlan}
             challenges={challenges}
+            meals={meals}
             setPage={setPage}
             onAddActivity={() => setShowActivityModal(true)}
-            onConnectDevice={() => setShowDeviceModal(true)}
             onTrial={() => setShowPremiumModal(true)}
             isPremium={isPremium}
           />
@@ -759,25 +632,19 @@ export default function App() {
           />
         )}
         {page === "ai" && <AiCoachPage token={session.token} userId={session.userId} stats={stats} />}
-        {page === "admin" && session.role === "ADMIN" && (
-          <AdminPage token={session.token} userId={session.userId} notify={notify} />
-        )}
-        {page === "community" && (
-          <CommunityHubPage
-            posts={posts}
-            setPosts={setPosts}
-            token={session.token}
-            currentUserId={session.userId}
+        {page === "profile" && (
+          <ProfilePage
             profile={profile}
             activities={activities}
-            following={following}
-            onLike={likePost}
-            onComment={addComment}
-            onFollow={toggleFollow}
-            onCreatePost={createCommunityPost}
-            onShareActivity={shareActivity}
+            stats={stats}
+            token={session.token}
+            setProfile={setProfile}
+            notify={notify}
             onAddActivity={() => setShowActivityModal(true)}
           />
+        )}
+        {page === "admin" && session.role === "ADMIN" && (
+          <AdminPage token={session.token} userId={session.userId} notify={notify} />
         )}
       </section>
 
@@ -807,15 +674,6 @@ export default function App() {
           token={session.token}
         />
       )}
-      {showProfileModal && (
-        <ProfileModal
-          token={session.token}
-          profile={profile}
-          setProfile={setProfile}
-          onClose={() => setShowProfileModal(false)}
-          notify={notify}
-        />
-      )}
       {toast && <div className="toast">{toast}</div>}
     </main>
   );
@@ -829,12 +687,16 @@ function AppHeader({
   routes,
   profileMenuOpen,
   notificationsOpen,
+  notifications,
+  unreadCount,
   onAdd,
   onTrial,
   onProfileMenu,
   onNotifications,
-  onEditProfile,
   onLogout,
+  onMarkRead,
+  onMarkAllRead,
+  onDeleteNotification,
 }: {
   page: Page;
   setPage: (page: Page) => void;
@@ -843,12 +705,16 @@ function AppHeader({
   routes: RouteItem[];
   profileMenuOpen: boolean;
   notificationsOpen: boolean;
+  notifications: AppNotification[];
+  unreadCount: number;
   onAdd: () => void;
   onTrial: () => void;
   onProfileMenu: () => void;
   onNotifications: () => void;
-  onEditProfile: () => void;
   onLogout: () => void;
+  onMarkRead: (id: number) => void;
+  onMarkAllRead: () => void;
+  onDeleteNotification: (id: number) => void;
 }) {
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -856,8 +722,8 @@ function AppHeader({
     ...routes.map((r) => ({ label: r.name, hint: `${r.place ?? "GPS"} - ${formatRouteDistance(r)}`, page: "maps" as Page })),
     { label: "Kế hoạch dinh dưỡng", hint: "Calories, macro, nước", page: "nutrition" as Page },
     { label: "AI Coach", hint: "Hỏi về lịch tập và phục hồi", page: "ai" as Page },
-    { label: "Cộng đồng", hint: "Feed hoạt động bạn bè", page: "community" as Page },
     { label: "Tập luyện", hint: "GPS ghi buổi tập, lịch 7 ngày", page: "training" as Page },
+    { label: "Hồ sơ", hint: "Thông tin cá nhân, avatar", page: "profile" as Page },
   ]
     .filter((r) => `${r.label} ${r.hint}`.toLowerCase().includes(query.toLowerCase()))
     .slice(0, 5);
@@ -868,7 +734,6 @@ function AppHeader({
     { id: "training", label: "Tập luyện", icon: <CalendarDays size={17} /> },
     { id: "maps", label: "Bản đồ", icon: <Map size={17} /> },
     { id: "nutrition", label: "Dinh dưỡng", icon: <Salad size={17} /> },
-    { id: "community", label: "Cộng đồng", icon: <Users size={17} /> },
     { id: "ai", label: "AI Coach", icon: <Bot size={17} /> },
     ...(isAdmin ? [{ id: "admin" as Page, label: "Admin", icon: <Settings size={17} /> }] : []),
   ];
@@ -913,11 +778,15 @@ function AppHeader({
         </nav>
         <button className="trial-button" onClick={onTrial}>Bắt đầu dùng thử</button>
         <div className="header-actions">
-          <button className="icon-button" onClick={onNotifications} aria-label="Thông báo">
+          <button className="icon-button notif-bell-btn" onClick={onNotifications} aria-label="Thông báo">
             <Bell size={21} />
+            {unreadCount > 0 && <span className="notif-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>}
           </button>
           <button className="avatar-button" onClick={onProfileMenu} aria-label="Tài khoản">
-            <span>{initials(profile.displayName)}</span>
+            {profile.avatarUrl
+              ? <img src={profile.avatarUrl} alt={profile.displayName} className="avatar-btn-img" />
+              : <span>{initials(profile.displayName)}</span>
+            }
             <ChevronDown size={16} />
           </button>
           <button className="add-button" onClick={onAdd} aria-label="Thêm hoạt động">
@@ -925,11 +794,59 @@ function AppHeader({
           </button>
         </div>
         {notificationsOpen && (
-          <div className="popover notifications-popover">
-            <strong>Thông báo luyện tập</strong>
-            <span>Hôm nay nên bơi kỹ thuật nhẹ hoặc nghỉ phục hồi.</span>
-            <span>Bạn chưa ghi hoạt động nào trong tuần này.</span>
-            <span>Challenge tháng 5 đang chờ bạn tham gia!</span>
+          <div className="notif-panel">
+            <div className="notif-panel-head">
+              <span>Thông báo</span>
+              {unreadCount > 0 && (
+                <button className="notif-mark-all" onClick={onMarkAllRead}>Đọc tất cả</button>
+              )}
+            </div>
+            <div className="notif-list">
+              {notifications.length === 0 ? (
+                <div className="notif-empty">
+                  <Bell size={32} />
+                  <p>Chưa có thông báo nào</p>
+                </div>
+              ) : notifications.map((n) => (
+                <div
+                  key={n.id}
+                  className={`notif-item${n.read ? "" : " notif-unread"}`}
+                  onClick={() => {
+                    if (!n.read) onMarkRead(n.id);
+                    if (n.actionUrl) {
+                      const pageMap: Record<string, Page> = {
+                        "/training": "training", "/nutrition": "nutrition",
+                        "/ai": "ai", "/profile": "profile", "/dashboard": "dashboard",
+                        "/maps": "maps",
+                      };
+                      const target = pageMap[n.actionUrl];
+                      if (target) { setPage(target); onNotifications(); }
+                    }
+                  }}
+                >
+                  <div className="notif-icon-wrap" data-type={n.type}>
+                    {n.type === "WORKOUT" && <Activity size={16} />}
+                    {n.type === "NUTRITION" && <Salad size={16} />}
+                    {n.type === "AI_INSIGHT" && <Bot size={16} />}
+                    {n.type === "PAYMENT" && <CreditCard size={16} />}
+                    {n.type === "SYSTEM" && <Bell size={16} />}
+                  </div>
+                  <div className="notif-body">
+                    <p className="notif-title">{n.title}</p>
+                    <p className="notif-msg">{n.message}</p>
+                    <small className="notif-time">{formatTimeAgo(n.createdAt)}</small>
+                  </div>
+                  {!n.read && <span className="notif-dot" />}
+                  <button
+                    className="notif-del-btn"
+                    onClick={(e) => { e.stopPropagation(); onDeleteNotification(n.id); }}
+                    aria-label="Xóa"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {profileMenuOpen && (
@@ -965,7 +882,7 @@ function AppHeader({
             </div>
 
             <div className="profile-popover-actions">
-              <button className="profile-popover-primary" onClick={onEditProfile}><Settings size={16} /> Sửa hồ sơ</button>
+              <button className="profile-popover-primary" onClick={() => { setPage("profile"); onProfileMenu(); }}><User size={16} /> Hồ sơ của tôi</button>
               <button className="profile-popover-secondary" onClick={onLogout}><LogOut size={16} /> Đăng xuất</button>
             </div>
           </div>
@@ -976,46 +893,60 @@ function AppHeader({
 }
 
 function DashboardPage({
-  profile, stats, activities, connectedDevices, trainingPlan, nutritionPlan, challenges,
-  setPage, onAddActivity, onConnectDevice, onTrial, isPremium,
+  profile, stats, activities, trainingPlan, nutritionPlan, challenges, meals,
+  setPage, onAddActivity, onTrial, isPremium,
 }: {
   profile: AthleteProfile;
   stats: Stats;
   activities: FitnessActivity[];
-  connectedDevices: string[];
   trainingPlan: TrainingDay[];
   nutritionPlan: NutritionPlan;
   challenges: Challenge[];
+  meals: MealEntry[];
   setPage: (page: Page) => void;
   onAddActivity: () => void;
-  onConnectDevice: () => void;
   onTrial: () => void;
   isPremium: boolean;
 }) {
   const nextWorkout = trainingPlan.find((d) => !d.done) ?? trainingPlan[0];
   const joinedChallenges = challenges.filter((c) => c.joined);
   const weeklyData = buildWeeklyChartData(activities);
+  const todayCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const todayProtein = meals.reduce((s, m) => s + m.proteinGrams, 0);
+  const calProgress = Math.min(100, (todayCalories / Math.max(1, nutritionPlan.dailyCalories)) * 100);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+  const today = new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "long" });
+  const firstName = profile.displayName.split(" ").slice(-1)[0];
 
   return (
     <div className="dashboard-layout">
+      <div className="dash-hero">
+        <div className="dash-hero-left">
+          <p className="dash-greeting">{greeting}, <strong>{firstName}</strong>!</p>
+          <p className="dash-date">{today}{profile.city ? ` · ${profile.city}` : ""}</p>
+          <div className="dash-hero-chips">
+            <span><Flame size={13} /> {stats.weeklySessions} buổi tập</span>
+            <span><Route size={13} /> {stats.weeklyRunKm.toFixed(1)} km chạy</span>
+            <span><Watch size={13} /> {stats.weeklyMinutes} phút</span>
+          </div>
+        </div>
+        <div className="dash-hero-right">
+          <button className="dash-btn-primary" onClick={onAddActivity}><CirclePlus size={16} /> Ghi hoạt động</button>
+          <button className="dash-btn-outline" onClick={() => setPage("ai")}><Bot size={16} /> Hỏi AI Coach</button>
+        </div>
+      </div>
+
       <aside className="left-rail">
-        <ProfileSummary profile={profile} stats={stats} activities={activities} onAddActivity={onAddActivity} />
+        <ProfileSummary profile={profile} stats={stats} activities={activities} onAddActivity={onAddActivity} setPage={setPage} />
         <SportSummaryCard stats={stats} profile={profile} onTrial={onTrial} />
       </aside>
 
       <section className="center-column">
-        <GettingStartedCard
-          hasActivities={activities.length > 0}
-          hasDevice={connectedDevices.length > 0}
-          onAddActivity={onAddActivity}
-          onConnectDevice={onConnectDevice}
-          onTraining={() => setPage("training")}
-          onNutrition={() => setPage("nutrition")}
-          onAi={() => setPage("ai")}
-        />
+        <FeatureHub setPage={setPage} onAddActivity={onAddActivity} />
         {nextWorkout && <TrainingTodayCard nextWorkout={nextWorkout} onTraining={() => setPage("training")} onAddActivity={onAddActivity} />}
 
-        {/* Thống kê tuần - hiển thị trực tiếp trên trang chủ */}
         <article className="log-card">
           <div className="section-head">
             <div>
@@ -1023,9 +954,8 @@ function DashboardPage({
               <h2>Quãng đường 7 ngày qua</h2>
             </div>
             <div className="dashboard-stat-chips">
-              <span className="stat-chip run"><Flame size={13} /> {stats.weeklyRunKm.toFixed(1)} km chạy</span>
-              <span className="stat-chip swim"><Waves size={13} /> {stats.weeklySwimMeters} m bơi</span>
-              <span className="stat-chip time"><CalendarDays size={13} /> {stats.weeklyMinutes} phút</span>
+              <span className="stat-chip run"><Flame size={13} /> {stats.weeklyRunKm.toFixed(1)} km</span>
+              <span className="stat-chip swim"><Waves size={13} /> {stats.weeklySwimMeters} m</span>
             </div>
           </div>
           <div style={{ marginTop: "16px" }}>
@@ -1050,10 +980,7 @@ function DashboardPage({
         {joinedChallenges.length > 0 && (
           <article className="log-card">
             <div className="section-head">
-              <div>
-                <span className="section-kicker">Đang tham gia</span>
-                <h2>Thử thách của bạn</h2>
-              </div>
+              <div><span className="section-kicker">Đang tham gia</span><h2>Thử thách</h2></div>
             </div>
             <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
               {joinedChallenges.slice(0, 2).map((c) => (
@@ -1071,40 +998,94 @@ function DashboardPage({
             </div>
           </article>
         )}
-        <ActivityLog activities={activities} onAddActivity={onAddActivity} onCommunity={() => setPage("community")} />
+        <ActivityLog activities={activities} onAddActivity={onAddActivity} />
       </section>
 
       <aside className="right-rail">
+        <article className="rail-card">
+          <div className="rail-card-head">
+            <Salad size={20} color="#ca8a04" />
+            <strong>Dinh dưỡng hôm nay</strong>
+          </div>
+          <div className="rail-nutrition-nums">
+            <div><span className="rail-big-num">{todayCalories}</span><small>kcal đã ăn</small></div>
+            <div><span className="rail-big-num rail-muted">{nutritionPlan.dailyCalories}</span><small>mục tiêu</small></div>
+          </div>
+          <div className="progress-line" style={{ margin: "8px 0 4px" }}>
+            <span style={{ width: `${calProgress}%`, background: calProgress > 105 ? "var(--red, #ef4444)" : "#ca8a04" }} />
+          </div>
+          <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0 0 8px" }}>
+            Protein: {todayProtein}g / {nutritionPlan.proteinGrams}g
+          </p>
+          <button className="link-row" onClick={() => setPage("nutrition")}>Xem kế hoạch dinh dưỡng →</button>
+        </article>
         <RailCard icon={<Bot size={24} />} title="AI Coach" action="Hỏi AI" onClick={() => setPage("ai")}>
           Phân tích tải tập tuần này và đề xuất buổi chạy/bơi tiếp theo.
         </RailCard>
-        <RailCard icon={<Utensils size={24} />} title="Dinh dưỡng" action="Xem kế hoạch" onClick={() => setPage("nutrition")}>
-          {nutritionPlan.guidance}
-        </RailCard>
-        <RailCard icon={<Users size={24} />} title="Cộng đồng" action="Xem feed" onClick={() => setPage("community")}>
-          Bạn bè đang chia sẻ hoạt động mới. Tham gia và theo dõi tiến độ của nhau.
-        </RailCard>
-        <RailCard icon={<Map size={24} />} title="Bản đồ" action="Mở bản đồ" onClick={() => setPage("maps")}>
+        <RailCard icon={<Map size={24} />} title="Bản đồ & Tuyến đường" action="Mở bản đồ" onClick={() => setPage("maps")}>
           Khám phá tuyến chạy và địa điểm bơi gần bạn.
+        </RailCard>
+        <RailCard icon={<Trophy size={24} />} title="Thử thách" action="Xem thử thách" onClick={() => setPage("training")}>
+          Tham gia thử thách cá nhân và theo dõi tiến độ hàng tuần.
         </RailCard>
       </aside>
     </div>
   );
 }
 
-function ProfileSummary({ profile, stats, activities, onAddActivity }: { profile: AthleteProfile; stats: Stats; activities: FitnessActivity[]; onAddActivity: () => void }) {
+function FeatureHub({ setPage, onAddActivity }: { setPage: (p: Page) => void; onAddActivity: () => void }) {
+  const features = [
+    { icon: <CalendarDays size={26} />, label: "Lịch tập luyện", sub: "7-day plan, GPS tracking", color: "#1f6feb", bg: "rgba(31,111,235,0.09)", onClick: () => setPage("training") },
+    { icon: <Map size={26} />, label: "Bản đồ & Tuyến", sub: "Tuyến chạy, bơi, GPS", color: "#0f766e", bg: "rgba(15,118,110,0.09)", onClick: () => setPage("maps") },
+    { icon: <Salad size={26} />, label: "Dinh dưỡng", sub: "Calories, macro, nước", color: "#ca8a04", bg: "rgba(202,138,4,0.09)", onClick: () => setPage("nutrition") },
+    { icon: <Bot size={26} />, label: "AI Coach", sub: "Phân tích & gợi ý tập", color: "#9333ea", bg: "rgba(147,51,234,0.09)", onClick: () => setPage("ai") },
+    { icon: <Trophy size={26} />, label: "Thử thách", sub: "Theo dõi tiến độ cá nhân", color: "#ef4444", bg: "rgba(239,68,68,0.09)", onClick: () => setPage("training") },
+    { icon: <Zap size={26} />, label: "Ghi ngay", sub: "Nhật ký buổi tập mới", color: "#10b981", bg: "rgba(16,185,129,0.09)", onClick: onAddActivity },
+  ];
+  return (
+    <article className="log-card feat-hub">
+      <div className="section-head" style={{ marginBottom: "16px" }}>
+        <div><span className="section-kicker">Khám phá</span><h2>Tính năng</h2></div>
+      </div>
+      <div className="feat-grid">
+        {features.map((f) => (
+          <button key={f.label} className="feat-card" onClick={f.onClick}>
+            <div className="feat-icon" style={{ background: f.bg, color: f.color }}>{f.icon}</div>
+            <strong>{f.label}</strong>
+            <span>{f.sub}</span>
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ProfileSummary({ profile, stats, activities, onAddActivity, setPage }: {
+  profile: AthleteProfile; stats: Stats; activities: FitnessActivity[];
+  onAddActivity: () => void; setPage: (p: Page) => void;
+}) {
+  const totalHours = Math.round(activities.reduce((s, a) => s + a.durationMinutes, 0) / 60);
   return (
     <article className="profile-card">
-      <div className="profile-avatar">{initials(profile.displayName)}</div>
+      {profile.avatarUrl
+        ? <img src={profile.avatarUrl} alt={profile.displayName} className="profile-avatar" style={{ objectFit: "cover" }} />
+        : <div className="profile-avatar">{initials(profile.displayName)}</div>
+      }
       <h2>{profile.displayName}</h2>
-      <span>{profile.city}</span>
+      <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+        {profile.city && <><MapPin size={11} style={{ display: "inline", verticalAlign: "middle" }} /> {profile.city}</>}
+      </span>
+      {profile.primaryGoal && <span className="profile-goal-badge">{profile.primaryGoal}</span>}
       <div className="profile-numbers">
         <div><strong>{activities.length}</strong><span>Hoạt động</span></div>
-        <div><strong>{stats.weeklyRunKm.toFixed(1)}</strong><span>Km chạy</span></div>
-        <div><strong>{stats.weeklySwimMeters}</strong><span>M bơi</span></div>
+        <div><strong>{stats.weeklyRunKm.toFixed(1)}</strong><span>km/tuần</span></div>
+        <div><strong>{totalHours}h</strong><span>Tổng giờ</span></div>
       </div>
-      <button className="link-row" onClick={onAddActivity}>
-        <span>Thêm hoạt động.</span> Ghi lại buổi chạy hoặc bơi.
+      <button className="link-row" onClick={() => setPage("profile")}>
+        Xem hồ sơ đầy đủ →
+      </button>
+      <button className="link-row" onClick={onAddActivity} style={{ borderTop: "none", paddingTop: 0 }}>
+        <CirclePlus size={13} style={{ display: "inline" }} /> Ghi hoạt động mới
       </button>
     </article>
   );
@@ -1189,7 +1170,7 @@ function TrainingTodayCard({ nextWorkout, onTraining, onAddActivity }: { nextWor
   );
 }
 
-function ActivityLog({ activities, onAddActivity, onCommunity }: { activities: FitnessActivity[]; onAddActivity: () => void; onCommunity: () => void }) {
+function ActivityLog({ activities, onAddActivity }: { activities: FitnessActivity[]; onAddActivity: () => void }) {
   return (
     <article className="log-card">
       <div className="section-head">
@@ -1197,10 +1178,7 @@ function ActivityLog({ activities, onAddActivity, onCommunity }: { activities: F
           <span className="section-kicker">Nhật ký</span>
           <h2>Hoạt động gần đây</h2>
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button className="outline-button" onClick={onCommunity}><Users size={16} /> Cộng đồng</button>
-          <button className="outline-button" onClick={onAddActivity}><CirclePlus size={18} /> Thêm</button>
-        </div>
+        <button className="outline-button" onClick={onAddActivity}><CirclePlus size={18} /> Thêm</button>
       </div>
       {activities.length === 0 ? (
         <div className="empty-log">
@@ -4265,444 +4243,6 @@ function AiCoachPage({ token, userId, stats }: { token: string; userId: number; 
   );
 }
 
-function CommunityHubPage({
-  posts,
-  setPosts,
-  token,
-  currentUserId,
-  profile,
-  activities,
-  following,
-  onLike,
-  onComment,
-  onFollow,
-  onCreatePost,
-  onShareActivity,
-  onAddActivity,
-}: {
-  posts: Post[];
-  setPosts: (fn: (prev: Post[]) => Post[]) => void;
-  token: string;
-  currentUserId: number;
-  profile: AthleteProfile;
-  activities: FitnessActivity[];
-  following: number[];
-  onLike: (postId: number) => Promise<void>;
-  onComment: (postId: number, content: string) => Promise<void>;
-  onFollow: (userId: number) => void | Promise<void>;
-  onCreatePost: (content: string, activityId?: number) => Promise<void>;
-  onShareActivity: (activity: FitnessActivity) => Promise<void>;
-  onAddActivity: () => void;
-}) {
-  const [expandedComments, setExpandedComments] = useState<number[]>([]);
-  const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
-  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({});
-  const [feedFilter, setFeedFilter] = useState<"all" | "following" | "mine" | "run" | "swim">("all");
-  const [query, setQuery] = useState("");
-  const [composeText, setComposeText] = useState("");
-  const [selectedActivityId, setSelectedActivityId] = useState("");
-  const [posting, setPosting] = useState(false);
-
-  const recentActivities = useMemo(() => activities.slice(0, 5), [activities]);
-  const totalLikes = useMemo(() => posts.reduce((sum, post) => sum + post.likes, 0), [posts]);
-  const filteredPosts = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return posts.filter((post) => {
-      const matchesFilter =
-        feedFilter === "all" ||
-        (feedFilter === "following" && following.includes(post.userId)) ||
-        (feedFilter === "mine" && post.userId === currentUserId) ||
-        (feedFilter === "run" && post.sportType === "RUN") ||
-        (feedFilter === "swim" && post.sportType === "SWIM");
-      const haystack = `${post.authorName} ${post.title ?? ""} ${post.content} ${post.routeName ?? ""}`.toLowerCase();
-      return matchesFilter && (!normalized || haystack.includes(normalized));
-    });
-  }, [posts, query, feedFilter, following, currentUserId]);
-
-  async function submitPost(e: FormEvent) {
-    e.preventDefault();
-    const activityId = selectedActivityId ? Number(selectedActivityId) : undefined;
-    if (!composeText.trim() && !activityId) return;
-    setPosting(true);
-    await onCreatePost(composeText, activityId);
-    setComposeText("");
-    setSelectedActivityId("");
-    setPosting(false);
-  }
-
-  async function toggleComments(postId: number) {
-    if (expandedComments.includes(postId)) {
-      setExpandedComments((prev) => prev.filter((id) => id !== postId));
-      return;
-    }
-    setExpandedComments((prev) => [...prev, postId]);
-    const post = posts.find((p) => p.id === postId);
-    if (!post || post.comments.length > 0) return;
-    setLoadingComments((prev) => ({ ...prev, [postId]: true }));
-    try {
-      const loaded = await apiStrict<{ id: number; userId: number; displayName: string; content: string; createdAt: string }[]>(
-        `/community/posts/${postId}/comments`, token, { method: "GET" }
-      );
-      const mapped: PostComment[] = loaded.map((c) => ({ id: c.id, userId: c.userId, authorName: c.displayName, content: c.content, createdAt: c.createdAt }));
-      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: mapped } : p));
-    } catch { /* ignore */ } finally {
-      setLoadingComments((prev) => ({ ...prev, [postId]: false }));
-    }
-  }
-
-  async function submitComment(postId: number) {
-    const text = commentInputs[postId]?.trim();
-    if (!text) return;
-    setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
-    await onComment(postId, text);
-    if (!expandedComments.includes(postId)) setExpandedComments((prev) => [...prev, postId]);
-  }
-
-  return (
-    <div className="community-page community-page-wide">
-      <section className="page-title">
-        <span className="section-kicker">Cộng đồng</span>
-        <h1>Feed hoạt động</h1>
-        <p>Chia sẻ buổi tập, theo dõi bạn bè và cùng nhau tiến bộ mỗi ngày.</p>
-        <div className="page-actions">
-          <button className="orange-button" onClick={onAddActivity}><CirclePlus size={18} /> Ghi hoạt động</button>
-        </div>
-      </section>
-
-      <div className="community-layout">
-        <div className="community-feed-column">
-          <form className="community-composer" onSubmit={(e) => void submitPost(e)}>
-            <div className="post-header">
-              <div className="post-avatar-small">{initials(profile.displayName)}</div>
-              <div className="post-meta">
-                <strong>{profile.displayName}</strong>
-                <span>Đăng cập nhật hoặc gắn một buổi tập đã hoàn thành</span>
-              </div>
-            </div>
-            <textarea
-              value={composeText}
-              onChange={(e) => setComposeText(e.target.value)}
-              placeholder="Buổi tập hôm nay của bạn thế nào?"
-            />
-            <div className="composer-actions">
-              <select value={selectedActivityId} onChange={(e) => setSelectedActivityId(e.target.value)}>
-                <option value="">Không gắn hoạt động</option>
-                {recentActivities.map((activity) => (
-                  <option key={activity.id} value={activity.id}>
-                    {activity.title} · {formatDistance(activity)} · {activity.durationMinutes} phút
-                  </option>
-                ))}
-              </select>
-              <button className="orange-button" disabled={posting || (!composeText.trim() && !selectedActivityId)}>
-                <Send size={16} /> Đăng bài
-              </button>
-            </div>
-          </form>
-
-          <div className="community-toolbar">
-            <div className="community-search">
-              <Search size={15} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm bài, người hoặc lộ trình..." />
-            </div>
-            <div className="community-filter-tabs">
-              {[
-                ["all", "Tất cả"],
-                ["following", "Đang theo dõi"],
-                ["mine", "Của tôi"],
-                ["run", "Chạy"],
-                ["swim", "Bơi"],
-              ].map(([id, label]) => (
-                <button
-                  key={id}
-                  className={feedFilter === id ? "active" : ""}
-                  onClick={() => setFeedFilter(id as typeof feedFilter)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="community-feed">
-            {filteredPosts.length === 0 ? (
-              <div className="empty-log community-empty">
-                <Users size={44} />
-                <h3>Chưa có bài phù hợp</h3>
-                <p>Hãy ghi một hoạt động hoặc đổi bộ lọc để xem thêm cập nhật.</p>
-                <button className="orange-button" onClick={onAddActivity}>Ghi hoạt động</button>
-              </div>
-            ) : filteredPosts.map((post) => (
-              <article key={post.id} className="post-card">
-                <div className="post-header">
-                  <div className="post-avatar-small">{initials(post.authorName)}</div>
-                  <div className="post-meta">
-                    <strong>{post.authorName}</strong>
-                    <span>{formatTimeAgo(post.createdAt)}</span>
-                  </div>
-                  {post.userId !== currentUserId && (
-                    <button
-                      className={following.includes(post.userId) ? "outline-button" : "orange-button"}
-                      style={{ marginLeft: "auto", minHeight: "32px", padding: "0 12px", fontSize: "0.84rem" }}
-                      onClick={() => onFollow(post.userId)}
-                    >
-                      {following.includes(post.userId) ? <><UserCheck size={14} /> Đang theo dõi</> : <><UserPlus size={14} /> Theo dõi</>}
-                    </button>
-                  )}
-                </div>
-
-                <p className="post-content">{post.content}</p>
-
-                {post.title && post.distanceMeters !== undefined && (
-                  <div className="post-activity-badge">
-                    <div className="post-activity-title">
-                      {post.sportType && <SportPill sport={post.sportType} />}
-                      <strong>{post.title}</strong>
-                    </div>
-                    <div className="post-activity-metrics">
-                      <span>{post.sportType === "RUN" ? `${(post.distanceMeters / 1000).toFixed(1)} km` : `${Math.round(post.distanceMeters)} m`}</span>
-                      {post.durationMinutes && <span>{post.durationMinutes} phút</span>}
-                      {post.calories && <span>{post.calories} kcal</span>}
-                      {post.routeName && <span>{post.routeName}</span>}
-                    </div>
-                  </div>
-                )}
-
-                <div className="post-actions">
-                  <button className={post.liked ? "post-like-btn liked" : "post-like-btn"} onClick={() => void onLike(post.id)}>
-                    <Heart size={16} fill={post.liked ? "currentColor" : "none"} />
-                    {post.likes} Thích
-                  </button>
-                  <button className="post-action-btn" onClick={() => void toggleComments(post.id)}>
-                    <MessageCircle size={16} />
-                    {post.commentCount ?? post.comments.length} Bình luận
-                  </button>
-                  <button className="post-action-btn" onClick={() => void navigator.clipboard?.writeText(`${post.authorName}: ${post.content}`)}>
-                    <Share2 size={16} />
-                    Sao chép
-                  </button>
-                </div>
-
-                {expandedComments.includes(post.id) && (
-                  <div className="comments-section">
-                    {loadingComments[post.id] ? (
-                      <p style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "8px 0" }}>Đang tải bình luận...</p>
-                    ) : post.comments.length === 0 ? (
-                      <p style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "8px 0" }}>Chưa có bình luận.</p>
-                    ) : post.comments.map((c) => (
-                      <div key={c.id} className="comment-item">
-                        <div className="comment-avatar">{initials(c.authorName)}</div>
-                        <div className="comment-body">
-                          <strong>{c.authorName}</strong>
-                          <span>{c.content}</span>
-                          <small>{formatTimeAgo(c.createdAt)}</small>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="comment-form">
-                      <input
-                        placeholder="Viết bình luận..."
-                        value={commentInputs[post.id] ?? ""}
-                        onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                        onKeyDown={(e) => { if (e.key === "Enter") void submitComment(post.id); }}
-                      />
-                      <button className="orange-button icon-only" onClick={() => void submitComment(post.id)} aria-label="Gửi">
-                        <Send size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <aside className="community-side">
-          <div className="community-side-panel">
-            <h2>Tổng quan</h2>
-            <div className="community-stat-grid">
-              <div><strong>{posts.length}</strong><span>Bài viết</span></div>
-              <div><strong>{totalLikes}</strong><span>Lượt thích</span></div>
-              <div><strong>{following.length}</strong><span>Đang theo dõi</span></div>
-              <div><strong>{activities.length}</strong><span>Hoạt động</span></div>
-            </div>
-          </div>
-
-          <div className="community-side-panel">
-            <div className="section-head">
-              <h2>Hoạt động gần đây</h2>
-              <button className="outline-button" onClick={onAddActivity}><CirclePlus size={15} /> Ghi mới</button>
-            </div>
-            <div className="share-activity-list">
-              {recentActivities.length === 0 ? (
-                <p className="muted-note">Chưa có hoạt động để chia sẻ.</p>
-              ) : recentActivities.map((activity) => (
-                <div key={activity.id} className="share-activity-item">
-                  <div>
-                    <SportPill sport={activity.sportType} />
-                    <strong>{activity.title}</strong>
-                    <span>{formatDistance(activity)} · {activity.durationMinutes} phút</span>
-                  </div>
-                  <button className="outline-button" onClick={() => void onShareActivity(activity)}>
-                    <Share2 size={15} /> Đăng
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="community-side-panel">
-            <h2>Đang nổi bật</h2>
-            <div className="community-trend-list">
-              {posts.slice().sort((a, b) => b.likes + b.commentCount - (a.likes + a.commentCount)).slice(0, 3).map((post) => (
-                <button key={post.id} onClick={() => setQuery(post.authorName)}>
-                  <strong>{post.authorName}</strong>
-                  <span>{post.title ?? post.content.slice(0, 42)}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function CommunityPage({
-  posts, setPosts, token, currentUserId, following, onLike, onComment, onFollow, onAddActivity,
-}: {
-  posts: Post[];
-  setPosts: (fn: (prev: Post[]) => Post[]) => void;
-  token: string;
-  currentUserId: number;
-  following: number[];
-  onLike: (postId: number) => Promise<void>;
-  onComment: (postId: number, content: string) => Promise<void>;
-  onFollow: (userId: number) => void | Promise<void>;
-  onAddActivity: () => void;
-}) {
-  const [expandedComments, setExpandedComments] = useState<number[]>([]);
-  const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
-  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({});
-
-  async function toggleComments(postId: number) {
-    if (expandedComments.includes(postId)) {
-      setExpandedComments((prev) => prev.filter((id) => id !== postId));
-      return;
-    }
-    setExpandedComments((prev) => [...prev, postId]);
-    const post = posts.find((p) => p.id === postId);
-    if (!post || post.comments.length > 0) return;
-    setLoadingComments((prev) => ({ ...prev, [postId]: true }));
-    try {
-      const loaded = await apiStrict<{ id: number; userId: number; displayName: string; content: string; createdAt: string }[]>(
-        `/community/posts/${postId}/comments`, token, { method: "GET" }
-      );
-      const mapped: PostComment[] = loaded.map((c) => ({ id: c.id, userId: c.userId, authorName: c.displayName, content: c.content, createdAt: c.createdAt }));
-      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: mapped } : p));
-    } catch { /* ignore */ } finally {
-      setLoadingComments((prev) => ({ ...prev, [postId]: false }));
-    }
-  }
-
-  async function submitComment(postId: number) {
-    const text = commentInputs[postId]?.trim();
-    if (!text) return;
-    setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
-    await onComment(postId, text);
-    if (!expandedComments.includes(postId)) setExpandedComments((prev) => [...prev, postId]);
-  }
-
-  return (
-    <div className="community-page">
-      <section className="page-title">
-        <span className="section-kicker">Cộng đồng</span>
-        <h1>Feed hoạt động</h1>
-        <p>Chia sẻ buổi tập, theo dõi bạn bè và cùng nhau tiến bộ mỗi ngày.</p>
-        <div className="page-actions">
-          <button className="orange-button" onClick={onAddActivity}><CirclePlus size={18} /> Chia sẻ hoạt động</button>
-        </div>
-      </section>
-
-      <div className="community-feed">
-        {posts.map((post) => (
-          <article key={post.id} className="post-card">
-            <div className="post-header">
-              <div className="post-avatar-small">{initials(post.authorName)}</div>
-              <div className="post-meta">
-                <strong>{post.authorName}</strong>
-                <span>{formatTimeAgo(post.createdAt)}</span>
-              </div>
-              {post.userId !== currentUserId && (
-                <button
-                  className={following.includes(post.userId) ? "outline-button" : "orange-button"}
-                  style={{ marginLeft: "auto", minHeight: "32px", padding: "0 12px", fontSize: "0.84rem" }}
-                  onClick={() => onFollow(post.userId)}
-                >
-                  {following.includes(post.userId) ? <><UserCheck size={14} /> Đang theo dõi</> : <><UserPlus size={14} /> Theo dõi</>}
-                </button>
-              )}
-            </div>
-
-            <p className="post-content">{post.content}</p>
-
-            {post.title && post.distanceMeters !== undefined && (
-              <div className="post-activity-badge">
-                {post.sportType && <SportPill sport={post.sportType} />}
-                <span><strong>{post.title}</strong></span>
-                <span>{post.sportType === "RUN" ? `${(post.distanceMeters / 1000).toFixed(1)} km` : `${post.distanceMeters} m`}</span>
-                {post.durationMinutes && <span>{post.durationMinutes} phút</span>}
-              </div>
-            )}
-
-            <div className="post-actions">
-              <button className={post.liked ? "post-like-btn liked" : "post-like-btn"} onClick={() => void onLike(post.id)}>
-                <Heart size={16} fill={post.liked ? "currentColor" : "none"} />
-                {post.likes} Thích
-              </button>
-              <button className="post-action-btn" onClick={() => void toggleComments(post.id)}>
-                <MessageCircle size={16} />
-                {post.commentCount ?? post.comments.length} Bình luận
-              </button>
-              <button className="post-action-btn">
-                <Share2 size={16} />
-                Chia sẻ
-              </button>
-            </div>
-
-            {expandedComments.includes(post.id) && (
-              <div className="comments-section">
-                {loadingComments[post.id] ? (
-                  <p style={{ color: "var(--muted)", fontSize: "0.85rem", padding: "8px 0" }}>Đang tải bình luận...</p>
-                ) : post.comments.map((c) => (
-                  <div key={c.id} className="comment-item">
-                    <div className="comment-avatar">{initials(c.authorName)}</div>
-                    <div className="comment-body">
-                      <strong>{c.authorName}</strong>
-                      <span>{c.content}</span>
-                      <small>{formatTimeAgo(c.createdAt)}</small>
-                    </div>
-                  </div>
-                ))}
-                <div className="comment-form">
-                  <input
-                    placeholder="Viết bình luận..."
-                    value={commentInputs[post.id] ?? ""}
-                    onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === "Enter") void submitComment(post.id); }}
-                  />
-                  <button className="orange-button icon-only" onClick={() => void submitComment(post.id)} aria-label="Gửi">
-                    <Send size={14} />
-                  </button>
-                </div>
-              </div>
-            )}
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function AnalyticsPage({ activities, stats, isPremium, onTrial }: {
   activities: FitnessActivity[];
@@ -4850,128 +4390,394 @@ function AnalyticsPage({ activities, stats, isPremium, onTrial }: {
   );
 }
 
-function ProfilePage({ profile, activities, stats, onEditProfile, onAddActivity, onShare }: {
+
+function InfoRow({ label, value, empty = "Chưa cập nhật" }: { label: string; value?: string | number | null; empty?: string }) {
+  return (
+    <div className="prf-info-row">
+      <span className="prf-info-label">{label}</span>
+      <strong className={!value ? "prf-empty" : ""}>{value || empty}</strong>
+    </div>
+  );
+}
+
+function ProfilePage({
+  profile, activities, stats, token, setProfile, notify, onAddActivity,
+}: {
   profile: AthleteProfile;
   activities: FitnessActivity[];
   stats: Stats;
-  onEditProfile: () => void;
+  token: string;
+  setProfile: (p: AthleteProfile) => void;
+  notify: (msg: string) => void;
   onAddActivity: () => void;
-  onShare: (activity: FitnessActivity) => void;
 }) {
-  const badges = useMemo(() => computeBadges(activities), [activities]);
-  const earnedBadges = badges.filter((b) => b.earned);
+  const [tab, setTab] = useState<"profile" | "goals" | "badges" | "history">("profile");
+  const [editing, setEditing] = useState<null | "basic" | "physical" | "goals">(null);
+  const [draft, setDraft] = useState({ ...profile });
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft({ ...profile }); }, [profile]);
+
+  const bmiDraft = draft.heightCm && draft.weightKg
+    ? draft.weightKg / ((draft.heightCm / 100) ** 2) : null;
+  const bmiLabelDraft = bmiDraft == null ? "" : bmiDraft < 18.5 ? "Thiếu cân" : bmiDraft < 25 ? "Bình thường" : bmiDraft < 30 ? "Thừa cân" : "Béo phì";
+  const bmiClassDraft = bmiDraft == null ? "" : bmiDraft < 18.5 ? "bmi-low" : bmiDraft < 25 ? "bmi-normal" : "bmi-high";
+
+  const bmi = profile.heightCm && profile.weightKg
+    ? profile.weightKg / ((profile.heightCm / 100) ** 2) : null;
+  const bmiLabel = bmi == null ? "" : bmi < 18.5 ? "Thiếu cân" : bmi < 25 ? "Bình thường" : bmi < 30 ? "Thừa cân" : "Béo phì";
+  const bmiClass = bmi == null ? "" : bmi < 18.5 ? "bmi-low" : bmi < 25 ? "bmi-normal" : "bmi-high";
 
   const totalRunKm = activities.filter((a) => a.sportType === "RUN").reduce((s, a) => s + a.distanceMeters / 1000, 0);
   const totalSwimM = activities.filter((a) => a.sportType === "SWIM").reduce((s, a) => s + a.distanceMeters, 0);
   const totalMinutes = activities.reduce((s, a) => s + a.durationMinutes, 0);
+  const badges = useMemo(() => computeBadges(activities), [activities]);
+  const earnedBadges = badges.filter((b) => b.earned);
+  const runPct = Math.min(100, (stats.weeklyRunKm / Math.max(1, profile.weeklyRunGoalKm)) * 100);
+  const swimPct = Math.min(100, (stats.weeklySwimMeters / Math.max(1, profile.weeklySwimGoalMeters)) * 100);
+
+  const expMap: Record<string, string> = {
+    BEGINNER: "Mới bắt đầu", INTERMEDIATE: "Trung bình",
+    ADVANCED: "Nâng cao", ELITE: "Đỉnh cao",
+  };
+
+  function buildPayload(d: AthleteProfile) {
+    return {
+      displayName: d.displayName, city: d.city, bio: d.bio,
+      primaryGoal: d.primaryGoal, experienceLevel: d.experienceLevel,
+      gender: d.gender, dateOfBirth: d.dateOfBirth,
+      heightCm: d.heightCm, weightKg: d.weightKg,
+      preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
+      nutritionFocus: d.nutritionFocus,
+      weeklyRunGoalKm: d.weeklyRunGoalKm,
+      weeklySwimGoalMeters: d.weeklySwimGoalMeters,
+      visibility: "PUBLIC", avatarUrl: d.avatarUrl,
+    };
+  }
+
+  async function handleAvatarFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    try {
+      const dataUrl = await compressImage(file, 240, 0.82);
+      const saved = await api<AthleteProfile>(`/athletes/${profile.userId}`, token, profile, {
+        method: "PUT", body: JSON.stringify(buildPayload({ ...profile, avatarUrl: dataUrl })),
+      });
+      setProfile(saved);
+      notify("Đã cập nhật ảnh đại diện.");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+  }
+
+  async function saveSection() {
+    setSaving(true);
+    try {
+      const saved = await api<AthleteProfile>(`/athletes/${profile.userId}`, token, draft, {
+        method: "PUT", body: JSON.stringify(buildPayload(draft)),
+      });
+      setProfile(saved);
+      setEditing(null);
+      notify("Đã lưu thông tin hồ sơ.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancelEdit() { setDraft({ ...profile }); setEditing(null); }
+  function switchTab(t: typeof tab) { setTab(t); setEditing(null); setDraft({ ...profile }); }
+
+  const tabs: Array<{ id: typeof tab; label: string }> = [
+    { id: "profile", label: "Hồ sơ cá nhân" },
+    { id: "goals", label: "Mục tiêu luyện tập" },
+    { id: "badges", label: "Thành tích" },
+    { id: "history", label: "Lịch sử hoạt động" },
+  ];
+
+  function SectionActions({ section }: { section: "basic" | "physical" | "goals" }) {
+    return editing === section ? (
+      <div className="prf-edit-btns">
+        <button className="prf-save-btn" onClick={saveSection} disabled={saving}>
+          {saving ? "Đang lưu..." : "Lưu thay đổi"}
+        </button>
+        <button className="prf-cancel-btn" onClick={cancelEdit}>Hủy</button>
+      </div>
+    ) : (
+      <button className="prf-edit-btn" onClick={() => setEditing(section)}>
+        <Settings size={14} /> Chỉnh sửa
+      </button>
+    );
+  }
 
   return (
-    <div className="profile-full-page">
-      <div className="profile-page-header">
-        <div className="profile-page-cover" />
-        <div className="profile-page-info">
-          <div className="profile-page-avatar">{initials(profile.displayName)}</div>
-          <div className="profile-page-name">
-            <h1>{profile.displayName}</h1>
-            <span>{profile.city}</span>
-            {profile.bio && <p>{profile.bio}</p>}
-          </div>
-          <div className="profile-page-actions">
-            <button className="orange-button" onClick={onEditProfile}><Settings size={16} /> Sửa hồ sơ</button>
-            <button className="outline-button" onClick={onAddActivity}><CirclePlus size={16} /> Ghi hoạt động</button>
-          </div>
-        </div>
-        <div className="profile-page-stats">
-          <div className="profile-stat-item">
-            <strong>{activities.length}</strong>
-            <span>Hoạt động</span>
-          </div>
-          <div className="profile-stat-item">
-            <strong>{totalRunKm.toFixed(0)} km</strong>
-            <span>Tổng chạy</span>
-          </div>
-          <div className="profile-stat-item">
-            <strong>{Math.round(totalSwimM / 1000).toFixed(1)} km</strong>
-            <span>Tổng bơi</span>
-          </div>
-          <div className="profile-stat-item">
-            <strong>{Math.round(totalMinutes / 60)} h</strong>
-            <span>Tổng thời gian</span>
-          </div>
-        </div>
-      </div>
-
-      {profile.gender || profile.heightCm || profile.weightKg ? (
-        <div className="profile-info-card">
-          <h2>Thông tin cá nhân</h2>
-          <div className="profile-info-grid">
-            {profile.gender && <div><span>Giới tính</span><strong>{profile.gender}</strong></div>}
-            {profile.dateOfBirth && <div><span>Ngày sinh</span><strong>{new Date(profile.dateOfBirth).toLocaleDateString("vi-VN")}</strong></div>}
-            {profile.heightCm && <div><span>Chiều cao</span><strong>{profile.heightCm} cm</strong></div>}
-            {profile.weightKg && <div><span>Cân nặng</span><strong>{profile.weightKg} kg</strong></div>}
-            <div><span>Mục tiêu</span><strong>{profile.primaryGoal}</strong></div>
-            <div><span>Trình độ</span><strong>{profile.experienceLevel ?? "—"}</strong></div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="badges-section">
-        <div className="section-head">
-          <div>
-            <span className="section-kicker">Thành tích</span>
-            <h2>Huy hiệu</h2>
-          </div>
-          <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>{earnedBadges.length}/{badges.length} đạt được</span>
-        </div>
-        <div className="badges-grid">
-          {badges.map((b) => (
-            <div key={b.id} className={b.earned ? "badge-item earned" : "badge-item"}>
-              <span className="badge-icon">{b.icon}</span>
-              <strong>{b.title}</strong>
-              <small>{b.description}</small>
+    <div className="prf-page">
+      <div className="prf-header">
+        <div className="prf-cover" />
+        <div className="prf-header-body">
+          <div className="prf-header-left">
+            <div className="prf-avatar-wrap">
+              {profile.avatarUrl
+                ? <img src={profile.avatarUrl} alt={profile.displayName} className="prf-avatar-img" />
+                : <div className="prf-avatar-initials">{initials(profile.displayName)}</div>
+              }
+              <button className="prf-avatar-cam" onClick={() => fileRef.current?.click()}
+                disabled={uploadingAvatar} title={uploadingAvatar ? "Đang tải..." : "Đổi ảnh"}>
+                <Camera size={13} />
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarFile} />
             </div>
-          ))}
+            <div className="prf-header-info">
+              <h1>{profile.displayName || "—"}</h1>
+              <p>
+                {profile.city
+                  ? <><MapPin size={13} style={{ display: "inline", verticalAlign: "middle" }} /> {profile.city}</>
+                  : <span className="prf-empty">Chưa cập nhật thành phố</span>
+                }
+              </p>
+              {profile.primaryGoal && <span className="prf-goal-chip">{profile.primaryGoal}</span>}
+            </div>
+          </div>
+          <div className="prf-stats-bar">
+            <div className="prf-stat"><strong>{activities.length}</strong><span>Hoạt động</span></div>
+            <div className="prf-stat"><strong>{totalRunKm.toFixed(0)} km</strong><span>Tổng chạy</span></div>
+            <div className="prf-stat"><strong>{(totalSwimM / 1000).toFixed(1)} km</strong><span>Tổng bơi</span></div>
+            <div className="prf-stat"><strong>{Math.round(totalMinutes / 60)} h</strong><span>Thời gian</span></div>
+            <div className="prf-stat"><strong>{earnedBadges.length}/{badges.length}</strong><span>Huy hiệu</span></div>
+          </div>
         </div>
       </div>
 
-      <div className="profile-activities-section">
-        <div className="section-head">
-          <div>
-            <span className="section-kicker">Lịch sử</span>
-            <h2>Hoạt động gần đây</h2>
-          </div>
-          <button className="outline-button" onClick={onAddActivity}><CirclePlus size={18} /> Thêm</button>
-        </div>
-        {activities.length === 0 ? (
-          <div className="empty-log">
-            <Activity size={44} />
-            <h3>Chưa có hoạt động</h3>
-            <p>Ghi buổi tập đầu tiên để bắt đầu xây dựng hồ sơ.</p>
-            <button className="orange-button" onClick={onAddActivity}>Ghi hoạt động</button>
-          </div>
-        ) : (
-          <div className="activity-table">
-            {activities.map((a) => (
-              <div key={a.id} className="activity-row">
-                <SportPill sport={a.sportType} />
-                <div>
-                  <strong>{a.title}</strong>
-                  <span>{new Date(a.startedAt).toLocaleDateString("vi-VN")}</span>
-                </div>
-                <span>{formatDistance(a)}</span>
-                <span>{a.durationMinutes} phút</span>
-                <span>{a.averageHeartRate ?? "--"} bpm</span>
-                <button className="outline-button" style={{ minHeight: "30px", padding: "0 10px", fontSize: "0.82rem" }} onClick={() => onShare(a)}>
-                  <Share2 size={13} /> Chia sẻ
-                </button>
+      <div className="prf-tab-bar">
+        {tabs.map((t) => (
+          <button key={t.id} className={tab === t.id ? "active" : ""} onClick={() => switchTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="prf-tab-content">
+
+        {tab === "profile" && (
+          <div className="prf-sections">
+            <div className="prf-section-card">
+              <div className="prf-section-head">
+                <h2>Thông tin cơ bản</h2>
+                <SectionActions section="basic" />
               </div>
-            ))}
+              {editing === "basic" ? (
+                <div className="prf-edit-form">
+                  <div className="prf-field-row">
+                    <label>Tên hiển thị</label>
+                    <input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} />
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Thành phố</label>
+                    <select value={draft.city ?? ""} onChange={(e) => setDraft({ ...draft, city: e.target.value })}>
+                      <option value="">— Chọn —</option>
+                      {VIETNAMESE_CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div className="prf-field-row prf-field-full">
+                    <label>Giới thiệu bản thân</label>
+                    <textarea rows={3} value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} placeholder="Mô tả ngắn về bạn..." />
+                  </div>
+                </div>
+              ) : (
+                <div className="prf-info-list">
+                  <InfoRow label="Tên hiển thị" value={profile.displayName} />
+                  <InfoRow label="Thành phố" value={profile.city} />
+                  <InfoRow label="Giới thiệu" value={profile.bio} />
+                </div>
+              )}
+            </div>
+
+            <div className="prf-section-card">
+              <div className="prf-section-head">
+                <h2>Thông tin thể chất</h2>
+                <SectionActions section="physical" />
+              </div>
+              {editing === "physical" ? (
+                <div className="prf-edit-form">
+                  <div className="prf-field-row">
+                    <label>Giới tính</label>
+                    <select value={draft.gender ?? ""} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
+                      <option value="">— Chọn —</option>
+                      <option value="Nam">Nam</option>
+                      <option value="Nu">Nữ</option>
+                      <option value="Khac">Khác</option>
+                    </select>
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Ngày sinh</label>
+                    <input type="date" value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} />
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Chiều cao (cm)</label>
+                    <input type="number" value={draft.heightCm ?? ""} onChange={(e) => setDraft({ ...draft, heightCm: parseFloat(e.target.value) || 0 })} min={100} max={250} />
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Cân nặng (kg)</label>
+                    <input type="number" value={draft.weightKg ?? ""} step="0.1" onChange={(e) => setDraft({ ...draft, weightKg: parseFloat(e.target.value) || 0 })} min={30} max={200} />
+                  </div>
+                  {bmiDraft && <div className="prf-bmi-live">BMI: <strong className={bmiClassDraft}>{bmiDraft.toFixed(1)}</strong> — {bmiLabelDraft}</div>}
+                </div>
+              ) : (
+                <div className="prf-info-list">
+                  <InfoRow label="Giới tính" value={profile.gender} />
+                  <InfoRow label="Ngày sinh" value={profile.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString("vi-VN") : null} />
+                  <InfoRow label="Chiều cao" value={profile.heightCm ? `${profile.heightCm} cm` : null} />
+                  <InfoRow label="Cân nặng" value={profile.weightKg ? `${profile.weightKg} kg` : null} />
+                  <div className="prf-info-row">
+                    <span className="prf-info-label">Chỉ số BMI</span>
+                    {bmi
+                      ? <strong className={bmiClass}>{bmi.toFixed(1)} <small>({bmiLabel})</small></strong>
+                      : <strong className="prf-empty">Chưa cập nhật</strong>
+                    }
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        {tab === "goals" && (
+          <div className="prf-sections">
+            <div className="prf-section-card">
+              <div className="prf-section-head">
+                <h2>Mục tiêu & Luyện tập</h2>
+                <SectionActions section="goals" />
+              </div>
+              {editing === "goals" ? (
+                <div className="prf-edit-form">
+                  <div className="prf-field-row prf-field-full">
+                    <label>Mục tiêu chính</label>
+                    <input value={draft.primaryGoal ?? ""} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })} placeholder="VD: Chạy half-marathon, giảm cân..." />
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Trình độ</label>
+                    <select value={draft.experienceLevel ?? ""} onChange={(e) => setDraft({ ...draft, experienceLevel: e.target.value })}>
+                      <option value="">— Chọn —</option>
+                      <option value="BEGINNER">Mới bắt đầu</option>
+                      <option value="INTERMEDIATE">Trung bình</option>
+                      <option value="ADVANCED">Nâng cao</option>
+                      <option value="ELITE">Đỉnh cao</option>
+                    </select>
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Km chạy/tuần</label>
+                    <input type="number" value={draft.weeklyRunGoalKm} onChange={(e) => setDraft({ ...draft, weeklyRunGoalKm: parseFloat(e.target.value) || 0 })} min={0} />
+                  </div>
+                  <div className="prf-field-row">
+                    <label>Mét bơi/tuần</label>
+                    <input type="number" value={draft.weeklySwimGoalMeters} onChange={(e) => setDraft({ ...draft, weeklySwimGoalMeters: parseInt(e.target.value) || 0 })} min={0} />
+                  </div>
+                  <div className="prf-field-row prf-field-full">
+                    <label>Trọng tâm dinh dưỡng</label>
+                    <select value={draft.nutritionFocus ?? ""} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })}>
+                      <option value="">— Chọn —</option>
+                      {NUTRITION_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="prf-info-list">
+                  <InfoRow label="Mục tiêu chính" value={profile.primaryGoal} />
+                  <InfoRow label="Trình độ" value={expMap[profile.experienceLevel ?? ""] ?? profile.experienceLevel} />
+                  <InfoRow label="Km chạy mục tiêu/tuần" value={`${profile.weeklyRunGoalKm} km`} />
+                  <InfoRow label="Mét bơi mục tiêu/tuần" value={`${profile.weeklySwimGoalMeters} m`} />
+                  <InfoRow label="Trọng tâm dinh dưỡng" value={profile.nutritionFocus} />
+                </div>
+              )}
+            </div>
+
+            <div className="prf-section-card">
+              <div className="prf-section-head"><h2>Tiến độ tuần này</h2></div>
+              <div className="prf-goal-progress">
+                <div className="prf-goal-item">
+                  <div className="prf-goal-label">
+                    <Flame size={15} color="var(--orange)" />
+                    <span>Chạy bộ</span>
+                    <strong>{stats.weeklyRunKm.toFixed(1)} / {profile.weeklyRunGoalKm} km</strong>
+                  </div>
+                  <div className="progress-line"><span style={{ width: `${runPct}%` }} /></div>
+                </div>
+                <div className="prf-goal-item">
+                  <div className="prf-goal-label">
+                    <Waves size={15} color="var(--blue)" />
+                    <span>Bơi lội</span>
+                    <strong>{stats.weeklySwimMeters} / {profile.weeklySwimGoalMeters} m</strong>
+                  </div>
+                  <div className="progress-line"><span style={{ width: `${swimPct}%` }} /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "badges" && (
+          <div className="prf-sections">
+            <div className="prf-section-card">
+              <div className="prf-section-head">
+                <h2>Huy hiệu & Thành tích</h2>
+                <span className="prf-badge-count">{earnedBadges.length}/{badges.length} đạt được</span>
+              </div>
+              <div className="badges-grid">
+                {badges.map((b) => (
+                  <div key={b.id} className={b.earned ? "badge-item earned" : "badge-item"}>
+                    <span className="badge-icon">{b.icon}</span>
+                    <strong>{b.title}</strong>
+                    <small>{b.description}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "history" && (
+          <div className="prf-sections">
+            <div className="prf-section-card">
+              <div className="prf-section-head">
+                <h2>Lịch sử hoạt động</h2>
+                <button className="outline-button" onClick={onAddActivity}><CirclePlus size={15} /> Thêm mới</button>
+              </div>
+              {activities.length === 0 ? (
+                <div className="empty-log" style={{ minHeight: "180px" }}>
+                  <Activity size={36} />
+                  <h3>Chưa có hoạt động</h3>
+                  <p>Ghi buổi tập đầu tiên để bắt đầu xây dựng hồ sơ.</p>
+                  <button className="orange-button" onClick={onAddActivity}>Ghi hoạt động</button>
+                </div>
+              ) : (
+                <div className="activity-table">
+                  {activities.map((a) => (
+                    <div key={a.id} className="activity-row">
+                      <SportPill sport={a.sportType} />
+                      <div>
+                        <strong>{a.title}</strong>
+                        <span>{new Date(a.startedAt).toLocaleDateString("vi-VN")}</span>
+                      </div>
+                      <span>{formatDistance(a)}</span>
+                      <span>{a.durationMinutes} phút</span>
+                      <span>{a.averageHeartRate ?? "--"} bpm</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
 }
+
+
 
 type GpsPoint = { lat: number; lng: number; ts: number };
 
@@ -5302,105 +5108,6 @@ function PremiumModal({ isPremium, onClose, onUpgrade, notify, userId, token }: 
   );
 }
 
-function ProfileModal({ token, profile, setProfile, onClose, notify }: {
-  token: string;
-  profile: AthleteProfile;
-  setProfile: (profile: AthleteProfile) => void;
-  onClose: () => void;
-  notify: (msg: string) => void;
-}) {
-  const [draft, setDraft] = useState(profile);
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const saved = await api<AthleteProfile>(`/athletes/${profile.userId}`, token, draft, {
-      method: "PUT",
-      body: JSON.stringify({
-        displayName: draft.displayName,
-        city: draft.city,
-        bio: draft.bio,
-        primaryGoal: draft.primaryGoal,
-        experienceLevel: draft.experienceLevel,
-        gender: draft.gender,
-        dateOfBirth: draft.dateOfBirth,
-        heightCm: draft.heightCm,
-        weightKg: draft.weightKg,
-        preferredTrainingDays: ["MON", "WED", "FRI", "SUN"],
-        nutritionFocus: draft.nutritionFocus,
-        weeklyRunGoalKm: draft.weeklyRunGoalKm,
-        weeklySwimGoalMeters: draft.weeklySwimGoalMeters,
-        visibility: "PRIVATE",
-      }),
-    });
-    setProfile(saved);
-    notify("Đã cập nhật hồ sơ.");
-    onClose();
-  }
-
-  return (
-    <Modal title="Sửa hồ sơ luyện tập" onClose={onClose}>
-      <div className="profile-edit-shell">
-        <aside className="profile-edit-aside">
-          <div className="profile-edit-kicker">Hồ sơ vận động</div>
-          <h3>{draft.displayName}</h3>
-          <p>{draft.city}</p>
-
-          <div className="profile-edit-summary">
-            <div>
-              <span>Mục tiêu</span>
-              <strong>{draft.primaryGoal}</strong>
-            </div>
-            <div>
-              <span>Tập trung</span>
-              <strong>{draft.nutritionFocus}</strong>
-            </div>
-            <div>
-              <span>Trạng thái</span>
-              <strong>{draft.completedOnboarding ? "Đã hoàn tất onboarding" : "Chưa hoàn tất onboarding"}</strong>
-            </div>
-          </div>
-
-          <div className="profile-edit-note">
-            <strong>Thiết lập hiện tại</strong>
-            <p>Thông tin này dùng cho trang chủ, AI Coach và các gợi ý luyện tập.</p>
-          </div>
-        </aside>
-
-        <form className="modal-form profile-edit-form" onSubmit={submit}>
-          <div className="form-section-title">Thông tin cơ bản</div>
-          <div className="input-grid two-col">
-            <label>Tên hiển thị<input value={draft.displayName} onChange={(e) => setDraft({ ...draft, displayName: e.target.value })} /></label>
-            <label>Thành phố<input value={draft.city} onChange={(e) => setDraft({ ...draft, city: e.target.value })} /></label>
-          </div>
-          <label>Giới thiệu<textarea value={draft.bio ?? ""} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} /></label>
-
-          <div className="form-section-title">Thông tin thể chất</div>
-          <div className="input-grid">
-            <label>Giới tính
-              <select value={draft.gender ?? "Nam"} onChange={(e) => setDraft({ ...draft, gender: e.target.value })}>
-                <option>Nam</option><option>Nữ</option><option>Khác</option>
-              </select>
-            </label>
-            <label>Ngày sinh<input type="date" value={draft.dateOfBirth ?? ""} onChange={(e) => setDraft({ ...draft, dateOfBirth: e.target.value })} /></label>
-            <NumberField label="Chiều cao (cm)" value={draft.heightCm ?? 170} onChange={(v) => setDraft({ ...draft, heightCm: v })} />
-            <NumberField label="Cân nặng (kg)" value={draft.weightKg ?? 65} onChange={(v) => setDraft({ ...draft, weightKg: v })} />
-          </div>
-
-          <div className="form-section-title">Mục tiêu luyện tập</div>
-          <label>Mục tiêu<input value={draft.primaryGoal} onChange={(e) => setDraft({ ...draft, primaryGoal: e.target.value })} /></label>
-          <div className="input-grid">
-            <NumberField label="Km chạy/tuần" value={draft.weeklyRunGoalKm} onChange={(v) => setDraft({ ...draft, weeklyRunGoalKm: v })} />
-            <NumberField label="Mét bơi/tuần" value={draft.weeklySwimGoalMeters} onChange={(v) => setDraft({ ...draft, weeklySwimGoalMeters: v })} />
-          </div>
-          <label>Trọng tâm dinh dưỡng<input value={draft.nutritionFocus} onChange={(e) => setDraft({ ...draft, nutritionFocus: e.target.value })} /></label>
-
-          <div className="profile-edit-actions">
-            <button className="orange-button">Lưu hồ sơ</button>
-          </div>
-        </form>
-      </div>
-    </Modal>
-  );
-}
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return (
@@ -6109,6 +5816,26 @@ function readStorage<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function compressImage(file: File, maxPx: number, quality: number): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = ev.target!.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function initials(name: string) {

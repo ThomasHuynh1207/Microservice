@@ -29,6 +29,7 @@ public class AthleteProfile {
     private String preferredTrainingDays;
     private String nutritionFocus;
     private String visibility = "PUBLIC";
+    @Column(columnDefinition = "TEXT")
     private String avatarUrl;
     private boolean completedOnboarding;
     private double weeklyRunGoalKm = 25;

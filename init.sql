@@ -3,6 +3,6 @@ CREATE DATABASE athletedb;
 CREATE DATABASE activitydb;
 CREATE DATABASE aidb;
 CREATE DATABASE nutritiondb;
-CREATE DATABASE communitydb;
+CREATE DATABASE notificationdb;
 CREATE DATABASE paymentdb;
 CREATE DATABASE n8ndb;
