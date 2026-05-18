@@ -12,7 +12,7 @@ Reference used for product direction: Strava onboarding/login page at https://ww
 | api-gateway | 8080 | Routes `/api/**` and validates JWT |
 | auth-service | 8081 | Register, login, JWT, demo account |
 | athlete-service | 8082 | Athlete profile, onboarding, leaderboard |
-| activity-service | 8083 | Run/swim activity journal, stats, challenges |
+| activity-service | 8083 | Run/swim activity journal, stats |
 | ai-service | 8085 | Local AI endurance coach and chat history |
 | nutrition-service | 8086 | Nutrition plan, meal log, macro summary |
 | payment-service | 8088 | PayPal payment processing, transaction history |
@@ -80,8 +80,6 @@ Activity:
 - `PUT /api/activities/{id}?userId={userId}`
 - `DELETE /api/activities/{id}?userId={userId}`
 - `GET /api/activities/stats/{userId}`
-- `GET /api/activities/challenges`
-- `GET /api/activities/challenges/{challengeId}/leaderboard`
 
 Nutrition:
 
@@ -100,15 +98,6 @@ AI:
 - `GET /api/ai/chat/{userId}`
 - `POST /api/ai/insights`
 
-Community:
-
-- `GET /api/community/posts?userId={userId}`
-- `POST /api/community/posts`
-- `POST /api/community/posts/{postId}/likes/{userId}`
-- `POST /api/community/posts/{postId}/comments`
-- `GET /api/community/posts/{postId}/comments`
-- `GET /api/community/users/{userId}/posts`
-
 ## PostgreSQL
 
 `init.sql` creates one database per service:
@@ -118,7 +107,6 @@ Community:
 - `activitydb`
 - `nutritiondb`
 - `aidb`
-- `communitydb`
 - `paymentdb`
 
 Each service uses Hibernate `ddl-auto: update` for development schema creation.
@@ -139,7 +127,6 @@ The payment flow: frontend calls `/api/auth/payments/paypal/create-order` → Pa
 - **MapLibre GL JS** — interactive map on the Maps page using OpenFreeMap tiles (no API key required)
 - **GPS Tracking** — live Geolocation API tracking during run activity logging; distance and duration auto-filled on stop
 - **Water Tracking** — daily water intake log with progress bar on Nutrition page
-- **Community Feed** — posts, likes, comments, follow/unfollow
 - **Analytics Charts** — recharts BarChart/LineChart for weekly distance and calories (premium)
 - **Profile Page** — badges, personal records, history
 - **Premium with PayPal** — real PayPal sandbox integration
