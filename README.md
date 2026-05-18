@@ -15,7 +15,6 @@ Reference used for product direction: Strava onboarding/login page at https://ww
 | activity-service | 8083 | Run/swim activity journal, stats, challenges |
 | ai-service | 8085 | Local AI endurance coach and chat history |
 | nutrition-service | 8086 | Nutrition plan, meal log, macro summary |
-| community-service | 8087 | Posts, likes, comments feed |
 | payment-service | 8088 | PayPal payment processing, transaction history |
 | eureka-server | 8761 | Service registry |
 | postgres | 5432 | PostgreSQL databases per service |
