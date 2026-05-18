@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { FormEvent, ReactNode } from "react";
+import "leaflet/dist/leaflet.css";
+import * as L from "leaflet";
 import {
   LayoutDashboard,
   Users,
@@ -16,7 +18,6 @@ import {
   Flame,
   MapPin,
   Trophy,
-  Dumbbell,
   Trash2,
   Plus,
   X,
@@ -25,6 +26,9 @@ import {
   Edit2,
   Eye,
   AlertCircle,
+  CreditCard,
+  BadgeCheck,
+  Ban,
 } from "lucide-react";
 import {
   PieChart,
@@ -37,8 +41,9 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Page = "dashboard" | "users" | "activities" | "routes" | "nutrition/foods" | "nutrition/categories" | "training" | "sports" | "onboarding";
-type NutPage = "foods" | "categories";
+type Page = "dashboard" | "users" | "activities" | "routes" | "nutrition/foods" | "nutrition/categories" | "nutrition/meals" | "sports" | "payment/transactions" | "payment/premium";
+type NutPage = "foods" | "categories" | "meals";
+type PayPage = "transactions" | "premium";
 
 type AdminSession = {
   token: string;
@@ -64,12 +69,23 @@ type ActivityItem = {
   id: number; userId: number; athleteName: string; sportType: "RUN" | "SWIM";
   title: string; durationMinutes: number; distanceMeters: number;
   calories: number | null; startedAt: string; createdAt: string;
+  visibility?: "PUBLIC" | "PRIVATE";
+  notes?: string;
+  avgPacePerKm?: number;
+  elevationGainMeters?: number;
+  gpsRoute?: { lat: number; lng: number }[];
 };
 
 type RouteItem = {
   id: number; name: string; sportType: "RUN" | "SWIM"; place: string;
   distanceMeters: number; note: string; createdAt: string;
+  createdBy?: number | null;
+  geoJson?: string | null;
+  visibility?: string;
+  activityId?: number | null;
 };
+
+type RouteStats = { total: number; run: number; swim: number };
 
 type FoodCategory = { id: number; name: string; description?: string; icon?: string; };
 type NutritionFood = {
@@ -91,9 +107,30 @@ type NutritionMealEntry = {
   proteinGrams: number; carbsGrams: number; fatGrams: number; eatenAt: string;
 };
 
-type ChallengeItem = {
-  id: number; code: string; title: string; sportType: string;
-  targetValue: number; unit: string; note: string; createdAt: string;
+type AdminMealLog = {
+  id: number;
+  userId: number;
+  userName: string;
+  mealType: "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK";
+  totalCalories: number;
+  totalProteinGrams: number;
+  totalCarbsGrams: number;
+  totalFatGrams: number;
+  itemCount: number;
+  loggedAt: string;
+  items?: Pick<NutritionMealEntry, "name" | "calories" | "proteinGrams" | "carbsGrams" | "fatGrams" | "servings" | "servingSize">[];
+};
+
+type PaymentTx = {
+  id: number; userId: number; userName: string | null; userEmail: string | null;
+  orderId: string; provider: string; status: string;
+  amount: number; currency: string; plan: string | null;
+  createdAt: string; updatedAt: string;
+};
+
+type PaymentStats = {
+  totalTransactions: number; totalRevenue: number; totalPremiumUsers: number;
+  successfulTransactions: number; failedTransactions: number;
 };
 
 type SportDef = {
@@ -182,6 +219,257 @@ function fmtDist(meters: number) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${meters} m`;
 }
 
+// ─── GPS / GeoJSON helpers ────────────────────────────────────────────────────
+
+type LatLng = [number, number]; // [lng, lat]
+
+function parseGeoJsonCoords(raw: string | null | undefined): LatLng[] {
+  if (!raw) return [];
+  try {
+    const geo = JSON.parse(raw);
+    if (geo.type === "LineString" && Array.isArray(geo.coordinates)) return geo.coordinates;
+    if (geo.type === "Feature" && geo.geometry?.type === "LineString") return geo.geometry.coordinates;
+    if (geo.type === "FeatureCollection") {
+      for (const f of geo.features ?? []) {
+        if (f.geometry?.type === "LineString") return f.geometry.coordinates;
+      }
+    }
+    // legacy: [{lat,lng},...] or [[lat,lng],...]
+    if (Array.isArray(geo)) {
+      if (typeof geo[0] === "object" && "lat" in geo[0]) return geo.map((p: {lat:number;lng:number}) => [p.lng, p.lat]);
+      if (Array.isArray(geo[0]) && geo[0].length >= 2) return geo;
+    }
+  } catch { /* ignore */ }
+  return [];
+}
+
+function buildSvgPath(coords: LatLng[], W = 560, H = 240, PAD = 28): {
+  d: string; start: [number,number]; end: [number,number];
+  firstCoord: LatLng; lastCoord: LatLng; centerCoord: LatLng;
+} | null {
+  if (coords.length < 2) return null;
+  const lngs = coords.map(c => c[0]);
+  const lats  = coords.map(c => c[1]);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const minLat  = Math.min(...lats),  maxLat  = Math.max(...lats);
+  const rangeLng = maxLng - minLng || 0.0001;
+  const rangeLat  = maxLat  - minLat  || 0.0001;
+  const toSvg = ([lng, lat]: LatLng): [number,number] => [
+    PAD + ((lng - minLng) / rangeLng) * (W - PAD * 2),
+    H - PAD - ((lat - minLat) / rangeLat) * (H - PAD * 2),
+  ];
+  const pts = coords.map(toSvg);
+  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  const mid = coords[Math.floor(coords.length / 2)];
+  return { d, start: pts[0], end: pts[pts.length - 1], firstCoord: coords[0], lastCoord: coords[coords.length - 1], centerCoord: mid };
+}
+
+function MiniGpsMap({ geoJson, onClick }: { geoJson: string | null | undefined; onClick?: () => void }) {
+  const coords = parseGeoJsonCoords(geoJson);
+  const W = 120, H = 70, PAD = 6;
+
+  if (coords.length < 2) return (
+    <div
+      onClick={onClick}
+      style={{
+        width: W, height: H, borderRadius: 7, background: "#f1f5f9",
+        border: "1.5px dashed #cbd5e1", display: "flex", alignItems: "center",
+        justifyContent: "center", cursor: onClick ? "pointer" : "default",
+      }}
+    >
+      <MapPin size={16} style={{ color: "#94a3b8", opacity: 0.5 }} />
+    </div>
+  );
+
+  const svg = buildSvgPath(coords, W, H, PAD)!;
+  return (
+    <div
+      onClick={onClick}
+      title="Nhấn để xem chi tiết"
+      style={{
+        width: W, height: H, borderRadius: 7, overflow: "hidden",
+        border: "1.5px solid #e2e8f0", background: "#e8f4fd",
+        cursor: onClick ? "pointer" : "default", flexShrink: 0,
+        transition: "box-shadow 0.15s",
+      }}
+      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLElement).style.boxShadow = "0 0 0 2px #f97316"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: "block" }}>
+        {/* grid */}
+        {[1,2,3].map(i => <line key={`h${i}`} x1={0} y1={H*i/4} x2={W} y2={H*i/4} stroke="#c8dff0" strokeWidth="0.6"/>)}
+        {[1,2,3,4].map(i => <line key={`v${i}`} x1={W*i/5} y1={0} x2={W*i/5} y2={H} stroke="#c8dff0" strokeWidth="0.6"/>)}
+        {/* glow */}
+        <path d={svg.d} fill="none" stroke="rgba(249,115,22,0.18)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* line */}
+        <path d={svg.d} fill="none" stroke="#f97316" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* start */}
+        <circle cx={svg.start[0]} cy={svg.start[1]} r="4.5" fill="#22c55e" stroke="#fff" strokeWidth="1.5"/>
+        {/* end */}
+        <circle cx={svg.end[0]} cy={svg.end[1]} r="4.5" fill="#ef4444" stroke="#fff" strokeWidth="1.5"/>
+      </svg>
+    </div>
+  );
+}
+
+function GpsMapViewer({ geoJson }: { geoJson: string | null | undefined }) {
+  const coords = parseGeoJsonCoords(geoJson);
+  const W = 560, H = 240;
+
+  if (!geoJson) return (
+    <div style={{ background: "#f8fafc", borderRadius: 10, border: "1.5px dashed #e2e8f0", padding: "32px 20px", textAlign: "center", color: "#94a3b8" }}>
+      <MapPin size={32} style={{ margin: "0 auto 10px", display: "block", opacity: 0.35 }} />
+      <div style={{ fontSize: 13, fontWeight: 500 }}>Lộ trình này không có dữ liệu GPS</div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>Người dùng chưa ghi lại tọa độ khi tạo route</div>
+    </div>
+  );
+
+  if (coords.length < 2) return (
+    <div style={{ background: "#f8fafc", borderRadius: 10, border: "1.5px dashed #e2e8f0", padding: "32px 20px", textAlign: "center", color: "#94a3b8" }}>
+      <AlertCircle size={32} style={{ margin: "0 auto 10px", display: "block", opacity: 0.35 }} />
+      <div style={{ fontSize: 13, fontWeight: 500 }}>Dữ liệu GPS không đủ điểm để hiển thị</div>
+      <div style={{ fontSize: 12, marginTop: 4 }}>{coords.length} điểm GPS được tìm thấy (cần ít nhất 2)</div>
+    </div>
+  );
+
+  const svg = buildSvgPath(coords, W, H)!;
+  const osmUrl = `https://www.openstreetmap.org/?mlat=${svg.centerCoord[1].toFixed(6)}&mlon=${svg.centerCoord[0].toFixed(6)}&zoom=14`;
+
+  return (
+    <div>
+      {/* SVG Map */}
+      <div style={{ borderRadius: 10, overflow: "hidden", border: "1.5px solid #e2e8f0", background: "#e8f4fd", position: "relative" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", display: "block" }}>
+          {/* Background grid */}
+          {[...Array(5)].map((_, i) => (
+            <line key={`h${i}`} x1={0} y1={H * (i + 1) / 6} x2={W} y2={H * (i + 1) / 6} stroke="#c8dff0" strokeWidth="0.8" />
+          ))}
+          {[...Array(7)].map((_, i) => (
+            <line key={`v${i}`} x1={W * (i + 1) / 8} y1={0} x2={W * (i + 1) / 8} y2={H} stroke="#c8dff0" strokeWidth="0.8" />
+          ))}
+
+          {/* Route shadow */}
+          <path d={svg.d} fill="none" stroke="rgba(249,115,22,0.2)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Route line */}
+          <path d={svg.d} fill="none" stroke="#f97316" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+
+
+          {/* Start marker */}
+          <circle cx={svg.start[0]} cy={svg.start[1]} r="9" fill="#22c55e" stroke="#fff" strokeWidth="2.5" />
+          <text x={svg.start[0]} y={svg.start[1] + 4.5} textAnchor="middle" fontSize="9" fill="#fff" fontWeight="700">S</text>
+
+          {/* End marker */}
+          <circle cx={svg.end[0]} cy={svg.end[1]} r="9" fill="#ef4444" stroke="#fff" strokeWidth="2.5" />
+          <text x={svg.end[0]} y={svg.end[1] + 4.5} textAnchor="middle" fontSize="9" fill="#fff" fontWeight="700">E</text>
+        </svg>
+
+        {/* Map label */}
+        <div style={{ position: "absolute", top: 8, left: 10, fontSize: 10, color: "#64748b", background: "rgba(255,255,255,0.85)", borderRadius: 5, padding: "2px 7px", fontWeight: 600 }}>
+          GPS POLYLINE — {coords.length} điểm
+        </div>
+      </div>
+
+      {/* Coordinate info */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12 }}>
+        <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "10px 14px", border: "1px solid #bbf7d0" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Điểm bắt đầu</div>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#166534" }}>
+            {svg.firstCoord[1].toFixed(6)}, {svg.firstCoord[0].toFixed(6)}
+          </div>
+          <div style={{ fontSize: 11, color: "#4ade80", marginTop: 2 }}>lat, lng</div>
+        </div>
+        <div style={{ background: "#fff1f2", borderRadius: 8, padding: "10px 14px", border: "1px solid #fecdd3" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>Điểm kết thúc</div>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#991b1b" }}>
+            {svg.lastCoord[1].toFixed(6)}, {svg.lastCoord[0].toFixed(6)}
+          </div>
+          <div style={{ fontSize: 11, color: "#f87171", marginTop: 2 }}>lat, lng</div>
+        </div>
+      </div>
+
+      {/* OpenStreetMap link */}
+      <a href={osmUrl} target="_blank" rel="noreferrer" style={{
+        display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10,
+        fontSize: 12, color: "#3b82f6", fontWeight: 500, textDecoration: "none"
+      }}>
+        <MapPin size={13} /> Xem vị trí trên OpenStreetMap
+      </a>
+    </div>
+  );
+}
+
+function RouteLeafletMap({ geoJson, height = 320 }: { geoJson: string | null | undefined; height?: number }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    const coords = parseGeoJsonCoords(geoJson);
+    if (!containerRef.current || coords.length < 2) return;
+
+    // cleanup previous instance
+    if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+
+    const latLngs: L.LatLngTuple[] = coords.map(([lng, lat]) => [lat, lng]);
+
+    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true });
+    mapRef.current = map;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const polyline = L.polyline(latLngs, {
+      color: "#f97316", weight: 4, opacity: 0.9,
+      lineJoin: "round", lineCap: "round",
+    }).addTo(map);
+
+    // start marker (green)
+    L.circleMarker(latLngs[0], {
+      radius: 8, fillColor: "#22c55e", color: "#fff", weight: 2.5, fillOpacity: 1,
+    }).bindTooltip("Bắt đầu", { permanent: false }).addTo(map);
+
+    // end marker (red)
+    L.circleMarker(latLngs[latLngs.length - 1], {
+      radius: 8, fillColor: "#ef4444", color: "#fff", weight: 2.5, fillOpacity: 1,
+    }).bindTooltip("Kết thúc", { permanent: false }).addTo(map);
+
+    map.fitBounds(polyline.getBounds(), { padding: [24, 24] });
+
+    return () => { map.remove(); mapRef.current = null; };
+  }, [geoJson]);
+
+  const coords = parseGeoJsonCoords(geoJson);
+
+  if (coords.length < 2) return (
+    <div style={{
+      height, borderRadius: 10, background: "#f8fafc",
+      border: "1.5px dashed #e2e8f0", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 8, color: "#94a3b8",
+    }}>
+      <MapPin size={30} style={{ opacity: 0.35 }} />
+      <div style={{ fontSize: 13, fontWeight: 500 }}>Lộ trình không có dữ liệu GPS</div>
+      <div style={{ fontSize: 12 }}>Người dùng chưa ghi lại tọa độ</div>
+    </div>
+  );
+
+  const osmUrl = `https://www.openstreetmap.org/?mlat=${coords[0][1].toFixed(6)}&mlon=${coords[0][0].toFixed(6)}&zoom=14`;
+
+  return (
+    <div>
+      <div ref={containerRef} style={{ height, borderRadius: 10, overflow: "hidden", border: "1.5px solid #e2e8f0" }} />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+        <div style={{ fontSize: 12, color: "var(--al-muted)" }}>
+          {coords.length} điểm GPS · Bắt đầu: {coords[0][1].toFixed(5)}, {coords[0][0].toFixed(5)}
+        </div>
+        <a href={osmUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#3b82f6", fontWeight: 500, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <MapPin size={12} /> Xem trên OSM
+        </a>
+      </div>
+    </div>
+  );
+}
+
 const COLORS = ["#f97316","#3b82f6","#22c55e","#a855f7","#ef4444","#06b6d4","#eab308","#ec4899"];
 const avatarColor = (id: number) => COLORS[id % COLORS.length];
 
@@ -260,12 +548,10 @@ function LoginPage({ onLogin }: { onLogin: (s: AdminSession) => void }) {
 
 const NAV_ITEMS_TOP: { id: Page; label: string; icon: ReactNode }[] = [
   { id: "dashboard",  label: "Dashboard",             icon: <LayoutDashboard size={16} /> },
-  { id: "onboarding", label: "Quản lý Onboarding",   icon: <UserCheck size={16} /> },
   { id: "users",      label: "Quản lý người dùng",   icon: <Users size={16} /> },
-  { id: "activities", label: "Hoạt động",             icon: <Activity size={16} /> },
-  { id: "routes",     label: "Lộ trình",              icon: <MapPin size={16} /> },
+  { id: "activities", label: "Quản lý hoạt động",     icon: <Activity size={16} /> },
+  { id: "routes",     label: "Quản lý lộ trình",      icon: <MapPin size={16} /> },
   { id: "sports",     label: "Môn thể thao",          icon: <Zap size={16} /> },
-  { id: "training",   label: "Cài đặt tập luyện",    icon: <Dumbbell size={16} /> },
 ];
 
 const NAV_ITEMS_BOTTOM: { id: Page; label: string; icon: ReactNode }[] = [];
@@ -273,6 +559,12 @@ const NAV_ITEMS_BOTTOM: { id: Page; label: string; icon: ReactNode }[] = [];
 const NUT_SUB_ITEMS: { id: Page; label: string }[] = [
   { id: "nutrition/categories", label: "Danh mục" },
   { id: "nutrition/foods",      label: "Món ăn" },
+  { id: "nutrition/meals",      label: "Meal Logs" },
+];
+
+const PAY_SUB_ITEMS: { id: Page; label: string }[] = [
+  { id: "payment/transactions", label: "Giao dịch" },
+  { id: "payment/premium",      label: "Quản lý Premium" },
 ];
 
 function NavItem({ item, active, onClick }: { item: { id: Page; label: string; icon: ReactNode }; active: boolean; onClick: () => void }) {
@@ -288,7 +580,9 @@ function Sidebar({ page, setPage, session, onLogout }: {
   session: AdminSession; onLogout: () => void;
 }) {
   const nutActive = page.startsWith("nutrition/");
+  const payActive = page.startsWith("payment/");
   const [nutOpen, setNutOpen] = useState(nutActive);
+  const [payOpen, setPayOpen] = useState(payActive);
 
   return (
     <div className="al-sidebar">
@@ -313,6 +607,27 @@ function Sidebar({ page, setPage, session, onLogout }: {
         </button>
         <div className={`al-nav-sub${nutOpen ? " open" : ""}`}>
           {NUT_SUB_ITEMS.map(item => (
+            <button
+              key={item.id}
+              className={`al-nav-sub-item${page === item.id ? " active" : ""}`}
+              onClick={() => setPage(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Expandable Thanh toán & Premium */}
+        <button
+          className={`al-nav-item al-nav-expandable${payActive ? " active" : ""}`}
+          onClick={() => setPayOpen(o => !o)}
+        >
+          <CreditCard size={16} />
+          <span style={{ flex: 1, textAlign: "left" }}>Thanh toán & Premium</span>
+          <ChevronDown size={14} className={`al-nav-chevron${payOpen ? " open" : ""}`} />
+        </button>
+        <div className={`al-nav-sub${payOpen ? " open" : ""}`}>
+          {PAY_SUB_ITEMS.map(item => (
             <button
               key={item.id}
               className={`al-nav-sub-item${page === item.id ? " active" : ""}`}
@@ -449,10 +764,14 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE" | "PREMIUM" | "FREE" | "PENDING" | "ADMIN">("ALL");
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE" | "PREMIUM" | "FREE" | "ADMIN">("ALL");
   const [updating, setUpdating] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
+  const [editUser, setEditUser] = useState<AdminUser | null>(null);
+  const [editForm, setEditForm] = useState({ role: "USER", premiumActive: false, active: true });
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -465,7 +784,6 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
       setUsers(u);
       setProfiles(p);
       setActivities(a);
-      setSelectedUserId((current) => current ?? u[0]?.id ?? null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
     } finally {
@@ -474,6 +792,7 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
   }, [session.token]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setCurrentPage(1); }, [search, filter, pageSize]);
 
   async function patchUser(userId: number, update: { role?: string; active?: boolean; premiumActive?: boolean }) {
     setUpdating(userId);
@@ -505,27 +824,34 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
       (filter === "INACTIVE" && !u.active) ||
       (filter === "PREMIUM" && u.premiumActive) ||
       (filter === "FREE" && !u.premiumActive) ||
-      (filter === "PENDING" && !u.onboardingCompleted) ||
       (filter === "ADMIN" && u.role === "ADMIN");
     return matchSearch && matchFilter;
   });
 
-  const selectedUser = users.find(u => u.id === selectedUserId) ?? filtered[0] ?? null;
-  const selectedProfile = selectedUser ? profileByUser.get(selectedUser.id) : undefined;
-  const selectedActivities = selectedUser ? (activitiesByUser.get(selectedUser.id) ?? []) : [];
-  const selectedRunKm = selectedActivities.filter(a => a.sportType === "RUN").reduce((sum, a) => sum + a.distanceMeters, 0) / 1000;
-  const selectedSwimM = selectedActivities.filter(a => a.sportType === "SWIM").reduce((sum, a) => sum + a.distanceMeters, 0);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  async function softDeleteUser(u: AdminUser) {
+    if (!confirm(`Vô hiệu hóa tài khoản "${u.fullName}"?\nTài khoản sẽ bị khoá và không thể đăng nhập.`)) return;
+    await patchUser(u.id, { active: false });
+  }
+
+  async function saveEdit() {
+    if (!editUser) return;
+    await patchUser(editUser.id, { role: editForm.role, premiumActive: editForm.premiumActive, active: editForm.active });
+    setEditUser(null);
+  }
 
   return (
     <>
-      <PageHeader title="Người dùng" sub="Quản lý tài khoản, gói, onboarding và hồ sơ tập luyện của app người dùng" />
+      <PageHeader title="Người dùng" sub="Quản lý tài khoản và hồ sơ tập luyện của người dùng" />
       <div className="al-content">
         <div className="al-stats-row">
           {[
             { label: "Tổng người dùng", value: users.length, color: "#3b82f6" },
             { label: "Đang hoạt động", value: users.filter(u => u.active).length, color: "#22c55e" },
             { label: "Premium", value: users.filter(u => u.premiumActive).length, color: "#eab308" },
-            { label: "Chưa onboarding", value: users.filter(u => !u.onboardingCompleted).length, color: "#ef4444" },
+            { label: "Admin", value: users.filter(u => u.role === "ADMIN").length, color: "#8b5cf6" },
           ].map(card => (
             <div key={card.label} className="al-stat-card">
               <div className="al-stat-value" style={{ color: card.color }}>{card.value}</div>
@@ -546,7 +872,6 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
               ["INACTIVE", "Đã khoá"],
               ["PREMIUM", "Premium"],
               ["FREE", "Free"],
-              ["PENDING", "Chưa onboarding"],
               ["ADMIN", "Admin"],
             ].map(([id, label]) => (
               <button key={id} className={`al-tab${filter === id ? " active" : ""}`} onClick={() => setFilter(id as typeof filter)}>
@@ -557,25 +882,25 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
           <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
         </div>
 
-        <div className="al-user-management-grid">
-          <div className="al-table-wrap">
-            {loading ? <div className="al-loading">Đang tải...</div>
-              : error ? <ErrMsg msg={error} />
-              : filtered.length === 0 ? <div className="al-empty">Không tìm thấy người dùng</div>
-              : (
+        <div className="al-table-wrap">
+          {loading ? <div className="al-loading">Đang tải...</div>
+            : error ? <ErrMsg msg={error} />
+            : filtered.length === 0 ? <div className="al-empty">Không tìm thấy người dùng</div>
+            : (
+              <>
                 <table className="al-table">
                   <thead><tr>
-                    <th>Người dùng</th><th>Gói</th><th>Onboarding</th>
+                    <th>Người dùng</th><th>Vai trò</th><th>Gói</th>
                     <th>Hoạt động</th><th>Trạng thái</th><th>Thao tác</th>
                   </tr></thead>
                   <tbody>
-                    {filtered.map(u => {
+                    {paginated.map(u => {
                       const busy = updating === u.id;
                       const isSelf = u.id === session.userId;
                       const userActivityCount = activitiesByUser.get(u.id)?.length ?? 0;
                       return (
-                        <tr key={u.id} className={selectedUserId === u.id ? "al-row-selected" : ""}>
-                          <td onClick={() => setSelectedUserId(u.id)}>
+                        <tr key={u.id}>
+                          <td>
                             <div className="al-user-cell">
                               <div className="al-avatar" style={{ background: avatarColor(u.id) }}>{initials(u.fullName)}</div>
                               <div>
@@ -584,19 +909,22 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
                               </div>
                             </div>
                           </td>
+                          <td><span className={`al-badge ${u.role === "ADMIN" ? "badge-admin" : "badge-user"}`}>{u.role === "ADMIN" ? "Admin" : "User"}</span></td>
                           <td><span className={`al-badge ${u.premiumActive ? "badge-premium" : "badge-free"}`}>{u.premiumActive ? "Premium" : "Free"}</span></td>
-                          <td><span className={`al-badge ${u.onboardingCompleted ? "badge-active" : "badge-inactive"}`}>{u.onboardingCompleted ? "Hoàn thành" : "Chưa xong"}</span></td>
                           <td><span className="al-date">{userActivityCount} buổi</span></td>
                           <td><span className={`al-badge ${u.active ? "badge-active" : "badge-inactive"}`}>{u.active ? "Hoạt động" : "Đã khoá"}</span></td>
                           <td>
                             <div className="al-actions">
-                              <button className={`al-action-btn ${u.premiumActive ? "yellow" : "green"}`} disabled={busy}
-                                onClick={() => patchUser(u.id, { premiumActive: !u.premiumActive })}>
-                                {u.premiumActive ? "Huỷ premium" : "Cấp premium"}
+                              <button className="al-action-btn blue" onClick={() => setDetailUser(u)}>
+                                <Eye size={12} /> Chi tiết
                               </button>
-                              <button className={`al-action-btn ${u.active ? "red" : "green"}`} disabled={busy || isSelf}
-                                onClick={() => patchUser(u.id, { active: !u.active })}>
-                                {u.active ? "Khoá" : "Mở khoá"}
+                              <button className="al-action-btn green" disabled={busy}
+                                onClick={() => { setEditUser(u); setEditForm({ role: u.role, premiumActive: u.premiumActive, active: u.active }); }}>
+                                <Edit2 size={12} /> Sửa
+                              </button>
+                              <button className="al-action-btn red" disabled={busy || isSelf || !u.active}
+                                onClick={() => softDeleteUser(u)}>
+                                <Trash2 size={12} /> Xóa
                               </button>
                             </div>
                           </td>
@@ -605,67 +933,122 @@ function UsersManagementPage({ session }: { session: AdminSession }) {
                     })}
                   </tbody>
                 </table>
-              )}
-          </div>
+                <div className="al-pagination">
+                  <div className="al-page-size">
+                    <span>Hiển thị</span>
+                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+                      {[5, 10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span>/ trang</span>
+                  </div>
+                  <div className="al-page-nav">
+                    <button className="al-page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>← Trước</button>
+                    <span className="al-page-info">Trang {currentPage} / {totalPages} &nbsp;·&nbsp; {filtered.length} kết quả</span>
+                    <button className="al-page-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)}>Tiếp →</button>
+                  </div>
+                </div>
+              </>
+            )}
+        </div>
 
-          <aside className="al-user-detail">
-            {selectedUser ? (
-              <>
+        {/* ── Detail Modal ── */}
+        {detailUser && (() => {
+          const profile = profileByUser.get(detailUser.id);
+          const userActivities = activitiesByUser.get(detailUser.id) ?? [];
+          const runKm = userActivities.filter(a => a.sportType === "RUN").reduce((s, a) => s + a.distanceMeters, 0) / 1000;
+          const swimM = userActivities.filter(a => a.sportType === "SWIM").reduce((s, a) => s + a.distanceMeters, 0);
+          return (
+            <div className="al-modal-overlay" onClick={() => setDetailUser(null)}>
+              <div className="al-modal-box al-modal-detail" onClick={e => e.stopPropagation()}>
+                <button className="al-modal-close" onClick={() => setDetailUser(null)}><X size={15} /></button>
                 <div className="al-user-detail-head">
-                  <div className="al-avatar large" style={{ background: avatarColor(selectedUser.id) }}>{initials(selectedUser.fullName)}</div>
+                  <div className="al-avatar large" style={{ background: avatarColor(detailUser.id) }}>{initials(detailUser.fullName)}</div>
                   <div>
-                    <h3>{selectedUser.fullName}</h3>
-                    <span>{selectedUser.email}</span>
+                    <h3 style={{ margin: 0, fontSize: "1.05rem" }}>{detailUser.fullName}</h3>
+                    <span style={{ fontSize: "0.83rem", color: "#64748b" }}>{detailUser.email}</span>
                   </div>
                 </div>
                 <div className="al-detail-badges">
-                  <span className={`al-badge ${selectedUser.role === "ADMIN" ? "badge-admin" : "badge-user"}`}>{selectedUser.role === "ADMIN" ? "Admin" : "User"}</span>
-                  <span className={`al-badge ${selectedUser.premiumActive ? "badge-premium" : "badge-free"}`}>{selectedUser.premiumActive ? "Premium" : "Free"}</span>
-                  <span className={`al-badge ${selectedUser.active ? "badge-active" : "badge-inactive"}`}>{selectedUser.active ? "Hoạt động" : "Đã khoá"}</span>
+                  <span className={`al-badge ${detailUser.role === "ADMIN" ? "badge-admin" : "badge-user"}`}>{detailUser.role === "ADMIN" ? "Admin" : "User"}</span>
+                  <span className={`al-badge ${detailUser.premiumActive ? "badge-premium" : "badge-free"}`}>{detailUser.premiumActive ? "Premium" : "Free"}</span>
+                  <span className={`al-badge ${detailUser.active ? "badge-active" : "badge-inactive"}`}>{detailUser.active ? "Hoạt động" : "Đã khoá"}</span>
                 </div>
                 <div className="al-detail-grid">
-                  <div><span>Ngày tham gia</span><strong>{fmtDate(selectedUser.createdAt)}</strong></div>
-                  <div><span>Premium từ</span><strong>{selectedUser.premiumSince ? fmtDate(selectedUser.premiumSince) : "—"}</strong></div>
-                  <div><span>Thành phố</span><strong>{selectedProfile?.city ?? "—"}</strong></div>
-                  <div><span>Trình độ</span><strong>{selectedProfile?.experienceLevel ?? "—"}</strong></div>
+                  <div><span>Ngày tham gia</span><strong>{fmtDate(detailUser.createdAt)}</strong></div>
+                  <div><span>Premium từ</span><strong>{detailUser.premiumSince ? fmtDate(detailUser.premiumSince) : "—"}</strong></div>
+                  <div><span>Thành phố</span><strong>{profile?.city ?? "—"}</strong></div>
+                  <div><span>Trình độ</span><strong>{profile?.experienceLevel ?? "—"}</strong></div>
                 </div>
                 <div className="al-detail-grid">
-                  <div><span>Tổng buổi</span><strong>{selectedActivities.length}</strong></div>
-                  <div><span>Chạy</span><strong>{selectedRunKm.toFixed(1)} km</strong></div>
-                  <div><span>Bơi</span><strong>{Math.round(selectedSwimM)} m</strong></div>
-                  <div><span>Mục tiêu chạy</span><strong>{selectedProfile?.weeklyRunGoalKm ?? 0} km/tuần</strong></div>
+                  <div><span>Tổng buổi</span><strong>{userActivities.length}</strong></div>
+                  <div><span>Chạy</span><strong>{runKm.toFixed(1)} km</strong></div>
+                  <div><span>Bơi</span><strong>{Math.round(swimM)} m</strong></div>
+                  <div><span>Mục tiêu chạy</span><strong>{profile?.weeklyRunGoalKm ?? 0} km/tuần</strong></div>
                 </div>
                 <div className="al-detail-section">
-                  <h4>Mục tiêu người dùng</h4>
-                  <p>{selectedProfile?.primaryGoal ?? "Chưa có hồ sơ tập luyện."}</p>
+                  <h4>Mục tiêu luyện tập</h4>
+                  <p style={{ margin: "4px 0 0", color: "#475569", fontSize: "0.88rem" }}>{profile?.primaryGoal ?? "Chưa có hồ sơ."}</p>
                 </div>
                 <div className="al-detail-section">
                   <h4>Hoạt động gần nhất</h4>
-                  {selectedActivities.slice(0, 4).map(activity => (
-                    <div key={activity.id} className="al-mini-activity">
-                      <span className={`al-badge ${activity.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>{activity.sportType === "RUN" ? "Chạy" : "Bơi"}</span>
-                      <strong>{activity.title}</strong>
-                      <small>{fmtDist(activity.distanceMeters)} · {activity.durationMinutes} phút</small>
+                  {userActivities.slice(0, 4).map(a => (
+                    <div key={a.id} className="al-mini-activity">
+                      <span className={`al-badge ${a.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>{a.sportType === "RUN" ? "Chạy" : "Bơi"}</span>
+                      <strong>{a.title}</strong>
+                      <small>{fmtDist(a.distanceMeters)} · {a.durationMinutes} phút</small>
                     </div>
                   ))}
-                  {selectedActivities.length === 0 && <p>Chưa có hoạt động.</p>}
+                  {userActivities.length === 0 && <p style={{ color: "#94a3b8", fontSize: "0.85rem", margin: "4px 0 0" }}>Chưa có hoạt động.</p>}
                 </div>
-                <div className="al-detail-actions">
-                  <button className={`al-action-btn ${selectedUser.role === "ADMIN" ? "yellow" : "blue"}`} disabled={selectedUser.id === session.userId || updating === selectedUser.id}
-                    onClick={() => patchUser(selectedUser.id, { role: selectedUser.role === "ADMIN" ? "USER" : "ADMIN" })}>
-                    {selectedUser.role === "ADMIN" ? "Hạ admin" : "Cấp admin"}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="al-empty">Chọn người dùng để xem chi tiết</div>
-            )}
-          </aside>
-        </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Edit Modal ── */}
+        {editUser && (
+          <div className="al-modal-overlay" onClick={() => setEditUser(null)}>
+            <div className="al-modal-box" onClick={e => e.stopPropagation()}>
+              <button className="al-modal-close" onClick={() => setEditUser(null)}><X size={15} /></button>
+              <h3 style={{ margin: 0, fontSize: "1rem" }}>Sửa: {editUser.fullName}</h3>
+              <div className="al-edit-form">
+                <label className="al-edit-field">
+                  <span>Vai trò</span>
+                  <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}>
+                    <option value="USER">User</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </label>
+                <label className="al-edit-field">
+                  <span>Gói</span>
+                  <select value={String(editForm.premiumActive)} onChange={e => setEditForm(f => ({ ...f, premiumActive: e.target.value === "true" }))}>
+                    <option value="false">Free</option>
+                    <option value="true">Premium</option>
+                  </select>
+                </label>
+                <label className="al-edit-field">
+                  <span>Trạng thái</span>
+                  <select value={String(editForm.active)} onChange={e => setEditForm(f => ({ ...f, active: e.target.value === "true" }))}>
+                    <option value="true">Hoạt động</option>
+                    <option value="false">Đã khoá</option>
+                  </select>
+                </label>
+              </div>
+              <div className="al-modal-actions">
+                <button className="al-add-btn" disabled={updating === editUser.id} onClick={saveEdit}>
+                  {updating === editUser.id ? "Đang lưu..." : "Lưu thay đổi"}
+                </button>
+                <button className="al-refresh-btn" onClick={() => setEditUser(null)}>Hủy</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );
 }
+
 
 function UsersPage({ session }: { session: AdminSession }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -776,14 +1159,46 @@ function UsersPage({ session }: { session: AdminSession }) {
 
 // ─── Activities Page ──────────────────────────────────────────────────────────
 
+function fmtPace(distanceMeters: number, durationMinutes: number, sport: "RUN" | "SWIM"): string {
+  if (distanceMeters <= 0 || durationMinutes <= 0) return "—";
+  if (sport === "RUN") {
+    const paceMinPerKm = durationMinutes / (distanceMeters / 1000);
+    const mins = Math.floor(paceMinPerKm);
+    const secs = Math.round((paceMinPerKm - mins) * 60);
+    return `${mins}'${String(secs).padStart(2, "0")}" /km`;
+  } else {
+    const secPer100m = (durationMinutes * 60) / (distanceMeters / 100);
+    const mins = Math.floor(secPer100m / 60);
+    const secs = Math.round(secPer100m % 60);
+    return `${mins}'${String(secs).padStart(2, "0")}" /100m`;
+  }
+}
+
+function isToday(dateStr: string) {
+  const d = new Date(dateStr); const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+function isWithin7Days(dateStr: string) {
+  return Date.now() - new Date(dateStr).getTime() <= 7 * 24 * 60 * 60 * 1000;
+}
+function isThisMonth(dateStr: string) {
+  const d = new Date(dateStr); const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+}
+
 function ActivitiesPage({ session }: { session: AdminSession }) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [overview, setOverview] = useState<ActivityOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [sportFilter, setSportFilter] = useState<"ALL" | "RUN" | "SWIM">("ALL");
+  const [timeFilter, setTimeFilter] = useState<"ALL" | "TODAY" | "7D" | "MONTH">("ALL");
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [detailActivity, setDetailActivity] = useState<ActivityItem | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ActivityItem | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -798,104 +1213,266 @@ function ActivitiesPage({ session }: { session: AdminSession }) {
   }, [session.token]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setCurrentPage(1); }, [search, sportFilter, timeFilter, pageSize]);
 
-  async function removeActivity(id: number) {
-    if (!confirm("Xoá hoạt động này?")) return;
-    setDeleting(id);
+  async function confirmDeleteActivity() {
+    if (!confirmDelete) return;
+    setDeleting(confirmDelete.id);
+    setConfirmDelete(null);
     try {
-      await del(session.token, `/api/activities/admin/${id}`);
-      setActivities(prev => prev.filter(a => a.id !== id));
+      await del(session.token, `/api/activities/admin/${confirmDelete.id}`);
+      setActivities(prev => prev.filter(a => a.id !== confirmDelete.id));
       if (overview) setOverview(prev => prev ? { ...prev, totalActivities: prev.totalActivities - 1 } : prev);
     } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi xoá"); }
     finally { setDeleting(null); }
   }
 
+  const totalDistKm = activities.reduce((s, a) => s + a.distanceMeters, 0) / 1000;
+  const totalCalories = activities.reduce((s, a) => s + (a.calories ?? 0), 0);
+
   const filtered = activities.filter(a => {
     const q = search.toLowerCase();
-    return (sportFilter === "ALL" || a.sportType === sportFilter)
-      && (a.title.toLowerCase().includes(q) || a.athleteName.toLowerCase().includes(q));
+    const matchSearch = a.title.toLowerCase().includes(q) || a.athleteName.toLowerCase().includes(q);
+    const matchSport = sportFilter === "ALL" || a.sportType === sportFilter;
+    const matchTime =
+      timeFilter === "ALL" ||
+      (timeFilter === "TODAY" && isToday(a.startedAt)) ||
+      (timeFilter === "7D" && isWithin7Days(a.startedAt)) ||
+      (timeFilter === "MONTH" && isThisMonth(a.startedAt));
+    return matchSearch && matchSport && matchTime;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <>
-      <PageHeader title="Hoạt động" sub={`${activities.length} hoạt động trong hệ thống`} />
+      <PageHeader title="Quản lý hoạt động" sub={`${activities.length} hoạt động trong hệ thống`} />
       <div className="al-content">
-        {overview && (
-          <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
-            {[
-              { label: "Tổng hoạt động", value: overview.totalActivities, color: "#f97316" },
-              { label: "Chạy bộ", value: overview.runActivities, color: "#3b82f6" },
-              { label: "Bơi lội", value: overview.swimActivities, color: "#06b6d4" },
-              { label: "Lộ trình", value: overview.totalRoutes, color: "#22c55e" },
-            ].map(c => (
-              <div key={c.label} className="al-stat-card" style={{ padding: "14px 16px" }}>
-                <div className="al-stat-value" style={{ fontSize: "1.4rem", color: c.color }}>{c.value}</div>
-                <div className="al-stat-label">{c.label}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="al-controls">
+
+        {/* ── Stats ── */}
+        <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(5,1fr)" }}>
+          {[
+            { label: "Tổng hoạt động", value: overview?.totalActivities ?? activities.length, color: "#f97316", suffix: "" },
+            { label: "Chạy bộ", value: overview?.runActivities ?? activities.filter(a => a.sportType === "RUN").length, color: "#3b82f6", suffix: "" },
+            { label: "Bơi lội", value: overview?.swimActivities ?? activities.filter(a => a.sportType === "SWIM").length, color: "#06b6d4", suffix: "" },
+            { label: "Tổng quãng đường", value: totalDistKm.toFixed(0), color: "#22c55e", suffix: " km" },
+            { label: "Tổng calories", value: Math.round(totalCalories / 1000), color: "#ef4444", suffix: "k kcal" },
+          ].map(c => (
+            <div key={c.label} className="al-stat-card">
+              <div className="al-stat-value" style={{ fontSize: "1.5rem", color: c.color }}>{c.value}{c.suffix}</div>
+              <div className="al-stat-label">{c.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Filters ── */}
+        <div className="al-controls" style={{ flexWrap: "wrap", gap: 8 }}>
           <div className="al-search-wrap">
             <Search size={14} className="al-search-icon" />
-            <input className="al-search" placeholder="Tìm tên hoặc vận động viên..." value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="al-search" placeholder="Tìm người dùng hoặc tiêu đề..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div className="al-tabs">
             {(["ALL", "RUN", "SWIM"] as const).map(s => (
               <button key={s} className={`al-tab${sportFilter === s ? " active" : ""}`} onClick={() => setSportFilter(s)}>
-                {s === "ALL" ? "Tất cả" : s === "RUN" ? "🏃 Chạy bộ" : "🏊 Bơi lội"}
+                {s === "ALL" ? "Tất cả môn" : s === "RUN" ? "Chạy bộ" : "Bơi lội"}
               </button>
             ))}
           </div>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
+          <div className="al-tabs">
+            {([["ALL", "Mọi thời gian"], ["TODAY", "Hôm nay"], ["7D", "7 ngày"], ["MONTH", "Tháng này"]] as const).map(([id, label]) => (
+              <button key={id} className={`al-tab${timeFilter === id ? " active" : ""}`} onClick={() => setTimeFilter(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button className="al-refresh-btn" style={{ marginLeft: "auto" }} onClick={load}><RefreshCw size={13} /> Làm mới</button>
         </div>
+
+        {/* ── Table ── */}
         <div className="al-table-wrap">
           {loading ? <div className="al-loading">Đang tải...</div>
             : error ? <ErrMsg msg={error} />
-            : filtered.length === 0 ? <div className="al-empty">Không có hoạt động</div>
+            : filtered.length === 0 ? <div className="al-empty">Không có hoạt động phù hợp</div>
             : (
-              <table className="al-table">
-                <thead><tr>
-                  <th>Vận động viên</th><th>Môn</th><th>Tiêu đề</th>
-                  <th>Khoảng cách</th><th>Thời gian</th><th>Calories</th><th>Ngày</th><th></th>
-                </tr></thead>
-                <tbody>
-                  {filtered.map(a => (
-                    <tr key={a.id}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div className="al-avatar" style={{ background: avatarColor(a.userId), width: 28, height: 28, fontSize: "0.68rem" }}>
-                            {initials(a.athleteName)}
+              <>
+                <table className="al-table">
+                  <thead><tr>
+                    <th>Vận động viên</th>
+                    <th>Môn</th>
+                    <th>Tiêu đề</th>
+                    <th>Khoảng cách</th>
+                    <th>Thời gian</th>
+                    <th>Pace</th>
+                    <th>Calories</th>
+                    <th>Ngày</th>
+                    <th>Thao tác</th>
+                  </tr></thead>
+                  <tbody>
+                    {paginated.map(a => (
+                      <tr key={a.id}>
+                        <td>
+                          <div className="al-user-cell">
+                            <div className="al-avatar" style={{ background: avatarColor(a.userId), width: 32, height: 32, fontSize: "0.72rem" }}>
+                              {initials(a.athleteName)}
+                            </div>
+                            <div>
+                              <div className="al-uname" style={{ fontSize: "0.83rem" }}>{a.athleteName}</div>
+                              <div className="al-uemail">ID {a.userId}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="al-uname" style={{ fontSize: "0.82rem" }}>{a.athleteName}</div>
-                            <div className="al-uemail">ID {a.userId}</div>
+                        </td>
+                        <td>
+                          <span className={`al-badge ${a.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>
+                            {a.sportType === "RUN" ? "Chạy" : "Bơi"}
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-primary)" }}>{a.title}</span>
+                        </td>
+                        <td><span className="al-date">{fmtDist(a.distanceMeters)}</span></td>
+                        <td><span className="al-date">{a.durationMinutes} phút</span></td>
+                        <td><span className="al-date" style={{ fontVariantNumeric: "tabular-nums" }}>{fmtPace(a.distanceMeters, a.durationMinutes, a.sportType)}</span></td>
+                        <td><span className="al-date">{a.calories != null ? `${a.calories} kcal` : "—"}</span></td>
+                        <td><span className="al-date">{fmtDate(a.startedAt)}</span></td>
+                        <td>
+                          <div className="al-actions">
+                            <button className="al-action-btn blue" onClick={() => setDetailActivity(a)}>
+                              <Eye size={12} /> Chi tiết
+                            </button>
+                            <button className="al-action-btn red" disabled={deleting === a.id}
+                              onClick={() => setConfirmDelete(a)}>
+                              <Trash2 size={12} /> Xóa
+                            </button>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`al-badge ${a.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>
-                          {a.sportType === "RUN" ? "🏃 Chạy" : "🏊 Bơi"}
-                        </span>
-                      </td>
-                      <td><span style={{ fontSize: "0.85rem", fontWeight: 500 }}>{a.title}</span></td>
-                      <td><span className="al-date">{fmtDist(a.distanceMeters)}</span></td>
-                      <td><span className="al-date">{a.durationMinutes} phút</span></td>
-                      <td><span className="al-date">{a.calories ?? "—"} kcal</span></td>
-                      <td><span className="al-date">{fmtDate(a.startedAt)}</span></td>
-                      <td>
-                        <button className="al-action-btn red" disabled={deleting === a.id}
-                          onClick={() => removeActivity(a.id)}>
-                          <Trash2 size={12} style={{ display: "inline", marginRight: 4 }} />
-                          Xoá
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Pagination */}
+                <div className="al-pagination">
+                  <div className="al-page-size">
+                    <span>Hiển thị</span>
+                    <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}>
+                      {[5, 10, 20].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <span>/ trang</span>
+                  </div>
+                  <div className="al-page-nav">
+                    <button className="al-page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>← Trước</button>
+                    <span className="al-page-info">Trang {currentPage} / {totalPages} &nbsp;·&nbsp; {filtered.length} kết quả</span>
+                    <button className="al-page-btn" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)}>Tiếp →</button>
+                  </div>
+                </div>
+              </>
             )}
         </div>
+
+        {/* ── Detail Modal ── */}
+        {detailActivity && (
+          <div className="al-modal-overlay" onClick={() => setDetailActivity(null)}>
+            <div className="al-modal-box al-modal-detail" onClick={e => e.stopPropagation()}>
+              <button className="al-modal-close" onClick={() => setDetailActivity(null)}><X size={15} /></button>
+
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div className="al-avatar large" style={{ background: avatarColor(detailActivity.userId), width: 48, height: 48, fontSize: "1rem" }}>
+                  {initials(detailActivity.athleteName)}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text-primary)" }}>{detailActivity.title}</div>
+                  <div style={{ fontSize: "0.83rem", color: "var(--text-muted)", marginTop: 2 }}>
+                    {detailActivity.athleteName} · {fmtDate(detailActivity.startedAt)}
+                  </div>
+                </div>
+                <div style={{ marginLeft: "auto" }}>
+                  <span className={`al-badge ${detailActivity.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>
+                    {detailActivity.sportType === "RUN" ? "Chạy bộ" : "Bơi lội"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Key metrics grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+                {[
+                  { label: "Khoảng cách", value: fmtDist(detailActivity.distanceMeters) },
+                  { label: "Thời gian", value: `${detailActivity.durationMinutes} phút` },
+                  { label: "Pace TB", value: fmtPace(detailActivity.distanceMeters, detailActivity.durationMinutes, detailActivity.sportType) },
+                  { label: "Calories", value: detailActivity.calories != null ? `${detailActivity.calories} kcal` : "—" },
+                ].map(m => (
+                  <div key={m.label} style={{ background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>
+                      {m.label}
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                      {m.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* GPS map placeholder */}
+              <div>
+                <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
+                  GPS Route
+                </div>
+                {detailActivity.gpsRoute && detailActivity.gpsRoute.length > 0 ? (
+                  <div style={{ background: "#e2e8f0", borderRadius: 10, height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                    Bản đồ GPS · {detailActivity.gpsRoute.length} điểm
+                  </div>
+                ) : (
+                  <div style={{ background: "#f8fafc", border: "1px dashed var(--border)", borderRadius: 10, height: 100, display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.83rem" }}>
+                    Không có dữ liệu GPS
+                  </div>
+                )}
+              </div>
+
+              {/* Notes */}
+              {detailActivity.notes && (
+                <div>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Ghi chú</div>
+                  <div style={{ background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px", fontSize: "0.88rem", color: "var(--text-primary)", lineHeight: 1.6 }}>
+                    {detailActivity.notes}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer actions */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+                <button className="al-action-btn red" disabled={deleting === detailActivity.id}
+                  onClick={() => { setConfirmDelete(detailActivity); setDetailActivity(null); }}>
+                  <Trash2 size={12} /> Xóa hoạt động
+                </button>
+                <button className="al-refresh-btn" onClick={() => setDetailActivity(null)}>Đóng</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Confirm Delete Modal ── */}
+        {confirmDelete && (
+          <div className="al-modal-overlay" onClick={() => setConfirmDelete(null)}>
+            <div className="al-modal-box" style={{ maxWidth: 400, textAlign: "center", gap: 16 }} onClick={e => e.stopPropagation()}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--text-primary)", marginBottom: 6 }}>Xác nhận xóa hoạt động</div>
+                <div style={{ fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                  Bạn có chắc muốn xóa hoạt động <strong>"{confirmDelete.title}"</strong> của <strong>{confirmDelete.athleteName}</strong>?
+                  <br />Hành động này không thể hoàn tác.
+                </div>
+              </div>
+              <div className="al-modal-actions">
+                <button className="al-action-btn red" style={{ padding: "8px 20px", fontSize: "0.88rem" }}
+                  onClick={confirmDeleteActivity}>
+                  Xóa hoạt động
+                </button>
+                <button className="al-refresh-btn" onClick={() => setConfirmDelete(null)}>Hủy bỏ</button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </>
   );
@@ -905,391 +1482,254 @@ function ActivitiesPage({ session }: { session: AdminSession }) {
 
 function RoutesPage({ session }: { session: AdminSession }) {
   const [routes, setRoutes] = useState<RouteItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [stats, setStats] = useState<RouteStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ name: "", sportType: "RUN", place: "", distanceMeters: 5000, note: "" });
-
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try { setRoutes(await get<RouteItem[]>(session.token, "/api/activities/routes")); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoading(false); }
-  }, [session.token]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function addRoute(e: FormEvent) {
-    e.preventDefault(); setSaving(true);
-    try {
-      const created = await post<RouteItem>(session.token, "/api/activities/admin/routes", { ...form, distanceMeters: Number(form.distanceMeters) });
-      setRoutes(prev => [created, ...prev]);
-      setShowForm(false);
-      setForm({ name: "", sportType: "RUN", place: "", distanceMeters: 5000, note: "" });
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi tạo lộ trình"); }
-    finally { setSaving(false); }
-  }
-
-  async function removeRoute(id: number) {
-    if (!confirm("Xoá lộ trình này?")) return;
-    setDeleting(id);
-    try {
-      await del(session.token, `/api/activities/admin/routes/${id}`);
-      setRoutes(prev => prev.filter(r => r.id !== id));
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi xoá"); }
-    finally { setDeleting(null); }
-  }
-
-  return (
-    <>
-      <PageHeader title="Lộ trình" sub={`${routes.length} lộ trình trong hệ thống`} />
-      <div className="al-content">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
-          <button className="al-add-btn" onClick={() => setShowForm(v => !v)}>
-            {showForm ? <X size={14} /> : <Plus size={14} />}
-            {showForm ? "Đóng" : "Thêm lộ trình"}
-          </button>
-        </div>
-
-        {showForm && (
-          <div className="al-form-card">
-            <div className="al-form-card-title">Thêm lộ trình mới</div>
-            <form onSubmit={addRoute} className="al-inline-form">
-              <div className="al-form-row">
-                <div className="al-form-group">
-                  <label className="al-form-label">Tên lộ trình *</label>
-                  <input className="al-form-input" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ví dụ: Hồ Tây loop" />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Địa điểm *</label>
-                  <input className="al-form-input" required value={form.place} onChange={e => setForm(f => ({ ...f, place: e.target.value }))} placeholder="Hà Nội, TP.HCM..." />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Môn thể thao</label>
-                  <div className="al-select-wrap">
-                    <select className="al-form-input" value={form.sportType} onChange={e => setForm(f => ({ ...f, sportType: e.target.value }))}>
-                      <option value="RUN">🏃 Chạy bộ</option>
-                      <option value="SWIM">🏊 Bơi lội</option>
-                    </select>
-                    <ChevronDown size={14} className="al-select-icon" />
-                  </div>
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Khoảng cách (m)</label>
-                  <input className="al-form-input" type="number" min={100} value={form.distanceMeters} onChange={e => setForm(f => ({ ...f, distanceMeters: Number(e.target.value) }))} />
-                </div>
-              </div>
-              <div className="al-form-group">
-                <label className="al-form-label">Ghi chú</label>
-                <input className="al-form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Mô tả ngắn về lộ trình..." />
-              </div>
-              <button className="al-add-btn" type="submit" disabled={saving} style={{ marginTop: 4 }}>
-                {saving ? "Đang lưu..." : "Lưu lộ trình"}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {loading ? <div className="al-loading">Đang tải...</div>
-          : error ? <ErrMsg msg={error} />
-          : routes.length === 0 ? <div className="al-empty">Chưa có lộ trình nào</div>
-          : (
-            <div className="al-card-grid">
-              {routes.map(r => (
-                <div key={r.id} className="al-item-card">
-                  <div className="al-item-card-head">
-                    <span className={`al-badge ${r.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>
-                      {r.sportType === "RUN" ? "🏃 Chạy" : "🏊 Bơi"}
-                    </span>
-                    <button className="al-icon-del" disabled={deleting === r.id} onClick={() => removeRoute(r.id)} title="Xoá">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                  <div className="al-item-card-title">{r.name}</div>
-                  <div className="al-item-card-meta">
-                    <MapPin size={12} /> {r.place} · {fmtDist(r.distanceMeters)}
-                  </div>
-                  {r.note && <div className="al-item-card-note">{r.note}</div>}
-                  <div className="al-date" style={{ marginTop: 8 }}>{fmtDate(r.createdAt)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
-    </>
-  );
-}
-
-// ─── Challenges Page ──────────────────────────────────────────────────────────
-
-function ChallengesPage({ session }: { session: AdminSession }) {
-  const [challenges, setChallenges] = useState<ChallengeItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [deleting, setDeleting] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [form, setForm] = useState({ code: "", title: "", sportType: "RUN", targetValue: 30000, unit: "meters", note: "" });
-
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try { setChallenges(await get<ChallengeItem[]>(session.token, "/api/activities/challenges")); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoading(false); }
-  }, [session.token]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function addChallenge(e: FormEvent) {
-    e.preventDefault(); setSaving(true);
-    try {
-      const created = await post<ChallengeItem>(session.token, "/api/activities/challenges", { ...form, targetValue: Number(form.targetValue) });
-      setChallenges(prev => [created, ...prev]);
-      setShowForm(false);
-      setForm({ code: "", title: "", sportType: "RUN", targetValue: 30000, unit: "meters", note: "" });
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi tạo thử thách"); }
-    finally { setSaving(false); }
-  }
-
-  async function removeChallenge(id: number) {
-    if (!confirm("Xoá thử thách này?")) return;
-    setDeleting(id);
-    try {
-      await del(session.token, `/api/activities/admin/challenges/${id}`);
-      setChallenges(prev => prev.filter(c => c.id !== id));
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Lỗi xoá"); }
-    finally { setDeleting(null); }
-  }
-
-  const sportLabel = (s: string) => ({ RUN: "🏃 Chạy", SWIM: "🏊 Bơi", MIXED: "🏃🏊 Kết hợp" }[s.toUpperCase()] ?? s);
-
-  return (
-    <>
-      <PageHeader title="Thử thách" sub={`${challenges.length} thử thách đang có`} />
-      <div className="al-content">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
-          <button className="al-add-btn" onClick={() => setShowForm(v => !v)}>
-            {showForm ? <X size={14} /> : <Plus size={14} />}
-            {showForm ? "Đóng" : "Tạo thử thách"}
-          </button>
-        </div>
-
-        {showForm && (
-          <div className="al-form-card">
-            <div className="al-form-card-title">Tạo thử thách mới</div>
-            <form onSubmit={addChallenge} className="al-inline-form">
-              <div className="al-form-row">
-                <div className="al-form-group">
-                  <label className="al-form-label">Mã code * <small style={{textTransform:"none",fontWeight:400}}>(unique)</small></label>
-                  <input className="al-form-input" required value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase().replace(/\s/g, "_") }))} placeholder="VD: RUN_5K_WEEK" />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Tên thử thách *</label>
-                  <input className="al-form-input" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Chạy 5km mỗi tuần" />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Môn</label>
-                  <div className="al-select-wrap">
-                    <select className="al-form-input" value={form.sportType} onChange={e => setForm(f => ({ ...f, sportType: e.target.value }))}>
-                      <option value="RUN">🏃 Chạy bộ</option>
-                      <option value="SWIM">🏊 Bơi lội</option>
-                      <option value="MIXED">🏃🏊 Kết hợp</option>
-                    </select>
-                    <ChevronDown size={14} className="al-select-icon" />
-                  </div>
-                </div>
-              </div>
-              <div className="al-form-row">
-                <div className="al-form-group">
-                  <label className="al-form-label">Mục tiêu</label>
-                  <input className="al-form-input" type="number" min={1} value={form.targetValue} onChange={e => setForm(f => ({ ...f, targetValue: Number(e.target.value) }))} />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Đơn vị</label>
-                  <div className="al-select-wrap">
-                    <select className="al-form-input" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}>
-                      <option value="meters">meters (m)</option>
-                      <option value="activities">activities (buổi)</option>
-                    </select>
-                    <ChevronDown size={14} className="al-select-icon" />
-                  </div>
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Ghi chú</label>
-                  <input className="al-form-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Mô tả thử thách..." />
-                </div>
-              </div>
-              <button className="al-add-btn" type="submit" disabled={saving} style={{ marginTop: 4 }}>
-                {saving ? "Đang lưu..." : "Tạo thử thách"}
-              </button>
-            </form>
-          </div>
-        )}
-
-        {loading ? <div className="al-loading">Đang tải...</div>
-          : error ? <ErrMsg msg={error} />
-          : challenges.length === 0 ? <div className="al-empty">Chưa có thử thách nào</div>
-          : (
-            <div className="al-card-grid">
-              {challenges.map(c => (
-                <div key={c.id} className="al-item-card">
-                  <div className="al-item-card-head">
-                    <span className="al-badge badge-admin" style={{ fontFamily: "monospace", letterSpacing: 0 }}>{c.code}</span>
-                    <button className="al-icon-del" disabled={deleting === c.id} onClick={() => removeChallenge(c.id)} title="Xoá">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                  <div className="al-item-card-title">{c.title}</div>
-                  <div className="al-item-card-meta">
-                    {sportLabel(c.sportType)} · Mục tiêu: {c.targetValue.toLocaleString()} {c.unit}
-                  </div>
-                  {c.note && <div className="al-item-card-note">{c.note}</div>}
-                  <div className="al-date" style={{ marginTop: 8 }}>{fmtDate(c.createdAt)}</div>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
-    </>
-  );
-}
-
-// ─── Training / Athlete Profiles Page ────────────────────────────────────────
-
-function TrainingPage({ session }: { session: AdminSession }) {
-  const [profiles, setProfiles] = useState<AthleteProfile[]>([]);
-  const [stats, setStats] = useState<TrainingStats | null>(null);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [levelFilter, setLevelFilter] = useState("ALL");
-  const [error, setError] = useState("");
+  const [sportFilter, setSportFilter] = useState("ALL");
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [detailRoute, setDetailRoute] = useState<RouteItem | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<RouteItem | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try {
-      const [s, p] = await Promise.all([
-        get<TrainingStats>(session.token, "/api/athletes/admin/stats"),
-        get<AthleteProfile[]>(session.token, "/api/athletes/admin/all"),
-      ]);
-      setStats(s); setProfiles(p);
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoading(false); }
+  const loadStats = useCallback(async () => {
+    try { setStats(await get<RouteStats>(session.token, "/api/activities/admin/routes/stats")); }
+    catch { /* ignore */ }
   }, [session.token]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadRoutes = useCallback(async (pg = 0, sz = 10, q = "", sp = "ALL") => {
+    setLoading(true); setError("");
+    try {
+      const params = new URLSearchParams({ page: String(pg), size: String(sz), sport: sp, ...(q ? { search: q } : {}) });
+      const data = await get<{ content: RouteItem[]; totalElements: number; totalPages: number }>(
+        session.token, `/api/activities/admin/routes?${params}`
+      );
+      setRoutes(data.content);
+      setTotal(data.totalElements);
+      setTotalPages(data.totalPages);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
+    } finally {
+      setLoading(false);
+    }
+  }, [session.token]);
 
-  const levels = ["ALL", ...Array.from(new Set(profiles.map(p => p.experienceLevel ?? "").filter(Boolean)))];
+  useEffect(() => {
+    loadStats();
+    loadRoutes(0, pageSize, search, sportFilter);
+  }, []); // eslint-disable-line
 
-  const filtered = profiles.filter(p => {
-    const q = search.toLowerCase();
-    return (levelFilter === "ALL" || p.experienceLevel === levelFilter)
-      && (p.displayName.toLowerCase().includes(q) || (p.city ?? "").toLowerCase().includes(q));
-  });
+  function applyFilters() {
+    setCurrentPage(0);
+    loadRoutes(0, pageSize, search, sportFilter);
+  }
 
-  const goalLabel = (g: string | null) => ({
-    WEIGHT_LOSS: "Giảm cân", ENDURANCE: "Sức bền", SPEED: "Tốc độ",
-    HEALTH: "Sức khỏe", COMPETITION: "Thi đấu",
-  }[g ?? ""] ?? g ?? "—");
+  async function doDelete(route: RouteItem) {
+    setDeleting(route.id);
+    try {
+      await del(session.token, `/api/activities/admin/routes/${route.id}`);
+      setConfirmDelete(null);
+      loadRoutes(currentPage, pageSize, search, sportFilter);
+      loadStats();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Lỗi xóa lộ trình");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
-  const levelLabel = (l: string | null) => ({
-    BEGINNER: "Mới bắt đầu", INTERMEDIATE: "Trung bình", ADVANCED: "Nâng cao",
-  }[l ?? ""] ?? l ?? "—");
 
   return (
     <>
-      <PageHeader title="Cài đặt tập luyện" sub="Hồ sơ & mục tiêu tập luyện của vận động viên" />
+      <PageHeader title="Quản lý lộ trình" sub="Danh sách các lộ trình người dùng lưu trong hệ thống" />
       <div className="al-content">
+
+        {/* Stats */}
         {stats && (
-          <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
+          <div className="al-stats-row" style={{ marginBottom: 20 }}>
             {[
-              { label: "Tổng hồ sơ", value: stats.totalProfiles, color: "#3b82f6" },
-              { label: "Hoàn thành onboarding", value: stats.completedOnboarding, color: "#22c55e" },
-              { label: "Mục tiêu chạy TB / tuần", value: `${stats.avgWeeklyRunGoalKm} km`, color: "#f97316", isText: true },
-              { label: "Mục tiêu bơi TB / tuần", value: `${stats.avgWeeklySwimGoalMeters} m`, color: "#06b6d4", isText: true },
+              { label: "Tổng lộ trình", value: stats.total, color: "#3b82f6" },
+              { label: "Chạy bộ (RUN)", value: stats.run,   color: "#f97316" },
+              { label: "Bơi lội (SWIM)", value: stats.swim, color: "#06b6d4" },
             ].map(c => (
               <div key={c.label} className="al-stat-card">
-                <div className="al-stat-value" style={{ fontSize: c.isText ? "1.3rem" : "1.8rem", color: c.color }}>
-                  {c.value}
-                </div>
+                <div className="al-stat-value" style={{ color: c.color }}>{c.value.toLocaleString("vi-VN")}</div>
                 <div className="al-stat-label">{c.label}</div>
               </div>
             ))}
           </div>
         )}
 
-        <div className="al-controls">
-          <div className="al-search-wrap">
-            <Search size={14} className="al-search-icon" />
-            <input className="al-search" placeholder="Tìm tên hoặc thành phố..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* Filters */}
+        <div className="al-card" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: "1 1 220px" }}>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--al-muted)" }}>Tìm kiếm</label>
+              <div className="al-search-wrap">
+                <Search size={14} className="al-search-icon" />
+                <input
+                  className="al-search"
+                  style={{ width: "100%", boxSizing: "border-box" }}
+                  placeholder="Tên lộ trình..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && applyFilters()}
+                />
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--al-muted)" }}>Môn thể thao</label>
+              <select className="al-select" value={sportFilter} onChange={e => setSportFilter(e.target.value)}>
+                <option value="ALL">Tất cả</option>
+                <option value="RUN">Chạy bộ</option>
+                <option value="SWIM">Bơi lội</option>
+              </select>
+            </div>
+            <button className="al-add-btn" onClick={applyFilters}><Search size={13} /> Tìm kiếm</button>
+            <button className="al-refresh-btn" onClick={() => { setSearch(""); setSportFilter("ALL"); setCurrentPage(0); loadRoutes(0, pageSize, "", "ALL"); loadStats(); }}>
+              <RefreshCw size={13} /> Đặt lại
+            </button>
           </div>
-          <div className="al-tabs">
-            {levels.slice(0, 4).map(l => (
-              <button key={l} className={`al-tab${levelFilter === l ? " active" : ""}`} onClick={() => setLevelFilter(l)}>
-                {l === "ALL" ? "Tất cả" : levelLabel(l)}
-              </button>
-            ))}
-          </div>
-          <button className="al-refresh-btn" onClick={load}><RefreshCw size={13} /> Làm mới</button>
         </div>
 
-        <div className="al-table-wrap">
-          {loading ? <div className="al-loading">Đang tải...</div>
-            : error ? <ErrMsg msg={error} />
-            : filtered.length === 0 ? <div className="al-empty">Không tìm thấy hồ sơ</div>
-            : (
-              <table className="al-table">
-                <thead><tr>
-                  <th>Vận động viên</th><th>Thành phố</th><th>Trình độ</th>
-                  <th>Mục tiêu chính</th><th>Mục tiêu chạy/tuần</th><th>Mục tiêu bơi/tuần</th><th>Onboarding</th>
-                </tr></thead>
-                <tbody>
-                  {filtered.map(p => (
-                    <tr key={p.id}>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div className="al-avatar" style={{ background: avatarColor(p.userId) }}>{initials(p.displayName)}</div>
-                          <div>
-                            <div className="al-uname">{p.displayName}</div>
-                            <div className="al-uemail">User ID: {p.userId}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td><span className="al-date">{p.city ?? "—"}</span></td>
-                      <td>
-                        {p.experienceLevel ? (
-                          <span className="al-badge badge-user">{levelLabel(p.experienceLevel)}</span>
-                        ) : <span className="al-date">—</span>}
-                      </td>
-                      <td><span className="al-date">{goalLabel(p.primaryGoal)}</span></td>
-                      <td>
-                        <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "#f97316" }}>
-                          {p.weeklyRunGoalKm} km
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "#06b6d4" }}>
-                          {p.weeklySwimGoalMeters} m
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`al-badge ${p.completedOnboarding ? "badge-active" : "badge-inactive"}`}>
-                          {p.completedOnboarding ? "Hoàn thành" : "Chưa xong"}
-                        </span>
-                      </td>
+        {/* Table */}
+        <div className="al-card">
+          {loading && <div className="al-loading">Đang tải...</div>}
+          {error   && <ErrMsg msg={error} />}
+          {!loading && !error && (
+            <>
+              <div style={{ overflowX: "auto" }}>
+                <table className="al-table">
+                  <thead>
+                    <tr>
+                      <th>Tên lộ trình</th>
+                      <th>Người tạo</th>
+                      <th>Môn</th>
+                      <th>Khoảng cách</th>
+                      <th>Ngày tạo</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {routes.length === 0 && (
+                      <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--al-muted)", padding: "32px 0" }}>Không có lộ trình nào</td></tr>
+                    )}
+                    {routes.map(r => (
+                      <tr key={r.id}>
+                        <td style={{ fontWeight: 500, maxWidth: 180 }}>{r.name}</td>
+                        <td style={{ color: "var(--al-muted)", fontSize: 13 }}>
+                          {r.createdBy ? `User #${r.createdBy}` : "Hệ thống"}
+                        </td>
+                        <td>
+                          <span className={`al-badge ${r.sportType === "RUN" ? "badge-run" : "badge-swim"}`}>
+                            {r.sportType === "RUN" ? "Chạy" : "Bơi"}
+                          </span>
+                        </td>
+                        <td>{fmtDist(r.distanceMeters)}</td>
+                        <td style={{ fontSize: 12 }}>{fmtDate(r.createdAt)}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button className="al-icon-btn" title="Chi tiết" onClick={() => setDetailRoute(r)}><Eye size={14} /></button>
+                            <button className="al-icon-btn danger" title="Xóa" onClick={() => setConfirmDelete(r)}><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="al-pagination">
+                <div className="al-page-size">
+                  Hiển thị
+                  <select className="al-select" value={pageSize} onChange={e => { const s = Number(e.target.value); setPageSize(s); setCurrentPage(0); loadRoutes(0, s, search, sportFilter); }}>
+                    {[5, 10, 20].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  / {total} lộ trình
+                </div>
+                <div className="al-page-nav">
+                  <button className="al-page-btn" disabled={currentPage === 0} onClick={() => { setCurrentPage(p => p - 1); loadRoutes(currentPage - 1, pageSize, search, sportFilter); }}>‹</button>
+                  <span className="al-page-info">Trang {currentPage + 1} / {Math.max(1, totalPages)}</span>
+                  <button className="al-page-btn" disabled={currentPage >= totalPages - 1} onClick={() => { setCurrentPage(p => p + 1); loadRoutes(currentPage + 1, pageSize, search, sportFilter); }}>›</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* ── Detail modal ── */}
+      {detailRoute && (
+        <div className="al-modal-overlay" onClick={() => setDetailRoute(null)}>
+          <div className="al-modal-box al-modal-detail" style={{ maxWidth: 700 }} onClick={e => e.stopPropagation()}>
+            <button className="al-modal-close" onClick={() => setDetailRoute(null)}><X size={16} /></button>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Chi tiết lộ trình</div>
+
+            <div className="al-detail-info-grid">
+              {[
+                ["Tên lộ trình",  detailRoute.name],
+                ["Người tạo",    detailRoute.createdBy ? `User #${detailRoute.createdBy}` : "Hệ thống"],
+                ["Môn thể thao", detailRoute.sportType === "RUN" ? "Chạy bộ" : "Bơi lội"],
+                ["Khoảng cách",  fmtDist(detailRoute.distanceMeters)],
+                ["Địa điểm",     detailRoute.place || "—"],
+                ["Ghi chú",      detailRoute.note || "—"],
+                ["Ngày tạo",     fmtDate(detailRoute.createdAt)],
+              ].map(([label, value]) => (
+                <div key={label} className="al-detail-info-row">
+                  <span className="al-detail-info-label">{label}</span>
+                  <span className="al-detail-info-val">{value}</span>
+                </div>
+              ))}
+              <div className="al-detail-info-row">
+                <span className="al-detail-info-label">Hiển thị</span>
+                <span className={`al-badge ${detailRoute.visibility === "PRIVATE" ? "badge-inactive" : "badge-active"}`}>
+                  {detailRoute.visibility === "PRIVATE" ? "Riêng tư" : "Công khai"}
+                </span>
+              </div>
+            </div>
+
+            {/* GPS Map */}
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--al-muted)", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Bản đồ lộ trình GPS
+              </div>
+              <RouteLeafletMap geoJson={detailRoute.geoJson} height={300} />
+            </div>
+
+            <div className="al-modal-actions" style={{ marginTop: 20 }}>
+              <button className="al-delete-btn" onClick={() => { setDetailRoute(null); setConfirmDelete(detailRoute); }}>
+                <Trash2 size={13} /> Xóa lộ trình
+              </button>
+              <button className="al-refresh-btn" onClick={() => setDetailRoute(null)}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm delete modal ── */}
+      {confirmDelete && (
+        <div className="al-modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="al-modal-box" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Xóa lộ trình</div>
+            <p style={{ color: "var(--al-muted)", marginBottom: 20 }}>
+              Xác nhận xóa lộ trình <strong>"{confirmDelete.name}"</strong>? Hành động này không thể hoàn tác.
+            </p>
+            <div className="al-modal-actions">
+              <button className="al-delete-btn" disabled={deleting === confirmDelete.id} onClick={() => doDelete(confirmDelete)}>
+                <Trash2 size={13} /> {deleting === confirmDelete.id ? "Đang xóa..." : "Xóa"}
+              </button>
+              <button className="al-refresh-btn" onClick={() => setConfirmDelete(null)}>Hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
+
 
 // ─── Sports Management ────────────────────────────────────────────────────────
 
@@ -1382,10 +1822,6 @@ function SportsManagementPage({ session }: { session: AdminSession }) {
                   <input className="al-form-input" placeholder="VD: Chạy bộ" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="al-form-label">Icon (emoji)</label>
-                  <input className="al-form-input" placeholder="🏃" value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} />
-                </div>
-                <div>
                   <label className="al-form-label">Danh mục</label>
                   <input className="al-form-input" placeholder="VD: Môn thể thao dùng chân" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
                 </div>
@@ -1422,14 +1858,13 @@ function SportsManagementPage({ session }: { session: AdminSession }) {
             : (
               <table className="al-table">
                 <thead><tr>
-                  <th>Thứ tự</th><th>Icon</th><th>Mã</th><th>Tên</th><th>Danh mục</th>
+                  <th>Thứ tự</th><th>Mã</th><th>Tên</th><th>Danh mục</th>
                   <th>Backend</th><th>Trạng thái</th><th>Hành động</th>
                 </tr></thead>
                 <tbody>
                   {[...sports].sort((a, b) => a.sortOrder - b.sortOrder).map(s => (
                     <tr key={s.id}>
                       <td><span className="al-date">{s.sortOrder}</span></td>
-                      <td style={{ fontSize: "1.3rem", textAlign: "center" }}>{s.icon}</td>
                       <td><code style={{ fontSize: "0.82rem", background: "var(--bg)", padding: "2px 6px", borderRadius: 4 }}>{s.code}</code></td>
                       <td><strong style={{ fontSize: "0.88rem" }}>{s.label}</strong></td>
                       <td><span className="al-date">{s.category}</span></td>
@@ -1478,6 +1913,73 @@ function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPa
   const [error, setError] = useState("");
   const [confirmModal, setConfirmModal] = useState<{ msg: string; onOk: () => void } | null>(null);
   const [detailFood, setDetailFood] = useState<NutritionFood | null>(null);
+
+  // ── Meal Logs state ──────────────────────────────────────────────────────────
+  const [mealLogs, setMealLogs] = useState<AdminMealLog[]>([]);
+  const [mealLogsLoading, setMealLogsLoading] = useState(false);
+  const [mealLogsError, setMealLogsError] = useState("");
+  const [mealSearch, setMealSearch] = useState("");
+  const [mealTypeFilter, setMealTypeFilter] = useState<"ALL" | "BREAKFAST" | "LUNCH" | "DINNER" | "SNACK">("ALL");
+  const [mealTimeFilter, setMealTimeFilter] = useState<"ALL" | "TODAY" | "7D" | "MONTH">("ALL");
+  const [mealPage, setMealPage] = useState(1);
+  const [mealPageSize, setMealPageSize] = useState(10);
+  const [detailMeal, setDetailMeal] = useState<AdminMealLog | null>(null);
+  const [confirmMealDelete, setConfirmMealDelete] = useState<AdminMealLog | null>(null);
+  const [deletingMeal, setDeletingMeal] = useState<number | null>(null);
+
+  const loadMealLogs = useCallback(async () => {
+    setMealLogsLoading(true); setMealLogsError("");
+    try {
+      const data = await get<AdminMealLog[]>(session.token, "/api/nutrition/admin/meal-logs");
+      setMealLogs(Array.isArray(data) ? data : []);
+    } catch (e: unknown) {
+      setMealLogsError(e instanceof Error ? e.message : "Lỗi tải meal logs");
+    } finally {
+      setMealLogsLoading(false);
+    }
+  }, [session.token]);
+
+  useEffect(() => {
+    if (nutPage === "meals") loadMealLogs();
+  }, [nutPage, loadMealLogs]);
+
+  useEffect(() => { setMealPage(1); }, [mealSearch, mealTypeFilter, mealTimeFilter, mealPageSize]);
+
+  async function deleteMealLog(log: AdminMealLog) {
+    setDeletingMeal(log.id);
+    setConfirmMealDelete(null);
+    try {
+      await del(session.token, `/api/nutrition/admin/meal-logs/${log.id}`);
+      setMealLogs(prev => prev.filter(m => m.id !== log.id));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Lỗi xóa meal log");
+    } finally {
+      setDeletingMeal(null);
+    }
+  }
+
+  function mealTypeLabel(t: string) {
+    return ({ BREAKFAST: "Sáng", LUNCH: "Trưa", DINNER: "Tối", SNACK: "Snack" } as Record<string, string>)[t] ?? t;
+  }
+  function mealTypeColor(t: string) {
+    return ({ BREAKFAST: "#f97316", LUNCH: "#3b82f6", DINNER: "#8b5cf6", SNACK: "#22c55e" } as Record<string, string>)[t] ?? "#64748b";
+  }
+  function isMealToday(d: string) { const dt = new Date(d), n = new Date(); return dt.getFullYear()===n.getFullYear()&&dt.getMonth()===n.getMonth()&&dt.getDate()===n.getDate(); }
+  function isMeal7D(d: string) { return Date.now() - new Date(d).getTime() <= 7*24*60*60*1000; }
+  function isMealMonth(d: string) { const dt = new Date(d), n = new Date(); return dt.getFullYear()===n.getFullYear()&&dt.getMonth()===n.getMonth(); }
+
+  const filteredMeals = mealLogs.filter(m => {
+    const q = mealSearch.toLowerCase();
+    const matchSearch = m.userName.toLowerCase().includes(q);
+    const matchType = mealTypeFilter === "ALL" || m.mealType === mealTypeFilter;
+    const matchTime = mealTimeFilter === "ALL"
+      || (mealTimeFilter === "TODAY" && isMealToday(m.loggedAt))
+      || (mealTimeFilter === "7D" && isMeal7D(m.loggedAt))
+      || (mealTimeFilter === "MONTH" && isMealMonth(m.loggedAt));
+    return matchSearch && matchType && matchTime;
+  });
+  const mealTotalPages = Math.max(1, Math.ceil(filteredMeals.length / mealPageSize));
+  const paginatedMeals = filteredMeals.slice((mealPage - 1) * mealPageSize, mealPage * mealPageSize);
 
   // ── Categories CRUD state ────────────────────────────────────────────────────
   const emptyCatForm = { name: "", description: "" };
@@ -1607,6 +2109,7 @@ function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPa
   const PAGE_TITLES: Record<NutPage, { title: string; sub: string }> = {
     foods:      { title: "Món ăn",          sub: "Quản lý danh sách món ăn trong hệ thống" },
     categories: { title: "Danh mục món ăn", sub: "Quản lý và phân loại danh mục món ăn" },
+    meals:      { title: "Meal Logs",        sub: "Nhật ký bữa ăn của người dùng trong hệ thống" },
   };
 
   if (loading) return <div className="al-content"><div className="al-loading">Đang tải dữ liệu dinh dưỡng...</div></div>;
@@ -1623,14 +2126,13 @@ function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPa
             {overview && (
               <div className="al-stats-row cols-5">
                 {[
-                  { label: "Món ăn đang hoạt động",  value: overview.activeFoods,    color: "#22c55e", icon: <Salad size={18} /> },
-                  { label: "Tổng món trong hệ thống", value: overview.totalFoods,     color: "#3b82f6", icon: <Utensils size={18} /> },
-                  { label: "Người dùng dinh dưỡng",   value: overview.usersWithPlans, color: "#a855f7", icon: <Zap size={18} /> },
-                  { label: "Lượt ghi nhận bữa ăn",   value: overview.mealsLogged,    color: "#f97316", icon: <Activity size={18} /> },
-                  { label: "Tổng calo hôm nay",       value: overview.caloriesToday,  color: "#ef4444", icon: <Flame size={18} /> },
+                  { label: "Món ăn đang hoạt động",  value: overview.activeFoods,    color: "#22c55e" },
+                  { label: "Tổng món trong hệ thống", value: overview.totalFoods,     color: "#3b82f6" },
+                  { label: "Người dùng dinh dưỡng",   value: overview.usersWithPlans, color: "#a855f7" },
+                  { label: "Lượt ghi nhận bữa ăn",   value: overview.mealsLogged,    color: "#f97316" },
+                  { label: "Tổng calo hôm nay",       value: overview.caloriesToday,  color: "#ef4444" },
                 ].map(card => (
                   <div key={card.label} className="al-stat-card">
-                    <div className="al-stat-icon" style={{ background: `${card.color}18`, color: card.color }}>{card.icon}</div>
                     <div className="al-stat-value" style={{ color: card.color }}>{card.value.toLocaleString("vi-VN")}</div>
                     <div className="al-stat-label">{card.label}</div>
                   </div>
@@ -1865,7 +2367,207 @@ function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPa
           </div>
         )}
 
+      {/* ══ MEALS ══ */}
+        {nutPage === "meals" && (
+          <div>
+            {/* Stats */}
+            <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
+              {[
+                { label: "Tổng meal logs",    value: mealLogs.length,                                         color: "#3b82f6" },
+                { label: "Hôm nay",           value: mealLogs.filter(m => isMealToday(m.loggedAt)).length,    color: "#f97316" },
+                { label: "Tổng calories TB",  value: mealLogs.length > 0 ? Math.round(mealLogs.reduce((s,m) => s + m.totalCalories, 0) / mealLogs.length) : 0, color: "#ef4444" },
+                { label: "Người dùng",        value: new Set(mealLogs.map(m => m.userId)).size,               color: "#22c55e" },
+              ].map(c => (
+                <div key={c.label} className="al-stat-card">
+                  <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
+                  <div className="al-stat-label">{c.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Filters */}
+            <div className="al-controls" style={{ flexWrap: "wrap", gap: 8 }}>
+              <div className="al-search-wrap">
+                <Search size={14} className="al-search-icon" />
+                <input className="al-search" placeholder="Tìm tên người dùng..." value={mealSearch} onChange={e => setMealSearch(e.target.value)} />
+              </div>
+              <div className="al-tabs">
+                {([["ALL","Tất cả"],["BREAKFAST","Sáng"],["LUNCH","Trưa"],["DINNER","Tối"],["SNACK","Snack"]] as const).map(([id, label]) => (
+                  <button key={id} className={`al-tab${mealTypeFilter === id ? " active" : ""}`} onClick={() => setMealTypeFilter(id)}>{label}</button>
+                ))}
+              </div>
+              <div className="al-tabs">
+                {([["ALL","Mọi lúc"],["TODAY","Hôm nay"],["7D","7 ngày"],["MONTH","Tháng này"]] as const).map(([id, label]) => (
+                  <button key={id} className={`al-tab${mealTimeFilter === id ? " active" : ""}`} onClick={() => setMealTimeFilter(id)}>{label}</button>
+                ))}
+              </div>
+              <button className="al-refresh-btn" style={{ marginLeft: "auto" }} onClick={loadMealLogs}><RefreshCw size={13} /> Làm mới</button>
+            </div>
+
+            {/* Table */}
+            <div className="al-table-wrap">
+              {mealLogsLoading ? <div className="al-loading">Đang tải...</div>
+                : mealLogsError ? <ErrMsg msg={mealLogsError} />
+                : filteredMeals.length === 0 ? <div className="al-empty">Không có meal log phù hợp</div>
+                : (
+                  <>
+                    <table className="al-table">
+                      <thead><tr>
+                        <th>Người dùng</th>
+                        <th>Bữa ăn</th>
+                        <th>Số món</th>
+                        <th>Calories</th>
+                        <th>Protein</th>
+                        <th>Carb</th>
+                        <th>Fat</th>
+                        <th>Ngày ghi</th>
+                        <th>Thao tác</th>
+                      </tr></thead>
+                      <tbody>
+                        {paginatedMeals.map(m => (
+                          <tr key={m.id}>
+                            <td>
+                              <div className="al-user-cell">
+                                <div className="al-avatar" style={{ background: avatarColor(m.userId), width: 32, height: 32, fontSize: "0.72rem" }}>{initials(m.userName)}</div>
+                                <div>
+                                  <div className="al-uname" style={{ fontSize: "0.83rem" }}>{m.userName}</div>
+                                  <div className="al-uemail">ID {m.userId}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <span className="al-badge" style={{ background: `${mealTypeColor(m.mealType)}18`, color: mealTypeColor(m.mealType), border: "none" }}>
+                                {mealTypeLabel(m.mealType)}
+                              </span>
+                            </td>
+                            <td><span className="al-date">{m.itemCount} món</span></td>
+                            <td><span className="al-date" style={{ fontWeight: 600, color: "#ef4444" }}>{m.totalCalories} kcal</span></td>
+                            <td><span className="al-date">{m.totalProteinGrams}g</span></td>
+                            <td><span className="al-date">{m.totalCarbsGrams}g</span></td>
+                            <td><span className="al-date">{m.totalFatGrams}g</span></td>
+                            <td><span className="al-date">{fmtDate(m.loggedAt)}</span></td>
+                            <td>
+                              <div className="al-actions">
+                                <button className="al-action-btn blue" onClick={() => setDetailMeal(m)}><Eye size={12} /> Chi tiết</button>
+                                <button className="al-action-btn red" disabled={deletingMeal === m.id} onClick={() => setConfirmMealDelete(m)}><Trash2 size={12} /> Xóa</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="al-pagination">
+                      <div className="al-page-size">
+                        <span>Hiển thị</span>
+                        <select value={mealPageSize} onChange={e => setMealPageSize(Number(e.target.value))}>
+                          {[5, 10, 20].map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        <span>/ trang</span>
+                      </div>
+                      <div className="al-page-nav">
+                        <button className="al-page-btn" disabled={mealPage === 1} onClick={() => setMealPage(p => p - 1)}>← Trước</button>
+                        <span className="al-page-info">Trang {mealPage} / {mealTotalPages} &nbsp;·&nbsp; {filteredMeals.length} kết quả</span>
+                        <button className="al-page-btn" disabled={mealPage >= mealTotalPages} onClick={() => setMealPage(p => p + 1)}>Tiếp →</button>
+                      </div>
+                    </div>
+                  </>
+                )}
+            </div>
+          </div>
+        )}
+
       </div>
+
+      {/* ══ MEAL DETAIL MODAL ══ */}
+      {detailMeal && (
+        <div className="al-modal-overlay" onClick={() => setDetailMeal(null)}>
+          <div className="al-modal-box al-modal-detail" onClick={e => e.stopPropagation()}>
+            <button className="al-modal-close" onClick={() => setDetailMeal(null)}><X size={15} /></button>
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div className="al-avatar large" style={{ background: avatarColor(detailMeal.userId), width: 48, height: 48, fontSize: "1rem" }}>{initials(detailMeal.userName)}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text-primary)" }}>{detailMeal.userName}</div>
+                <div style={{ fontSize: "0.83rem", color: "var(--text-muted)", marginTop: 2 }}>{fmtDate(detailMeal.loggedAt)}</div>
+              </div>
+              <span className="al-badge" style={{ background: `${mealTypeColor(detailMeal.mealType)}18`, color: mealTypeColor(detailMeal.mealType), border: "none", fontSize: "0.8rem" }}>
+                {mealTypeLabel(detailMeal.mealType)}
+              </span>
+            </div>
+
+            {/* Macro summary */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+              {[
+                { label: "Calories",  value: `${detailMeal.totalCalories} kcal`, color: "#ef4444" },
+                { label: "Protein",   value: `${detailMeal.totalProteinGrams}g`,  color: "#3b82f6" },
+                { label: "Carb",      value: `${detailMeal.totalCarbsGrams}g`,    color: "#f97316" },
+                { label: "Fat",       value: `${detailMeal.totalFatGrams}g`,      color: "#a855f7" },
+              ].map(m => (
+                <div key={m.label} style={{ background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 4 }}>{m.label}</div>
+                  <div style={{ fontWeight: 700, fontSize: "1rem", color: m.color }}>{m.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Items list */}
+            <div>
+              <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>
+                Danh sách món ({detailMeal.itemCount} món)
+              </div>
+              {detailMeal.items && detailMeal.items.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {detailMeal.items.map((item, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f8fafc", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "var(--text-primary)" }}>{item.name}</div>
+                        {item.servingSize && <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 2 }}>{item.servings ? `${item.servings} × ` : ""}{item.servingSize}</div>}
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, color: "#ef4444", fontSize: "0.88rem" }}>{item.calories} kcal</div>
+                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>P:{item.proteinGrams}g C:{item.carbsGrams}g F:{item.fatGrams}g</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ background: "#f8fafc", border: "1px dashed var(--border)", borderRadius: 8, padding: "20px 0", textAlign: "center", color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  Không có thông tin chi tiết món ăn
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 4, borderTop: "1px solid var(--border)" }}>
+              <button className="al-action-btn red" disabled={deletingMeal === detailMeal.id}
+                onClick={() => { setConfirmMealDelete(detailMeal); setDetailMeal(null); }}>
+                <Trash2 size={12} /> Xóa meal log
+              </button>
+              <button className="al-refresh-btn" onClick={() => setDetailMeal(null)}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MEAL DELETE CONFIRM ══ */}
+      {confirmMealDelete && (
+        <div className="al-modal-overlay" onClick={() => setConfirmMealDelete(null)}>
+          <div className="al-modal-box" style={{ maxWidth: 400, textAlign: "center", gap: 16 }} onClick={e => e.stopPropagation()}>
+            <div className="al-modal-icon"><AlertCircle size={28} /></div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--text-primary)", marginBottom: 6 }}>Xác nhận xóa meal log</div>
+              <div style={{ fontSize: "0.88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                Xóa bữa <strong>{mealTypeLabel(confirmMealDelete.mealType)}</strong> của <strong>{confirmMealDelete.userName}</strong> ngày <strong>{fmtDate(confirmMealDelete.loggedAt)}</strong>?
+                <br />Hành động này không thể hoàn tác.
+              </div>
+            </div>
+            <div className="al-modal-actions">
+              <button className="al-add-btn" onClick={() => deleteMealLog(confirmMealDelete)}>Xóa</button>
+              <button className="al-refresh-btn" onClick={() => setConfirmMealDelete(null)}>Hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ CONFIRM MODAL ══ */}
       {confirmModal && (
@@ -1924,382 +2626,441 @@ function NutritionAdminPage({ session, nutPage }: { session: AdminSession; nutPa
   );
 }
 
-// ─── Onboarding Management ────────────────────────────────────────────────────
+// ─── Payment & Premium Management ────────────────────────────────────────────
 
-type OnboardingGoal = { id: number; title: string; description: string; sortOrder: number; active: boolean; createdAt: string; };
-type OBTab = "tracking" | "goals" | "levels";
+const TX_STATUS_LABEL: Record<string, string> = {
+  COMPLETED: "Thành công", CREATED: "Đang xử lý", FAILED: "Thất bại", CANCELLED: "Đã hủy",
+};
+const TX_STATUS_CLASS: Record<string, string> = {
+  COMPLETED: "badge-active", CREATED: "badge-pending", FAILED: "badge-inactive", CANCELLED: "badge-inactive",
+};
 
-const EXPERIENCE_LEVELS = [
-  { code: "BEGINNER",     label: "Mới bắt đầu",  desc: "Chưa có thói quen tập luyện thường xuyên. Mục tiêu: xây dựng nền tảng thể lực cơ bản và tạo thói quen vận động đều đặn.",  sessions: "2–3 buổi/tuần" },
-  { code: "INTERMEDIATE", label: "Trung bình",    desc: "Đã tập luyện được vài tháng đến một năm. Có thể hoàn thành các cự ly trung bình và đang hướng đến mục tiêu cụ thể hơn.",   sessions: "3–5 buổi/tuần" },
-  { code: "ADVANCED",     label: "Nâng cao",      desc: "Vận động viên có kinh nghiệm, đã tham gia thi đấu hoặc tập luyện cường độ cao. Hướng đến đỉnh cao thành tích cá nhân.",     sessions: "5–7 buổi/tuần" },
-];
+function fmtMoney(amount: number, currency = "USD") {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+}
 
-function OnboardingAdminPage({ session }: { session: AdminSession }) {
-  const [tab, setTab] = useState<OBTab>("tracking");
+function PaymentAdminPage({ session, payPage }: { session: AdminSession; payPage: PayPage }) {
+  // ── Transactions state ──────────────────────────────────────────────────────
+  const [txList, setTxList] = useState<PaymentTx[]>([]);
+  const [txTotal, setTxTotal] = useState(0);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState("");
+  const [txSearch, setTxSearch] = useState("");
+  const [txStatus, setTxStatus] = useState("ALL");
+  const [txPeriod, setTxPeriod] = useState("ALL");
+  const [txPage, setTxPage] = useState(0);
+  const [txSize, setTxSize] = useState(10);
+  const [txTotalPages, setTxTotalPages] = useState(0);
+  const [detailTx, setDetailTx] = useState<PaymentTx | null>(null);
 
-  // ── Tracking state ──
-  const [profiles, setProfiles] = useState<AthleteProfile[]>([]);
-  const [loadingProfiles, setLoadingProfiles] = useState(true);
-  const [profileError, setProfileError] = useState("");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"ALL" | "DONE" | "PENDING">("ALL");
-  const [selected, setSelected] = useState<AthleteProfile | null>(null);
+  // ── Stats state ─────────────────────────────────────────────────────────────
+  const [stats, setStats] = useState<PaymentStats | null>(null);
 
-  // ── Goals state ──
-  const [goals, setGoals] = useState<OnboardingGoal[]>([]);
-  const [loadingGoals, setLoadingGoals] = useState(false);
-  const [goalError, setGoalError] = useState("");
-  const [goalForm, setGoalForm] = useState({ title: "", description: "", sortOrder: 0, active: true });
-  const [editingGoal, setEditingGoal] = useState<OnboardingGoal | null>(null);
-  const [showGoalForm, setShowGoalForm] = useState(false);
-  const [goalConfirm, setGoalConfirm] = useState<{ id: number; title: string } | null>(null);
+  // ── Premium users state ─────────────────────────────────────────────────────
+  const [premUsers, setPremUsers] = useState<AdminUser[]>([]);
+  const [premLoading, setPremLoading] = useState(false);
+  const [premError, setPremError] = useState("");
+  const [premSearch, setPremSearch] = useState("");
+  const [confirmRevoke, setConfirmRevoke] = useState<AdminUser | null>(null);
+  const [confirmGrant, setConfirmGrant] = useState<AdminUser | null>(null);
+  const [premActing, setPremActing] = useState<number | null>(null);
 
-  const loadProfiles = useCallback(async () => {
-    setLoadingProfiles(true); setProfileError("");
-    try { setProfiles(await get<AthleteProfile[]>(session.token, "/api/athletes/admin/all")); }
-    catch (e: unknown) { setProfileError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoadingProfiles(false); }
+  // ── Load transactions ───────────────────────────────────────────────────────
+  const loadTx = useCallback(async (pg = txPage, sz = txSize, search = txSearch, status = txStatus, period = txPeriod) => {
+    setTxLoading(true); setTxError("");
+    try {
+      const params = new URLSearchParams({
+        page: String(pg), size: String(sz),
+        ...(search ? { search } : {}),
+        status, period,
+      });
+      const data = await get<{ content: PaymentTx[]; totalElements: number; totalPages: number }>(
+        session.token, `/api/payments/admin/transactions?${params}`
+      );
+      setTxList(data.content);
+      setTxTotal(data.totalElements);
+      setTxTotalPages(data.totalPages);
+    } catch (e) {
+      setTxError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
+    } finally {
+      setTxLoading(false);
+    }
+  }, [session.token, txPage, txSize, txSearch, txStatus, txPeriod]);
+
+  // ── Load premium users + stats ──────────────────────────────────────────────
+  const loadPremUsers = useCallback(async () => {
+    setPremLoading(true); setPremError("");
+    try {
+      const users = await get<AdminUser[]>(session.token, "/api/auth/admin/users");
+      const premList = users.filter(u => u.premiumActive);
+      setPremUsers(users);
+      // Pass premiumUsers count to stats endpoint
+      const statsData = await get<PaymentStats>(
+        session.token, `/api/payments/admin/stats?premiumUsers=${premList.length}`
+      );
+      setStats(statsData);
+    } catch (e) {
+      setPremError(e instanceof Error ? e.message : "Lỗi tải dữ liệu");
+    } finally {
+      setPremLoading(false);
+    }
   }, [session.token]);
 
-  const loadGoals = useCallback(async () => {
-    setLoadingGoals(true); setGoalError("");
-    try { setGoals(await get<OnboardingGoal[]>(session.token, "/api/athletes/admin/onboarding/goals")); }
-    catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi tải"); }
-    finally { setLoadingGoals(false); }
-  }, [session.token]);
+  useEffect(() => { if (payPage === "transactions") { loadTx(0, txSize, txSearch, txStatus, txPeriod); } }, [payPage]); // eslint-disable-line
+  useEffect(() => { if (payPage === "premium") { loadPremUsers(); } }, [payPage, loadPremUsers]);
 
-  useEffect(() => { loadProfiles(); }, [loadProfiles]);
-  useEffect(() => { if (tab === "goals") loadGoals(); }, [tab, loadGoals]);
-
-  const filtered = useMemo(() => profiles.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = p.displayName.toLowerCase().includes(q)
-      || (p.city ?? "").toLowerCase().includes(q)
-      || String(p.userId).includes(q);
-    const matchFilter = filter === "ALL"
-      || (filter === "DONE" && p.completedOnboarding)
-      || (filter === "PENDING" && !p.completedOnboarding);
-    return matchSearch && matchFilter;
-  }), [profiles, search, filter]);
-
-  const done = profiles.filter(p => p.completedOnboarding).length;
-  const completionRate = profiles.length > 0 ? Math.round((done / profiles.length) * 100) : 0;
-
-  async function saveGoal() {
-    if (!goalForm.title.trim()) return;
+  // ── Revoke / Grant premium ──────────────────────────────────────────────────
+  async function setPremium(userId: number, active: boolean) {
+    setPremActing(userId);
     try {
-      if (editingGoal) {
-        const updated = await put<OnboardingGoal>(session.token, `/api/athletes/admin/onboarding/goals/${editingGoal.id}`, goalForm);
-        setGoals(prev => prev.map(g => g.id === updated.id ? updated : g));
-      } else {
-        const created = await post<OnboardingGoal>(session.token, "/api/athletes/admin/onboarding/goals", goalForm);
-        setGoals(prev => [...prev, created]);
-      }
-      setShowGoalForm(false); setEditingGoal(null);
-      setGoalForm({ title: "", description: "", sortOrder: 0, active: true });
-    } catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi lưu"); }
+      await patch<AdminUser>(session.token, `/api/auth/admin/users/${userId}`, { premiumActive: active });
+      await loadPremUsers();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Lỗi cập nhật");
+    } finally {
+      setPremActing(null);
+      setConfirmRevoke(null);
+      setConfirmGrant(null);
+    }
   }
 
-  async function deleteGoal(id: number) {
-    try {
-      await del(session.token, `/api/athletes/admin/onboarding/goals/${id}`);
-      setGoals(prev => prev.filter(g => g.id !== id));
-    } catch (e: unknown) { setGoalError(e instanceof Error ? e.message : "Lỗi xóa"); }
-    setGoalConfirm(null);
+  // ── Tx search handler ────────────────────────────────────────────────────────
+  function applyTxFilters() {
+    setTxPage(0);
+    loadTx(0, txSize, txSearch, txStatus, txPeriod);
   }
 
-  function startEdit(g: OnboardingGoal) {
-    setEditingGoal(g);
-    setGoalForm({ title: g.title, description: g.description ?? "", sortOrder: g.sortOrder, active: g.active });
-    setShowGoalForm(true);
-  }
+  const PAGE_TITLES: Record<PayPage, { title: string; sub: string }> = {
+    transactions: { title: "Giao dịch thanh toán", sub: "Lịch sử và theo dõi thanh toán trong hệ thống" },
+    premium: { title: "Quản lý Premium", sub: "Danh sách người dùng Premium và thao tác cấp/thu hồi" },
+  };
 
-  function cancelGoalForm() {
-    setShowGoalForm(false); setEditingGoal(null);
-    setGoalForm({ title: "", description: "", sortOrder: 0, active: true });
-  }
+  const filteredPrem = premUsers.filter(u =>
+    u.premiumActive &&
+    (premSearch === "" || u.fullName.toLowerCase().includes(premSearch.toLowerCase()) || u.email.toLowerCase().includes(premSearch.toLowerCase()))
+  );
 
   return (
     <>
-      <PageHeader title="Quản lý Onboarding" sub="Cấu hình trải nghiệm đăng ký và theo dõi tiến độ người dùng mới" />
+      <PageHeader title={PAGE_TITLES[payPage].title} sub={PAGE_TITLES[payPage].sub} />
       <div className="al-content">
 
-        {/* Tab bar */}
-        <div className="al-tabs" style={{ marginBottom: 20 }}>
-          {([
-            { id: "tracking", label: "Theo dõi người dùng" },
-            { id: "goals",    label: "Mục tiêu sức khỏe" },
-            { id: "levels",   label: "Cấp độ luyện tập" },
-          ] as { id: OBTab; label: string }[]).map(t => (
-            <button key={t.id} className={`al-tab${tab === t.id ? " active" : ""}`} onClick={() => setTab(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ── Tab 1: Tracking ── */}
-        {tab === "tracking" && (
+        {/* ── TRANSACTIONS TAB ── */}
+        {payPage === "transactions" && (
           <>
-            <div className="al-stats-row" style={{ gridTemplateColumns: "repeat(4,1fr)", marginBottom: 20 }}>
-              {[
-                { label: "Tổng hồ sơ",       value: profiles.length,            color: "#3b82f6" },
-                { label: "Hoàn thành",        value: done,                       color: "#22c55e" },
-                { label: "Chưa hoàn thành",   value: profiles.length - done,     color: "#ef4444" },
-                { label: "Tỷ lệ hoàn thành",  value: `${completionRate}%`,       color: "#f97316" },
-              ].map(c => (
-                <div key={c.label} className="al-stat-card">
-                  <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
-                  <div className="al-stat-label">{c.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <div className="al-controls">
-              <div className="al-search-wrap">
-                <Search size={14} className="al-search-icon" />
-                <input className="al-search" placeholder="Tìm tên, thành phố, user ID..." value={search} onChange={e => setSearch(e.target.value)} />
-              </div>
-              <div className="al-tabs">
-                {(["ALL", "DONE", "PENDING"] as const).map(f => (
-                  <button key={f} className={`al-tab${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>
-                    {f === "ALL" ? `Tất cả (${profiles.length})` : f === "DONE" ? `Hoàn thành (${done})` : `Chưa xong (${profiles.length - done})`}
-                  </button>
+            {/* Stats row */}
+            {stats && (
+              <div className="al-stats-row" style={{ marginBottom: 20 }}>
+                {[
+                  { label: "Tổng giao dịch",    value: stats.totalTransactions.toLocaleString("vi-VN"),        color: "#3b82f6", bg: "rgba(59,130,246,0.1)" },
+                  { label: "Doanh thu",          value: fmtMoney(stats.totalRevenue),                           color: "#22c55e", bg: "rgba(34,197,94,0.1)" },
+                  { label: "Người dùng Premium", value: stats.totalPremiumUsers.toLocaleString("vi-VN"),        color: "#eab308", bg: "rgba(234,179,8,0.1)" },
+                  { label: "Thành công",         value: stats.successfulTransactions.toLocaleString("vi-VN"),   color: "#22c55e", bg: "rgba(34,197,94,0.1)" },
+                  { label: "Thất bại",           value: stats.failedTransactions.toLocaleString("vi-VN"),       color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
+                ].map(c => (
+                  <div key={c.label} className="al-stat-card">
+                    <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
+                    <div className="al-stat-label">{c.label}</div>
+                  </div>
                 ))}
               </div>
-              <button className="al-refresh-btn" onClick={loadProfiles}><RefreshCw size={13} /> Làm mới</button>
+            )}
+
+            {/* Filters */}
+            <div className="al-card" style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ flex: "1 1 200px" }}>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--al-muted)" }}>Tìm kiếm</label>
+                  <div className="al-search-wrap">
+                    <Search size={14} className="al-search-icon" />
+                    <input
+                      className="al-search"
+                      style={{ width: "100%", boxSizing: "border-box" }}
+                      placeholder="Tên người dùng, email..."
+                      value={txSearch}
+                      onChange={e => setTxSearch(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && applyTxFilters()}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--al-muted)" }}>Trạng thái</label>
+                  <select className="al-select" value={txStatus} onChange={e => setTxStatus(e.target.value)}>
+                    <option value="ALL">Tất cả</option>
+                    <option value="COMPLETED">Thành công</option>
+                    <option value="CREATED">Đang xử lý</option>
+                    <option value="FAILED">Thất bại</option>
+                    <option value="CANCELLED">Đã hủy</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--al-muted)" }}>Thời gian</label>
+                  <select className="al-select" value={txPeriod} onChange={e => setTxPeriod(e.target.value)}>
+                    <option value="ALL">Tất cả</option>
+                    <option value="TODAY">Hôm nay</option>
+                    <option value="7D">7 ngày qua</option>
+                    <option value="MONTH">30 ngày qua</option>
+                  </select>
+                </div>
+                <button className="al-add-btn" onClick={applyTxFilters}><Search size={13} /> Tìm kiếm</button>
+                <button className="al-refresh-btn" onClick={() => { setTxSearch(""); setTxStatus("ALL"); setTxPeriod("ALL"); loadTx(0, txSize, "", "ALL", "ALL"); }}>
+                  <RefreshCw size={13} /> Đặt lại
+                </button>
+              </div>
             </div>
 
-            <div className="al-table-wrap">
-              {loadingProfiles ? <div className="al-loading">Đang tải...</div>
-                : profileError ? <ErrMsg msg={profileError} />
-                : filtered.length === 0 ? <div className="al-empty">Không có dữ liệu</div>
-                : (
+            {/* Table */}
+            <div className="al-card">
+              {txLoading && <div className="al-loading">Đang tải...</div>}
+              {txError  && <ErrMsg msg={txError} />}
+              {!txLoading && !txError && (
+                <>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="al-table">
+                      <thead>
+                        <tr>
+                          <th>Mã GD</th><th>Người dùng</th><th>Email</th>
+                          <th>Gói</th><th>Số tiền</th><th>Phương thức</th>
+                          <th>Trạng thái</th><th>Thời gian</th><th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {txList.length === 0 && (
+                          <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--al-muted)", padding: "32px 0" }}>Không có giao dịch nào</td></tr>
+                        )}
+                        {txList.map(tx => (
+                          <tr key={tx.id}>
+                            <td><span style={{ fontFamily: "monospace", fontSize: 12 }}>{tx.orderId.slice(0, 12)}…</span></td>
+                            <td>{tx.userName ?? `User #${tx.userId}`}</td>
+                            <td style={{ color: "var(--al-muted)", fontSize: 13 }}>{tx.userEmail ?? "—"}</td>
+                            <td><span className="al-badge badge-active">{tx.plan ?? "PREMIUM"}</span></td>
+                            <td style={{ fontWeight: 600 }}>{fmtMoney(tx.amount, tx.currency)}</td>
+                            <td>{tx.provider}</td>
+                            <td><span className={`al-badge ${TX_STATUS_CLASS[tx.status] ?? "badge-pending"}`}>{TX_STATUS_LABEL[tx.status] ?? tx.status}</span></td>
+                            <td style={{ fontSize: 12 }}>{fmtDate(tx.createdAt)}</td>
+                            <td>
+                              <button className="al-icon-btn" title="Chi tiết" onClick={() => setDetailTx(tx)}><Eye size={14} /></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  <div className="al-pagination">
+                    <div className="al-page-size">
+                      Hiển thị
+                      <select className="al-select" value={txSize} onChange={e => { const s = Number(e.target.value); setTxSize(s); loadTx(0, s, txSearch, txStatus, txPeriod); }}>
+                        {[5, 10, 20].map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                      / {txTotal} giao dịch
+                    </div>
+                    <div className="al-page-nav">
+                      <button className="al-page-btn" disabled={txPage === 0} onClick={() => { setTxPage(txPage - 1); loadTx(txPage - 1, txSize, txSearch, txStatus, txPeriod); }}>‹</button>
+                      <span className="al-page-info">Trang {txPage + 1} / {Math.max(1, txTotalPages)}</span>
+                      <button className="al-page-btn" disabled={txPage >= txTotalPages - 1} onClick={() => { setTxPage(txPage + 1); loadTx(txPage + 1, txSize, txSearch, txStatus, txPeriod); }}>›</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── PREMIUM USERS TAB ── */}
+        {payPage === "premium" && (
+          <>
+            {/* Stats */}
+            {stats && (
+              <div className="al-stats-row" style={{ marginBottom: 20 }}>
+                {[
+                  { label: "Tổng Premium",  value: stats.totalPremiumUsers.toLocaleString("vi-VN"),       color: "#eab308" },
+                  { label: "Doanh thu",      value: fmtMoney(stats.totalRevenue),                          color: "#22c55e" },
+                  { label: "Giao dịch",      value: stats.totalTransactions.toLocaleString("vi-VN"),       color: "#3b82f6" },
+                ].map(c => (
+                  <div key={c.label} className="al-stat-card">
+                    <div className="al-stat-value" style={{ color: c.color }}>{c.value}</div>
+                    <div className="al-stat-label">{c.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Search */}
+            <div className="al-card" style={{ marginBottom: 16 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div className="al-search-wrap" style={{ flex: 1 }}>
+                  <Search size={14} className="al-search-icon" />
+                  <input className="al-search" style={{ width: "100%", boxSizing: "border-box" }}
+                    placeholder="Tìm theo tên hoặc email..."
+                    value={premSearch} onChange={e => setPremSearch(e.target.value)} />
+                </div>
+                <button className="al-refresh-btn" onClick={loadPremUsers}><RefreshCw size={13} /> Làm mới</button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="al-card">
+              {premLoading && <div className="al-loading">Đang tải...</div>}
+              {premError  && <ErrMsg msg={premError} />}
+              {!premLoading && !premError && (
+                <div style={{ overflowX: "auto" }}>
                   <table className="al-table">
-                    <thead><tr>
-                      <th>Vận động viên</th>
-                      <th>Thành phố</th>
-                      <th>Trình độ</th>
-                      <th>Mục tiêu chính</th>
-                      <th>Chạy/tuần</th>
-                      <th>Bơi/tuần</th>
-                      <th>Ngày tạo</th>
-                      <th>Onboarding</th>
-                    </tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Người dùng</th><th>Email</th><th>Vai trò</th>
+                        <th>Premium từ</th><th>Trạng thái TK</th><th>Thao tác</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {filtered.map(p => (
-                        <tr key={p.id} style={{ cursor: "pointer" }} onClick={() => setSelected(p)}>
+                      {filteredPrem.length === 0 && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--al-muted)", padding: "32px 0" }}>Không có người dùng Premium</td></tr>
+                      )}
+                      {filteredPrem.map(u => (
+                        <tr key={u.id}>
                           <td>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div className="al-avatar" style={{ background: avatarColor(p.userId) }}>{initials(p.displayName)}</div>
-                              <div>
-                                <div className="al-uname">{p.displayName}</div>
-                                <div className="al-uemail">ID: {p.userId}</div>
-                              </div>
+                              <div className="al-user-avatar" style={{ background: avatarColor(u.id), width: 30, height: 30, fontSize: 11 }}>{initials(u.fullName)}</div>
+                              <span style={{ fontWeight: 500 }}>{u.fullName}</span>
                             </div>
                           </td>
-                          <td>{p.city ?? "—"}</td>
-                          <td>
-                            <span className="al-badge" style={{ background: p.experienceLevel === "ADVANCED" ? "#fef3c7" : p.experienceLevel === "INTERMEDIATE" ? "#dbeafe" : "#f0fdf4", color: p.experienceLevel === "ADVANCED" ? "#92400e" : p.experienceLevel === "INTERMEDIATE" ? "#1d4ed8" : "#166534" }}>
-                              {p.experienceLevel === "BEGINNER" ? "Mới bắt đầu" : p.experienceLevel === "INTERMEDIATE" ? "Trung bình" : p.experienceLevel === "ADVANCED" ? "Nâng cao" : p.experienceLevel ?? "—"}
-                            </span>
-                          </td>
-                          <td className="al-truncate" style={{ maxWidth: 180 }}>{p.primaryGoal ?? "—"}</td>
-                          <td>{p.weeklyRunGoalKm} km</td>
-                          <td>{p.weeklySwimGoalMeters} m</td>
-                          <td>{fmtDate(p.createdAt)}</td>
-                          <td>
-                            <span className={`al-badge ${p.completedOnboarding ? "badge-active" : "badge-inactive"}`}>
-                              {p.completedOnboarding ? "Hoàn thành" : "Chưa xong"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-            </div>
-
-            {selected && (
-              <div className="modal-backdrop" onClick={() => setSelected(null)}>
-                <div className="al-detail-card" onClick={e => e.stopPropagation()}>
-                  <div className="al-detail-header">
-                    <div className="al-avatar-lg" style={{ background: avatarColor(selected.userId) }}>{initials(selected.displayName)}</div>
-                    <div style={{ flex: 1 }}>
-                      <div className="al-detail-name">{selected.displayName}</div>
-                      <div className="al-detail-sub">User ID: {selected.userId}</div>
-                    </div>
-                    <button className="al-icon-btn" onClick={() => setSelected(null)}><X size={16} /></button>
-                  </div>
-                  <div className="al-detail-grid">
-                    {([
-                      ["Giới tính", selected.gender ?? "—"],
-                      ["Ngày sinh", selected.dateOfBirth ?? "—"],
-                      ["Chiều cao", selected.heightCm ? `${selected.heightCm} cm` : "—"],
-                      ["Cân nặng", selected.weightKg ? `${selected.weightKg} kg` : "—"],
-                      ["Thành phố", selected.city ?? "—"],
-                      ["Trình độ", selected.experienceLevel ?? "—"],
-                      ["Mục tiêu chính", selected.primaryGoal ?? "—"],
-                      ["Trọng tâm dinh dưỡng", selected.nutritionFocus ?? "—"],
-                      ["Mục tiêu chạy/tuần", `${selected.weeklyRunGoalKm} km`],
-                      ["Mục tiêu bơi/tuần", `${selected.weeklySwimGoalMeters} m`],
-                      ["Ngày tạo hồ sơ", fmtDate(selected.createdAt)],
-                      ["Trạng thái", selected.completedOnboarding ? "Hoàn thành" : "Chưa xong"],
-                    ] as [string, string][]).map(([k, v]) => (
-                      <div key={k} className="al-detail-row">
-                        <span className="al-detail-key">{k}</span>
-                        <span className="al-detail-val">{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── Tab 2: Goals ── */}
-        {tab === "goals" && (
-          <>
-            <div className="al-controls" style={{ marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: "#64748b" }}>
-                  Danh sách mục tiêu sức khỏe hiển thị trong form đăng ký onboarding của người dùng.
-                </div>
-              </div>
-              <button className="al-add-btn" onClick={() => { setShowGoalForm(true); setEditingGoal(null); setGoalForm({ title: "", description: "", sortOrder: goals.length + 1, active: true }); }}>
-                <Plus size={14} /> Thêm mục tiêu
-              </button>
-              <button className="al-refresh-btn" onClick={loadGoals}><RefreshCw size={13} /> Làm mới</button>
-            </div>
-
-            {goalError && <ErrMsg msg={goalError} />}
-
-            {showGoalForm && (
-              <div className="al-form-card" style={{ marginBottom: 16, padding: "20px 24px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10 }}>
-                <div style={{ fontWeight: 600, marginBottom: 14, color: "#1e293b" }}>
-                  {editingGoal ? "Chỉnh sửa mục tiêu" : "Thêm mục tiêu mới"}
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Tên mục tiêu *</label>
-                  <input className="al-form-input" value={goalForm.title} onChange={e => setGoalForm({ ...goalForm, title: e.target.value })} placeholder="VD: Giảm cân & cải thiện vóc dáng" />
-                </div>
-                <div className="al-form-group">
-                  <label className="al-form-label">Mô tả</label>
-                  <textarea className="al-form-input" rows={3} value={goalForm.description} onChange={e => setGoalForm({ ...goalForm, description: e.target.value })} placeholder="Giải thích ngắn gọn về mục tiêu này..." style={{ resize: "vertical" }} />
-                </div>
-                <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-                  <div className="al-form-group" style={{ flex: "0 0 140px", marginBottom: 0 }}>
-                    <label className="al-form-label">Thứ tự</label>
-                    <input className="al-form-input" type="number" min={0} value={goalForm.sortOrder} onChange={e => setGoalForm({ ...goalForm, sortOrder: Number(e.target.value) })} />
-                  </div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, marginTop: 18 }}>
-                    <input type="checkbox" checked={goalForm.active} onChange={e => setGoalForm({ ...goalForm, active: e.target.checked })} />
-                    Đang kích hoạt
-                  </label>
-                  <div style={{ flex: 1 }} />
-                  <button className="al-btn-secondary" onClick={cancelGoalForm} style={{ marginTop: 0 }}>Hủy</button>
-                  <button className="al-add-btn" onClick={saveGoal} style={{ marginTop: 0 }}>
-                    {editingGoal ? "Lưu thay đổi" : "Thêm mục tiêu"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="al-table-wrap">
-              {loadingGoals ? <div className="al-loading">Đang tải...</div>
-                : goals.length === 0 ? <div className="al-empty">Chưa có mục tiêu nào. Nhấn "Thêm mục tiêu" để bắt đầu.</div>
-                : (
-                  <table className="al-table">
-                    <thead><tr>
-                      <th style={{ width: 50 }}>STT</th>
-                      <th>Tên mục tiêu</th>
-                      <th>Mô tả</th>
-                      <th style={{ width: 100 }}>Trạng thái</th>
-                      <th style={{ width: 110 }}>Thao tác</th>
-                    </tr></thead>
-                    <tbody>
-                      {goals.map(g => (
-                        <tr key={g.id}>
-                          <td style={{ textAlign: "center", color: "#94a3b8" }}>{g.sortOrder}</td>
-                          <td><div className="al-uname">{g.title}</div></td>
-                          <td style={{ color: "#64748b", fontSize: 13 }}>{g.description || "—"}</td>
-                          <td>
-                            <span className={`al-badge ${g.active ? "badge-active" : "badge-inactive"}`}>
-                              {g.active ? "Kích hoạt" : "Tắt"}
-                            </span>
-                          </td>
+                          <td style={{ color: "var(--al-muted)", fontSize: 13 }}>{u.email}</td>
+                          <td><span className="al-badge badge-pending">{u.role}</span></td>
+                          <td style={{ fontSize: 12 }}>{u.premiumSince ? fmtDate(u.premiumSince) : "—"}</td>
+                          <td><span className={`al-badge ${u.active ? "badge-active" : "badge-inactive"}`}>{u.active ? "Hoạt động" : "Đã khóa"}</span></td>
                           <td>
                             <div style={{ display: "flex", gap: 6 }}>
-                              <button className="al-action-btn" title="Sửa" onClick={() => startEdit(g)}><Edit2 size={13} /></button>
-                              <button className="al-action-btn danger" title="Xóa" onClick={() => setGoalConfirm({ id: g.id, title: g.title })}><Trash2 size={13} /></button>
+                              <button
+                                className="al-add-btn" style={{ fontSize: 12, padding: "4px 10px" }}
+                                disabled={premActing === u.id}
+                                onClick={() => setConfirmGrant(u)}
+                                title="Gia hạn Premium"
+                              >
+                                <BadgeCheck size={13} /> Gia hạn
+                              </button>
+                              <button
+                                className="al-delete-btn" style={{ fontSize: 12, padding: "4px 10px" }}
+                                disabled={premActing === u.id}
+                                onClick={() => setConfirmRevoke(u)}
+                                title="Thu hồi Premium"
+                              >
+                                <Ban size={13} /> Thu hồi
+                              </button>
                             </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                )}
+                </div>
+              )}
             </div>
 
-            {goalConfirm && (
-              <div className="al-modal-overlay" onClick={() => setGoalConfirm(null)}>
-                <div className="al-modal-box" onClick={e => e.stopPropagation()}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                    <AlertCircle size={22} color="#ef4444" />
-                    <div style={{ fontWeight: 600, fontSize: 16 }}>Xóa mục tiêu</div>
-                  </div>
-                  <p style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
-                    Xóa mục tiêu <strong>"{goalConfirm.title}"</strong>? Hành động này không thể hoàn tác.
-                  </p>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                    <button className="al-btn-secondary" onClick={() => setGoalConfirm(null)}>Hủy</button>
-                    <button className="al-add-btn" style={{ background: "#ef4444" }} onClick={() => deleteGoal(goalConfirm.id)}>Xóa</button>
-                  </div>
-                </div>
+            {/* Non-premium users who can be granted */}
+            <div className="al-card" style={{ marginTop: 20 }}>
+              <div className="al-card-title" style={{ marginBottom: 12 }}>Cấp Premium thủ công</div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="al-table">
+                  <thead>
+                    <tr><th>Người dùng</th><th>Email</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                  </thead>
+                  <tbody>
+                    {premUsers.filter(u => !u.premiumActive && (premSearch === "" || u.fullName.toLowerCase().includes(premSearch.toLowerCase()) || u.email.toLowerCase().includes(premSearch.toLowerCase()))).slice(0, 10).map(u => (
+                      <tr key={u.id}>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div className="al-user-avatar" style={{ background: avatarColor(u.id), width: 30, height: 30, fontSize: 11 }}>{initials(u.fullName)}</div>
+                            <span style={{ fontWeight: 500 }}>{u.fullName}</span>
+                          </div>
+                        </td>
+                        <td style={{ color: "var(--al-muted)", fontSize: 13 }}>{u.email}</td>
+                        <td><span className="al-badge badge-inactive">Miễn phí</span></td>
+                        <td>
+                          <button className="al-add-btn" style={{ fontSize: 12, padding: "4px 10px" }} disabled={premActing === u.id} onClick={() => setConfirmGrant(u)}>
+                            <BadgeCheck size={13} /> Cấp Premium
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
           </>
         )}
+      </div>
 
-        {/* ── Tab 3: Experience Levels ── */}
-        {tab === "levels" && (
-          <>
-            <div style={{ color: "#64748b", fontSize: 13, marginBottom: 20 }}>
-              Ba cấp độ luyện tập được sử dụng trong quá trình onboarding để phân loại vận động viên và gợi ý kế hoạch phù hợp.
-            </div>
-            <div style={{ display: "grid", gap: 16 }}>
-              {EXPERIENCE_LEVELS.map((lv, i) => (
-                <div key={lv.code} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "20px 24px", display: "flex", gap: 20, alignItems: "flex-start" }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: i === 0 ? "#f0fdf4" : i === 1 ? "#dbeafe" : "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-                    {i === 0 ? "🌱" : i === 1 ? "⚡" : "🔥"}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>{lv.label}</div>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, background: i === 0 ? "#dcfce7" : i === 1 ? "#dbeafe" : "#fef9c3", color: i === 0 ? "#166534" : i === 1 ? "#1d4ed8" : "#713f12" }}>
-                        {lv.code}
-                      </span>
-                    </div>
-                    <div style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>{lv.desc}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#94a3b8" }}>
-                      <span style={{ fontWeight: 600, color: "#475569" }}>Tần suất đề xuất:</span>
-                      {lv.sessions}
-                    </div>
-                  </div>
-                  <div style={{ flexShrink: 0 }}>
-                    <span className="al-badge badge-active">Đang dùng</span>
-                  </div>
+      {/* ── Transaction detail modal ── */}
+      {detailTx && (
+        <div className="al-modal-backdrop" onClick={() => setDetailTx(null)}>
+          <div className="al-modal-box al-modal-detail" onClick={e => e.stopPropagation()}>
+            <button className="al-modal-close" onClick={() => setDetailTx(null)}><X size={16} /></button>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 16 }}>Chi tiết giao dịch</div>
+            <div className="al-detail-info-grid">
+              {[
+                ["Mã giao dịch", detailTx.orderId],
+                ["Người dùng",   detailTx.userName ?? `User #${detailTx.userId}`],
+                ["Email",        detailTx.userEmail ?? "—"],
+                ["Gói Premium",  detailTx.plan ?? "PREMIUM"],
+                ["Số tiền",      fmtMoney(detailTx.amount, detailTx.currency)],
+                ["Phương thức",  detailTx.provider],
+                ["Trạng thái",   TX_STATUS_LABEL[detailTx.status] ?? detailTx.status],
+                ["Ngày tạo",     fmtDate(detailTx.createdAt)],
+                ["Cập nhật",     fmtDate(detailTx.updatedAt)],
+              ].map(([label, value]) => (
+                <div key={label} className="al-detail-info-row">
+                  <span className="al-detail-info-label">{label}</span>
+                  <span className="al-detail-info-val">{value}</span>
                 </div>
               ))}
+              <div className="al-detail-info-row">
+                <span className="al-detail-info-label">Trạng thái</span>
+                <span className={`al-badge ${TX_STATUS_CLASS[detailTx.status] ?? "badge-pending"}`}>{TX_STATUS_LABEL[detailTx.status] ?? detailTx.status}</span>
+              </div>
             </div>
-            <div style={{ marginTop: 20, padding: "14px 18px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#64748b" }}>
-              Thông tin cấp độ luyện tập được hiển thị cho người dùng trong bước "Cá nhân" của quy trình đăng ký. Người dùng chọn cấp độ phù hợp nhất với khả năng hiện tại của mình.
+            <div className="al-modal-actions">
+              <button className="al-refresh-btn" onClick={() => setDetailTx(null)}>Đóng</button>
             </div>
-          </>
-        )}
+          </div>
+        </div>
+      )}
 
-      </div>
+      {/* ── Confirm revoke modal ── */}
+      {confirmRevoke && (
+        <div className="al-modal-backdrop" onClick={() => setConfirmRevoke(null)}>
+          <div className="al-modal-box" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Thu hồi Premium</div>
+            <p style={{ color: "var(--al-muted)", marginBottom: 20 }}>
+              Bạn có chắc muốn thu hồi Premium của <strong>{confirmRevoke.fullName}</strong>? Người dùng sẽ mất quyền truy cập Premium ngay lập tức.
+            </p>
+            <div className="al-modal-actions">
+              <button className="al-delete-btn" disabled={premActing === confirmRevoke.id} onClick={() => setPremium(confirmRevoke.id, false)}>
+                <Ban size={13} /> {premActing === confirmRevoke.id ? "Đang xử lý..." : "Thu hồi"}
+              </button>
+              <button className="al-refresh-btn" onClick={() => setConfirmRevoke(null)}>Hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm grant modal ── */}
+      {confirmGrant && (
+        <div className="al-modal-backdrop" onClick={() => setConfirmGrant(null)}>
+          <div className="al-modal-box" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Cấp Premium</div>
+            <p style={{ color: "var(--al-muted)", marginBottom: 20 }}>
+              Xác nhận cấp / gia hạn Premium cho <strong>{confirmGrant.fullName}</strong>?
+            </p>
+            <div className="al-modal-actions">
+              <button className="al-add-btn" disabled={premActing === confirmGrant.id} onClick={() => setPremium(confirmGrant.id, true)}>
+                <BadgeCheck size={13} /> {premActing === confirmGrant.id ? "Đang xử lý..." : "Xác nhận cấp"}
+              </button>
+              <button className="al-refresh-btn" onClick={() => setConfirmGrant(null)}>Hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -2323,9 +3084,8 @@ export default function App() {
         {page === "activities"             && <ActivitiesPage session={session} />}
         {page === "routes"                 && <RoutesPage session={session} />}
         {page.startsWith("nutrition/")     && <NutritionAdminPage session={session} nutPage={page.split("/")[1] as NutPage} />}
-        {page === "training"               && <TrainingPage session={session} />}
+        {page.startsWith("payment/")       && <PaymentAdminPage session={session} payPage={page.split("/")[1] as PayPage} />}
         {page === "sports"                 && <SportsManagementPage session={session} />}
-        {page === "onboarding"             && <OnboardingAdminPage session={session} />}
       </div>
     </div>
   );

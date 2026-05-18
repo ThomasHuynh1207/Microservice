@@ -39,6 +39,12 @@ public class PaymentTransaction {
     @Column
     private String plan;
 
+    @Column
+    private String userName;
+
+    @Column
+    private String userEmail;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -71,6 +77,12 @@ public class PaymentTransaction {
 
     public String getPlan() { return plan; }
     public void setPlan(String plan) { this.plan = plan; }
+
+    public String getUserName() { return userName; }
+    public void setUserName(String userName) { this.userName = userName; }
+
+    public String getUserEmail() { return userEmail; }
+    public void setUserEmail(String userEmail) { this.userEmail = userEmail; }
 
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

@@ -124,6 +124,48 @@ public class NutritionService {
     }
 
     @Transactional(readOnly = true)
+    public List<AdminMealLog> adminMealLogs() {
+        return meals.findAllByOrderByEatenAtDesc().stream()
+                .map(m -> new AdminMealLog(
+                        m.getId(),
+                        m.getUserId(),
+                        "User #" + m.getUserId(),
+                        m.getMealType() != null ? m.getMealType() : "BREAKFAST",
+                        m.getCalories(),
+                        m.getProteinGrams(),
+                        m.getCarbsGrams(),
+                        m.getFatGrams(),
+                        1,
+                        m.getEatenAt() != null ? m.getEatenAt().toString() : "",
+                        List.of(new MealItemSummary(
+                                m.getName(),
+                                m.getCalories(),
+                                m.getProteinGrams(),
+                                m.getCarbsGrams(),
+                                m.getFatGrams(),
+                                m.getServings(),
+                                m.getServingSize()
+                        ))
+                ))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    @Transactional
+    public void adminDeleteMealLog(Long mealId) {
+        if (!meals.existsById(mealId)) throw new IllegalArgumentException("Meal log not found: " + mealId);
+        meals.deleteById(mealId);
+    }
+
+    public record MealItemSummary(
+            String name, int calories, int proteinGrams, int carbsGrams, int fatGrams,
+            Double servings, String servingSize) {}
+
+    public record AdminMealLog(
+            Long id, Long userId, String userName, String mealType,
+            int totalCalories, int totalProteinGrams, int totalCarbsGrams, int totalFatGrams,
+            int itemCount, String loggedAt, List<MealItemSummary> items) {}
+
+    @Transactional(readOnly = true)
     public List<FoodCategory> listCategories() {
         return categories.findAllByOrderByNameAsc();
     }

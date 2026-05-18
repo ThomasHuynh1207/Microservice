@@ -15,6 +15,8 @@ public interface MealEntryRepository extends JpaRepository<MealEntry, Long> {
 
     List<MealEntry> findTop30ByOrderByEatenAtDesc();
 
+    List<MealEntry> findAllByOrderByEatenAtDesc();
+
     @Query("select count(distinct m.userId) from MealEntry m")
     long countDistinctUsers();
 }

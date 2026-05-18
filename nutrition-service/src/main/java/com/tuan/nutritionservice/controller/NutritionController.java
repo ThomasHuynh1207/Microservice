@@ -13,6 +13,7 @@ import com.tuan.nutritionservice.service.NutritionService.FoodRequest;
 import com.tuan.nutritionservice.service.NutritionService.FoodSuggestion;
 import com.tuan.nutritionservice.service.NutritionService.MealEntryRequest;
 import com.tuan.nutritionservice.service.NutritionService.DailyStats;
+import com.tuan.nutritionservice.service.NutritionService.AdminMealLog;
 import com.tuan.nutritionservice.service.NutritionService.NutritionAdminOverview;
 import com.tuan.nutritionservice.service.NutritionService.NutritionPlanRequest;
 import com.tuan.nutritionservice.service.NutritionService.NutritionSummary;
@@ -210,6 +211,22 @@ public class NutritionController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.ok(nutritionService.recentMeals());
+    }
+
+    @GetMapping("/admin/meal-logs")
+    ResponseEntity<List<AdminMealLog>> adminMealLogs(
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(nutritionService.adminMealLogs());
+    }
+
+    @DeleteMapping("/admin/meal-logs/{mealId}")
+    ResponseEntity<Void> adminDeleteMealLog(
+            @PathVariable Long mealId,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        nutritionService.adminDeleteMealLog(mealId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/admin/categories")

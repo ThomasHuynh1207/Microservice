@@ -1,4 +1,4 @@
-import {
+﻿import {
   Activity,
   Award,
   BarChart2,
@@ -21,7 +21,6 @@ import {
   LogOut,
   Map,
   MapPin,
-  Medal,
   Menu,
   Navigation,
   MessageCircle,
@@ -34,7 +33,6 @@ import {
   Share2,
   Sparkles,
   TrendingUp,
-  Trophy,
   User,
   UserCheck,
   UserPlus,
@@ -74,7 +72,6 @@ type AppNotification = {
 };
 type Sport = "RUN" | "SWIM";
 type ActivityMode = "RUN" | "TRAIL" | "WALK" | "HIKE" | "BIKE" | "MTB" | "SWIM" | "GYM" | "YOGA" | "OTHER";
-type ChallengeSport = Sport | "MIXED";
 
 type Session = {
   token: string;
@@ -256,15 +253,6 @@ type NominatimPlace = {
   address?: Record<string, string>;
 };
 
-type Challenge = {
-  id: string;
-  title: string;
-  sportType: ChallengeSport;
-  target: string;
-  progress: number;
-  note: string;
-  joined: boolean;
-};
 
 
 type Badge = {
@@ -400,7 +388,6 @@ export default function App() {
   const [meals, setMeals] = useState<MealEntry[]>([]);
   const [routes, setRoutes] = useState<RouteItem[]>([]);
   const [savedRoutes, setSavedRoutes] = useState<number[]>([]);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDeviceModal, setShowDeviceModal] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -474,7 +461,7 @@ export default function App() {
       }
       return data;
     };
-    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, challengeData, sportDefsData] = await Promise.all([
+    const [profileData, statsData, activityData, planData, mealsData, routesData, savedRouteData, sportDefsData] = await Promise.all([
       fetchProfile(),
       api<Stats>(`/activities/stats/${current.userId}`, current.token, fallbackStats),
       api<FitnessActivity[]>(`/activities/user/${current.userId}`, current.token, fallbackActivities),
@@ -482,7 +469,6 @@ export default function App() {
       api<MealEntry[]>(`/nutrition/${current.userId}/meals`, current.token, []),
       api<RouteItem[]>("/activities/routes", current.token, []),
       api<number[]>(`/activities/routes/saved/${current.userId}`, current.token, []),
-      api<Challenge[]>(`/activities/challenges/user/${current.userId}`, current.token, []),
       api<SportDef[]>("/activities/sports", current.token, []),
     ]);
     const safeActivities = Array.isArray(activityData) ? activityData : [];
@@ -493,7 +479,6 @@ export default function App() {
     setMeals(Array.isArray(mealsData) ? mealsData : []);
     setRoutes(Array.isArray(routesData) ? routesData : []);
     setSavedRoutes(Array.isArray(savedRouteData) ? savedRouteData : []);
-    setChallenges(Array.isArray(challengeData) ? challengeData : []);
     if (Array.isArray(sportDefsData) && sportDefsData.length > 0) setSportDefs(sportDefsData);
   }
 
@@ -506,10 +491,6 @@ export default function App() {
     const nextActivities = [created, ...activities.filter((a) => a.id !== created.id)];
     setActivities(nextActivities);
     setStats(recalculateStats(nextActivities, stats));
-    if (session) {
-      const refreshed = await api<Challenge[]>(`/activities/challenges/user/${session.userId}`, session.token, challenges);
-      setChallenges(refreshed);
-    }
     setShowActivityModal(false);
     notify("Đã ghi hoạt động vào nhật ký luyện tập.");
   }
@@ -533,20 +514,6 @@ export default function App() {
       setSavedRoutes([...savedRoutes, routeId]);
       notify("Đã lưu tuyến vào danh sách của bạn.");
     }
-  }
-
-  async function toggleChallenge(challengeId: string, joined: boolean) {
-    if (!session) return;
-    const path = `/activities/challenges/${challengeId}/join/${session.userId}`;
-    if (joined) {
-      await apiStrict(path, session.token, { method: "DELETE" });
-      notify("Đã rời thử thách.");
-    } else {
-      await apiStrict(path, session.token, { method: "POST" });
-      notify("Đã tham gia thử thách cá nhân.");
-    }
-    const refreshed = await api<Challenge[]>(`/activities/challenges/user/${session.userId}`, session.token, challenges);
-    setChallenges(refreshed);
   }
 
   function logout() {
@@ -591,7 +558,6 @@ export default function App() {
             activities={activities}
             trainingPlan={trainingPlan}
             nutritionPlan={nutritionPlan}
-            challenges={challenges}
             meals={meals}
             setPage={setPage}
             onAddActivity={() => setShowActivityModal(true)}
@@ -904,7 +870,7 @@ function AppHeader({
 }
 
 function DashboardPage({
-  profile, stats, activities, trainingPlan, nutritionPlan, challenges, meals,
+  profile, stats, activities, trainingPlan, nutritionPlan, meals,
   setPage, onAddActivity, onTrial, isPremium,
 }: {
   profile: AthleteProfile;
@@ -912,7 +878,6 @@ function DashboardPage({
   activities: FitnessActivity[];
   trainingPlan: TrainingDay[];
   nutritionPlan: NutritionPlan;
-  challenges: Challenge[];
   meals: MealEntry[];
   setPage: (page: Page) => void;
   onAddActivity: () => void;
@@ -920,7 +885,6 @@ function DashboardPage({
   isPremium: boolean;
 }) {
   const nextWorkout = trainingPlan.find((d) => !d.done) ?? trainingPlan[0];
-  const joinedChallenges = challenges.filter((c) => c.joined);
   const weeklyData = buildWeeklyChartData(activities);
   const todayCalories = meals.reduce((s, m) => s + m.calories, 0);
   const todayProtein = meals.reduce((s, m) => s + m.proteinGrams, 0);
@@ -988,27 +952,6 @@ function DashboardPage({
           )}
         </article>
 
-        {joinedChallenges.length > 0 && (
-          <article className="log-card">
-            <div className="section-head">
-              <div><span className="section-kicker">Đang tham gia</span><h2>Thử thách</h2></div>
-            </div>
-            <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
-              {joinedChallenges.slice(0, 2).map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                  <Medal size={22} color="var(--orange)" />
-                  <div style={{ flex: 1 }}>
-                    <strong style={{ display: "block" }}>{c.title}</strong>
-                    <div className="progress-line" style={{ marginTop: "6px" }}>
-                      <span style={{ width: `${Math.max(0, Math.min(100, c.progress))}%` }} />
-                    </div>
-                  </div>
-                  <span style={{ color: "var(--muted)", fontSize: "0.88rem" }}>{Math.round(c.progress)}%</span>
-                </div>
-              ))}
-            </div>
-          </article>
-        )}
         <ActivityLog activities={activities} onAddActivity={onAddActivity} />
       </section>
 
@@ -1036,9 +979,6 @@ function DashboardPage({
         <RailCard icon={<Map size={24} />} title="Bản đồ & Tuyến đường" action="Mở bản đồ" onClick={() => setPage("maps")}>
           Khám phá tuyến chạy và địa điểm bơi gần bạn.
         </RailCard>
-        <RailCard icon={<Trophy size={24} />} title="Thử thách" action="Xem thử thách" onClick={() => setPage("training")}>
-          Tham gia thử thách cá nhân và theo dõi tiến độ hàng tuần.
-        </RailCard>
       </aside>
     </div>
   );
@@ -1050,7 +990,6 @@ function FeatureHub({ setPage, onAddActivity }: { setPage: (p: Page) => void; on
     { icon: <Map size={26} />, label: "Bản đồ & Tuyến", sub: "Tuyến chạy, bơi, GPS", color: "#0f766e", bg: "rgba(15,118,110,0.09)", onClick: () => setPage("maps") },
     { icon: <Salad size={26} />, label: "Dinh dưỡng", sub: "Calories, macro, nước", color: "#ca8a04", bg: "rgba(202,138,4,0.09)", onClick: () => setPage("nutrition") },
     { icon: <Bot size={26} />, label: "AI Coach", sub: "Phân tích & gợi ý tập", color: "#9333ea", bg: "rgba(147,51,234,0.09)", onClick: () => setPage("ai") },
-    { icon: <Trophy size={26} />, label: "Thử thách", sub: "Theo dõi tiến độ cá nhân", color: "#ef4444", bg: "rgba(239,68,68,0.09)", onClick: () => setPage("training") },
     { icon: <Zap size={26} />, label: "Ghi ngay", sub: "Nhật ký buổi tập mới", color: "#10b981", bg: "rgba(16,185,129,0.09)", onClick: onAddActivity },
   ];
   return (
@@ -3224,31 +3163,6 @@ function MapsPage({ routes, savedRoutes, onToggleRoute, onAddActivity, token, us
   );
 }
 
-function ChallengesPage({ challenges, onToggle }: { challenges: Challenge[]; onToggle: (id: string, joined: boolean) => void }) {
-  return (
-    <div className="single-page">
-      <section className="page-title">
-        <span className="section-kicker">Thử thách</span>
-        <h1>Mục tiêu cá nhân cho chạy và bơi</h1>
-        <p>Dùng thử thách như mốc kiểm tra tiến bộ của chính bạn.</p>
-      </section>
-      <section className="challenge-grid">
-        {challenges.map((c) => (
-          <article key={c.id} className="challenge-card">
-            <Medal size={32} />
-            <SportPill sport={c.sportType} />
-            <h3>{c.title}</h3>
-            <p>{c.note}</p>
-            <ProgressRow label={c.target} value={`${Math.round(c.progress)}%`} progress={c.progress} />
-            <button className={c.joined ? "outline-button" : "orange-button"} onClick={() => onToggle(c.id, c.joined)}>
-              {c.joined ? "Đang tham gia" : "Tham gia"}
-            </button>
-          </article>
-        ))}
-      </section>
-    </div>
-  );
-}
 
 function CalorieRing({ consumed, goal }: { consumed: number; goal: number }) {
   const pct = goal > 0 ? Math.min(1, consumed / goal) : 0;

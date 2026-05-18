@@ -4,12 +4,18 @@ import com.tuan.paymentservice.entity.PaymentTransaction;
 import com.tuan.paymentservice.repository.PaymentTransactionRepository;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -49,7 +55,7 @@ public class PayPalService {
     }
 
     @Transactional
-    public CreateOrderResponse createOrder(Long userId, String plan) {
+    public CreateOrderResponse createOrder(Long userId, String plan, String userName, String userEmail) {
         ensureConfigured();
         double amount = resolveAmount(plan);
         String orderId = requestPayPalOrder(amount);
@@ -62,9 +68,52 @@ public class PayPalService {
         tx.setAmount(amount);
         tx.setCurrency(currency);
         tx.setPlan(plan);
+        tx.setUserName(userName);
+        tx.setUserEmail(userEmail);
         transactions.save(tx);
 
         return new CreateOrderResponse(orderId, amount, currency);
+    }
+
+    @Transactional(readOnly = true)
+    public AdminStatsResponse getAdminStats(long premiumUsers) {
+        long total = transactions.count();
+        double revenue = transactions.sumRevenue();
+        long completed = transactions.countCompleted();
+        long failed = transactions.countFailed();
+        return new AdminStatsResponse(total, revenue, premiumUsers, completed, failed);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PaymentTransaction> getAdminTransactions(String search, String status, String period, int page, int size) {
+        Specification<PaymentTransaction> spec = Specification.where(null);
+
+        if (search != null && !search.isBlank()) {
+            String like = "%" + search.trim().toLowerCase() + "%";
+            spec = spec.and((root, q, cb) -> cb.or(
+                cb.like(cb.lower(cb.coalesce(root.get("userName"), "")), like),
+                cb.like(cb.lower(cb.coalesce(root.get("userEmail"), "")), like)
+            ));
+        }
+
+        if (status != null && !status.isBlank() && !"ALL".equals(status)) {
+            String s = status;
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("status"), s));
+        }
+
+        Instant from = switch (period == null ? "ALL" : period) {
+            case "TODAY" -> Instant.now().truncatedTo(ChronoUnit.DAYS);
+            case "7D"    -> Instant.now().minus(7, ChronoUnit.DAYS);
+            case "MONTH" -> Instant.now().minus(30, ChronoUnit.DAYS);
+            default      -> null;
+        };
+        if (from != null) {
+            Instant fromFinal = from;
+            spec = spec.and((root, q, cb) -> cb.greaterThanOrEqualTo(root.get("createdAt"), fromFinal));
+        }
+
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return transactions.findAll(spec, pageable);
     }
 
     @Transactional
@@ -181,4 +230,5 @@ public class PayPalService {
     public record CreateOrderResponse(String orderId, double amount, String currency) {}
     public record CaptureOrderResponse(String orderId, String status, boolean premiumActive) {}
     public record PremiumStatusResponse(Long userId, boolean premiumActive) {}
+    public record AdminStatsResponse(long totalTransactions, double totalRevenue, long totalPremiumUsers, long successfulTransactions, long failedTransactions) {}
 }

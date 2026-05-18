@@ -13,6 +13,10 @@ import com.tuan.activityservice.service.ActivityService;
 import com.tuan.activityservice.service.ActivityService.SportDefRequest;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -82,6 +87,46 @@ public class ActivityAdminController {
     }
 
     // ── Routes ──────────────────────────────────────────────────────────────
+
+    @GetMapping("/routes")
+    public ResponseEntity<Map<String, Object>> listRoutes(
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "ALL") String sport,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        Specification<Route> spec = Specification.where(null);
+        if (search != null && !search.isBlank()) {
+            String like = "%" + search.trim().toLowerCase() + "%";
+            spec = spec.and((root, q, cb) -> cb.like(cb.lower(root.get("name")), like));
+        }
+        if (!"ALL".equals(sport)) {
+            SportType st = SportType.valueOf(sport);
+            spec = spec.and((root, q, cb) -> cb.equal(root.get("sportType"), st));
+        }
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Page<Route> result = routeRepo.findAll(spec, pageable);
+        return ResponseEntity.ok(Map.of(
+                "content", result.getContent(),
+                "totalElements", result.getTotalElements(),
+                "totalPages", result.getTotalPages(),
+                "page", result.getNumber(),
+                "size", result.getSize()
+        ));
+    }
+
+    @GetMapping("/routes/stats")
+    public ResponseEntity<Map<String, Long>> routeStats(
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        if (!isAdmin(requesterRole)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        return ResponseEntity.ok(Map.of(
+                "total", routeRepo.count(),
+                "run",   routeRepo.countBySportType(SportType.RUN),
+                "swim",  routeRepo.countBySportType(SportType.SWIM)
+        ));
+    }
 
     @PostMapping("/routes")
     public ResponseEntity<Route> createRoute(
